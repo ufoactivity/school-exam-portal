@@ -12,8 +12,8 @@ from datetime import datetime
 # 1. 網頁頁面配置
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
-st.title("🏫 試務組-段考監考全自動化系統 (防禦型精準對位版)")
-st.info("💡 終極修復：已加裝「防禦型雷達掃描」，徹底解決一覽表錯位、蓋掉節次數字，以及標籤列印空白的問題！")
+st.title("🏫 試務組-段考監考全自動化系統 (格式大滿貫完全體)")
+st.info("💡 重大更新：已加裝「合併儲存格防護罩」，完美解決 MergedCell 唯讀報錯，日期填寫將自動閃避幽靈格子！")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -100,6 +100,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
         st.error("🚨 請至少確認【1, 2, 3, 5】號基礎檔案皆已上傳！")
     else:
         try:
+            # --- 讀取基礎資料 ---
             df_quota = pd.read_excel(file_quota, sheet_name=selected_sheet).fillna("")
             quota_dict = dict(zip(df_quota.iloc[:, 0].astype(str).str.strip(), pd.to_numeric(df_quota.iloc[:, 1], errors='coerce').fillna(0)))
             
@@ -212,7 +213,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     norm_c = normalize_cls(c_name)
                     class_proctor_schedule[norm_c] = [assigned_matrix[r_idx, col] for col in range(10)]
 
-                # 【核心修復一：一覽表不依賴標題，直接鎖定第一班】
+                # 讀取一覽表並保留格式
                 wb_assign = openpyxl.load_workbook(file_assign)
                 ws_assign = wb_assign.active
                 
@@ -228,13 +229,17 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     if first_class_row != -1: break
                 
                 if first_class_row != -1:
-                    # 日期列通常在班級名稱的「上方第二列」，這樣就不會蓋掉節次數字 (1,2,3,4,5)
                     date_row = first_class_row - 2
                     if date_row >= 1:
-                        for offset in range(1, 6): ws_assign.cell(row=date_row, column=class_col_idx+offset).value = d1_str
-                        for offset in range(6, 11): ws_assign.cell(row=date_row, column=class_col_idx+offset).value = d2_str
+                        # 【關鍵修復】：使用 try-except 完美閃避「合併儲存格 (MergedCell)」
+                        for offset in range(1, 6): 
+                            try: ws_assign.cell(row=date_row, column=class_col_idx+offset).value = d1_str
+                            except AttributeError: pass # 若遇到合併儲存格的唯讀格，直接跳過
+                            
+                        for offset in range(6, 11): 
+                            try: ws_assign.cell(row=date_row, column=class_col_idx+offset).value = d2_str
+                            except AttributeError: pass
                     
-                    # 從第一班開始，一行一行往下填寫
                     for r in range(first_class_row, ws_assign.max_row + 1):
                         c_val = ws_assign.cell(row=r, column=class_col_idx).value
                         if c_val:
@@ -262,8 +267,12 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     if h_row != -1:
                         for c in t_cols:
                             if h_row - 1 >= 1:
-                                ws.cell(row=h_row-1, column=c+2).value = d1_str
-                                ws.cell(row=h_row-1, column=c+7).value = d2_str
+                                # 同樣為公布版加入防護罩
+                                try: ws.cell(row=h_row-1, column=c+2).value = d1_str
+                                except AttributeError: pass
+                                try: ws.cell(row=h_row-1, column=c+7).value = d2_str
+                                except AttributeError: pass
+                                
                             for r in range(h_row+1, ws.max_row + 1):
                                 t_val = ws.cell(row=r, column=c).value
                                 if t_val:
@@ -297,7 +306,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     wb_label = openpyxl.load_workbook(file_label)
                     ws_label = wb_label.active
                     
-                    # 【核心修復二：首位攔截器，防止被最後一欄的多餘班級騙走】
                     col_map = {}
                     header_row = 1
                     for r in range(1, 6):
@@ -313,13 +321,12 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                             header_row = r
                             break
                     
-                    # 日期時間尾巴淨化器
                     unique_dates = set()
                     if '日期' in col_map:
                         for r in range(header_row + 1, ws_label.max_row + 1):
                             d_val = ws_label.cell(row=r, column=col_map['日期']).value
                             if d_val is not None:
-                                d_str = str(d_val).split()[0].strip() # 砍掉時間尾巴
+                                d_str = str(d_val).split()[0].strip()
                                 if d_str: unique_dates.add(d_str)
                     sorted_dates = sorted(list(unique_dates))
 
