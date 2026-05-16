@@ -12,8 +12,8 @@ from datetime import datetime
 # 1. 網頁頁面配置
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
-st.title("🏫 試務組-段考監考全自動化系統 (動態自適應版)")
-st.info("💡 終極升級：系統已解除固定 10 節的限制！現在 AI 會根據您上傳的檔案，自動偵測半天/全天的節次總數與換日線，完美適應 8 節、10 節等各種排班情境。")
+st.title("🏫 試務組-段考監考全自動化系統 (手排自由開關版)")
+st.info("💡 終極升級：新增「手排日開關」！可自由選擇是否有手動前導日，AI 配額系統將自動排除手排時數，並動態適應所有節次。")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -59,7 +59,7 @@ with col1:
     file_list = st.file_uploader("2️⃣ 監考名單.xlsx", type=['xlsx'], key=f"f2_{st.session_state['uploader_key']}")
     file_type = st.file_uploader("3️⃣ 監考類型總數.xlsx", type=['xlsx'], key=f"f3_{st.session_state['uploader_key']}")
     file_pub = st.file_uploader("4️⃣ 監考總表公布版.xlsx (範本)", type=['xlsx'], key=f"f4_{st.session_state['uploader_key']}")
-    file_assign = st.file_uploader("5️⃣ 監考一覽表.xlsx (手排前導日完成版)", type=['xlsx'], key=f"f5_{st.session_state['uploader_key']}")
+    file_assign = st.file_uploader("5️⃣ 監考一覽表.xlsx (班級分配範本)", type=['xlsx'], key=f"f5_{st.session_state['uploader_key']}")
     st.write("---")
     file_course = st.file_uploader("6️⃣ 配課表.xlsx (多工作表)", type=['xlsx'], key=f"f6_{st.session_state['uploader_key']}")
     file_label = st.file_uploader("7️⃣ 標籤列印.xlsx (試卷袋範本)", type=['xlsx'], key=f"f7_{st.session_state['uploader_key']}")
@@ -80,9 +80,16 @@ with col2:
 
     st.write("")
     c_d0, c_d1, c_d2 = st.columns(3)
-    with c_d0: d0_date = st.date_input("📅 手排日(如13日)", datetime.now())
-    with c_d1: d1_date = st.date_input("📅 AI Day1(如14日)", datetime.now())
-    with c_d2: d2_date = st.date_input("📅 AI Day2(如15日)", datetime.now())
+    # 【核心升級】：加入手排日開關
+    with c_d0:
+        has_manual = st.checkbox("📌 包含手動排班前導日", value=True)
+        if has_manual:
+            d0_date = st.date_input("📅 手排日(如13日)", datetime.now())
+        else:
+            d0_date = None
+            
+    with c_d1: d1_date = st.date_input("📅 AI Day1", datetime.now())
+    with c_d2: d2_date = st.date_input("📅 AI Day2", datetime.now())
     
     force_run = st.checkbox("⚠️ 忽略健檢警告，強制執行")
     if st.button("🗑️ 清除所有設定", use_container_width=True):
@@ -106,7 +113,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             
             df_list_raw = pd.read_excel(file_list, header=None).fillna("")
             
-            # 【核心動態偵測一】：掃描名單總共有幾節課，不再預設 11 節
+            # 動態偵測總節次數
             period_cols = []
             for c in range(1, df_list_raw.shape[1]):
                 val = str(df_list_raw.iloc[1, c]).strip()
@@ -116,21 +123,28 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 except: pass
             
             total_periods = len(period_cols)
-            if total_periods < 2:
+            if total_periods < 1:
                 st.error("🚨 無法從檔案中辨識出節次數量，請檢查監考名單格式。")
                 st.stop()
                 
-            ai_periods = total_periods - 1  # 扣掉第一欄 (手動排的 13日)
-            all_period_nums = [int(float(str(df_list_raw.iloc[1, c]).strip())) for c in period_cols]
-            ai_period_nums = all_period_nums[1:]
+            # 根據開關決定 AI 負責的範圍
+            if has_manual:
+                manual_col = period_cols[0]
+                ai_period_cols = period_cols[1:]
+            else:
+                manual_col = None
+                ai_period_cols = period_cols
+                
+            ai_periods = len(ai_period_cols)
+            ai_period_nums = [int(float(str(df_list_raw.iloc[1, c]).strip())) for c in ai_period_cols]
             
-            # 【核心動態偵測二】：尋找「換日線」 (當節次號碼變小，代表換天了)
+            # 動態偵測換日線
             day_starts = [0]
             for j in range(1, ai_periods):
                 if ai_period_nums[j] <= ai_period_nums[j-1]:
                     day_starts.append(j)
 
-            # 動態建立 req_matrix (根據實際總節次讀取人數)
+            # 動態建立 req_matrix (根據 AI 負責的節次)
             df_type = pd.read_excel(file_type, header=None).fillna("")
             req_matrix = {'△': [0]*ai_periods, '※': [0]*ai_periods}
             for i in range(2, len(df_type)):
@@ -139,21 +153,27 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     req_list = pd.to_numeric(df_type.iloc[i, 1:], errors='coerce').fillna(0).astype(int).tolist()
                     if len(req_list) < total_periods:
                         req_list += [0] * (total_periods - len(req_list))
-                    req_matrix[row_name] = req_list[1 : 1 + ai_periods]
+                        
+                    start_idx = 1 if has_manual else 0
+                    req_matrix[row_name] = req_list[start_idx : start_idx + ai_periods]
 
-            d0_str, d1_str, d2_str = d0_date.strftime('%m月%d日'), d1_date.strftime('%m月%d日'), d2_date.strftime('%m月%d日')
+            d1_str = d1_date.strftime('%m月%d日')
+            d2_str = d2_date.strftime('%m月%d日')
             
             header_df = df_list_raw.iloc[0:2].copy().astype(str).replace('nan', '')
-            header_df.iloc[0, period_cols[0]] = d0_str
+            if has_manual:
+                d0_str = d0_date.strftime('%m月%d日')
+                header_df.iloc[0, manual_col] = d0_str
+                
             for j in range(ai_periods):
                 d_str = d1_str
                 if len(day_starts) > 1 and j >= day_starts[1]: d_str = d2_str
-                header_df.iloc[0, period_cols[j+1]] = d_str
+                header_df.iloc[0, ai_period_cols[j]] = d_str
             
             df_list = df_list_raw.iloc[2:].copy()
             teachers = df_list.iloc[:, 1].astype(str).str.strip().tolist()
 
-            # --- PuLP 運算 (完全動態自適應) ---
+            # --- PuLP 運算 (AI 絕對不扣手排日時數) ---
             with st.spinner(f"🧠 AI 自動偵測到 {ai_periods} 節需排班，正在生成完美監考總表..."):
                 prob = pulp.LpProblem("Scheduling", pulp.LpMinimize)
                 vX = {}; vY = {}
@@ -166,6 +186,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 penalty = 0
                 for i, t in enumerate(teachers):
                     tgt = int(quota_dict.get(t, 0))
+                    # 這裡只加總 AI 負責的區塊，手動欄位完全被排除計算！
                     act = pulp.lpSum([vX[i][k] + vY[i][k]*2 for k in range(ai_periods)])
                     prob += act <= tgt
                     dfct = pulp.LpVariable(f"dfct_{i}", 0)
@@ -174,16 +195,16 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     
                     for j in range(ai_periods):
                         prob += vX[i][j] + vY[i][j] <= 1
-                        cell_val = str(df_list.iloc[i, period_cols[j+1]]).strip()
+                        cell_val = str(df_list.iloc[i, ai_period_cols[j]]).strip()
                         if cell_val != "" and cell_val != "nan":
                             prob += vX[i][j] == 0; prob += vY[i][j] == 0
                             
-                    # 【核心動態偵測三】：動態連堂防呆，自動避開跨日連堂
+                    # 動態連堂防呆
                     for j in range(1, ai_periods):
                         if j not in day_starts:
                             prob += vX[i][j] >= vY[i][j-1]
                         else:
-                            prob += vY[i][j-1] == 0  # 換日的前一節不允許排連堂
+                            prob += vY[i][j-1] == 0 
                     prob += vY[i][ai_periods-1] == 0
                     
                 for j in range(ai_periods):
@@ -197,13 +218,13 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 for i, t in enumerate(teachers):
                     res = []
                     for j in range(ai_periods):
-                        val = str(df_list.iloc[i, period_cols[j+1]]).strip()
+                        val = str(df_list.iloc[i, ai_period_cols[j]]).strip()
                         if val == "" or val == "nan":
                             if vX[i][j].varValue == 1: val = "△"
                             elif vY[i][j].varValue == 1: val = "※"
                             else: val = "" 
                         res.append(val)
-                        df_out_master.iloc[i, period_cols[j+1]] = val
+                        df_out_master.iloc[i, ai_period_cols[j]] = val
                     schedule_dict[t] = res
 
             # --- 監考一覽表分配邏輯 ---
@@ -214,7 +235,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 
                 assigned_matrix = np.empty((len(class_names_raw), ai_periods), dtype=object)
                 
-                # 依照動態偵測到的換日線進行分配
                 for i_day, day_start in enumerate(day_starts):
                     day_end = day_starts[i_day+1] if i_day+1 < len(day_starts) else ai_periods
                     day_length = day_end - day_start
@@ -253,7 +273,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 for r_idx, c_name in enumerate(class_names_raw):
                     class_proctor_schedule[normalize_cls(c_name)] = [assigned_matrix[r_idx, col] for col in range(ai_periods)]
 
-                # --- 寫入一覽表 (動態適應 8~10 節) ---
+                # --- 寫入一覽表 ---
                 wb_assign = openpyxl.load_workbook(file_assign)
                 ws_assign = wb_assign.active
                 
@@ -281,34 +301,43 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                             temp_cols = t_cols[:total_periods]; break
                     
                     if len(temp_cols) == total_periods:
+                        if has_manual:
+                            manual_assign_col = temp_cols[0]
+                            ai_assign_cols = temp_cols[1:]
+                        else:
+                            manual_assign_col = None
+                            ai_assign_cols = temp_cols
+                            
                         date_row = first_class_row - 2
                         if date_row >= 1:
-                            try: ws_assign.cell(row=date_row, column=temp_cols[0]).value = d0_str
-                            except AttributeError: pass
-                            
-                            # 動態填寫日期
+                            if has_manual:
+                                try: ws_assign.cell(row=date_row, column=manual_assign_col).value = d0_str
+                                except AttributeError: pass
+                                
                             for j in range(ai_periods):
                                 d_str = d1_str
                                 if len(day_starts) > 1 and j >= day_starts[1]: d_str = d2_str
-                                try: ws_assign.cell(row=date_row, column=temp_cols[j+1]).value = d_str
+                                try: ws_assign.cell(row=date_row, column=ai_assign_cols[j]).value = d_str
                                 except AttributeError: pass
                         
                         for r in range(first_class_row, ws_assign.max_row + 1):
                             c_val = ws_assign.cell(row=r, column=class_col_idx).value
                             if c_val:
                                 norm_c = normalize_cls(c_val)
-                                val_manual = ws_assign.cell(row=r, column=temp_cols[0]).value
-                                manual_day0_proctors[norm_c] = str(val_manual).strip() if val_manual else ""
+                                
+                                if has_manual:
+                                    val_manual = ws_assign.cell(row=r, column=manual_assign_col).value
+                                    manual_day0_proctors[norm_c] = str(val_manual).strip() if val_manual else ""
                                 
                                 if norm_c in class_proctor_schedule:
                                     for j in range(ai_periods):
-                                        ws_assign.cell(row=r, column=temp_cols[j+1]).value = class_proctor_schedule[norm_c][j]
+                                        ws_assign.cell(row=r, column=ai_assign_cols[j]).value = class_proctor_schedule[norm_c][j]
                 
                 out_assign = io.BytesIO()
                 wb_assign.save(out_assign)
                 assign_bytes = out_assign.getvalue()
 
-            # --- 公布版套印 (同理動態適應) ---
+            # --- 公布版套印 ---
             pub_bytes = None
             if file_pub:
                 with st.spinner("🖨️ 正在將資料無縫套印至公布版..."):
@@ -332,13 +361,18 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                                 except: pass
                             
                             if len(t_col_target) >= total_periods:
-                                try: ws.cell(row=h_row-1, column=t_col_target[0]).value = d0_str
-                                except AttributeError: pass
+                                if has_manual:
+                                    pub_manual_col = t_col_target[0]
+                                    pub_ai_cols = t_col_target[1:]
+                                    try: ws.cell(row=h_row-1, column=pub_manual_col).value = d0_str
+                                    except AttributeError: pass
+                                else:
+                                    pub_ai_cols = t_col_target
                                 
                                 for j in range(ai_periods):
                                     d_str = d1_str
                                     if len(day_starts) > 1 and j >= day_starts[1]: d_str = d2_str
-                                    try: ws.cell(row=h_row-1, column=t_col_target[j+1]).value = d_str
+                                    try: ws.cell(row=h_row-1, column=pub_ai_cols[j]).value = d_str
                                     except AttributeError: pass
                                 
                                 for r in range(h_row+1, ws.max_row + 1):
@@ -347,7 +381,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                                         name = str(t_val).strip()
                                         if name in schedule_dict:
                                             for j in range(ai_periods):
-                                                ws.cell(row=r, column=t_col_target[j+1]).value = schedule_dict[name][j]
+                                                ws.cell(row=r, column=pub_ai_cols[j]).value = schedule_dict[name][j]
                     out_pub = io.BytesIO()
                     wb.save(out_pub)
                     pub_bytes = out_pub.getvalue()
@@ -386,11 +420,11 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         if '班級' in col_map and '監考老師' in col_map:
                             header_row = r; break
 
-                    d0_ymd, d0_short, d0_slash = d0_date.strftime('%Y-%m-%d'), d0_date.strftime('%m-%d'), d0_date.strftime('%Y/%m/%d')
                     d1_ymd, d1_short, d1_slash = d1_date.strftime('%Y-%m-%d'), d1_date.strftime('%m-%d'), d1_date.strftime('%Y/%m/%d')
                     d2_ymd, d2_short, d2_slash = d2_date.strftime('%Y-%m-%d'), d2_date.strftime('%m-%d'), d2_date.strftime('%Y/%m/%d')
+                    if has_manual and d0_date:
+                        d0_ymd, d0_short, d0_slash = d0_date.strftime('%Y-%m-%d'), d0_date.strftime('%m-%d'), d0_date.strftime('%Y/%m/%d')
 
-                    # 動態建立節次對應表
                     day_p_val_to_ai_col = {}
                     curr_day_idx = 0
                     for j in range(ai_periods):
@@ -422,7 +456,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         except: p_val = -1
                         
                         if '監考老師' in col_map:
-                            if any(d in date_str for d in [d0_ymd, d0_short, d0_slash]):
+                            if has_manual and d0_date and any(d in date_str for d in [d0_ymd, d0_short, d0_slash]):
                                 if cls in manual_day0_proctors:
                                     ws_label.cell(row=r, column=col_map['監考老師']).value = manual_day0_proctors[cls]
                             
