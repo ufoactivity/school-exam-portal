@@ -18,7 +18,7 @@ st.markdown("""
     /* --- 主標題與副標題 --- */
     .main-title {
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        font-size: 3.8rem !important;  /* 🌟 把主標題字體放大了 (原本是 2.8rem) */
+        font-size: 3.8rem !important;
         font-weight: 700 !important;
         background: linear-gradient(135deg, #1565c0 0%, #00bcd4 100%);
         -webkit-background-clip: text;
@@ -28,7 +28,7 @@ st.markdown("""
     }
     .sub-title {
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        font-size: 1.1rem !important;  /* 🌟 英文副標題也稍微等比例放大 */
+        font-size: 1.1rem !important;
         font-weight: 600;
         color: #888888;
         text-transform: uppercase;
@@ -62,14 +62,15 @@ st.markdown('<p class="sub-title">Intelligent Examination Administration Ecosyst
 st.divider()
 
 # ==========================================
-# 3. 核心工具矩陣入口 (單一入口網導覽)
+# 3. 核心工具矩陣入口 (2x2 模組排列)
 # ==========================================
 st.markdown("### ⚙️ 核心自動化模組 / Production Modules")
 st.write("")
 
-col1, col2 = st.columns(2, gap="large")
+# --- 第一排：監考與補考 ---
+row1_col1, row1_col2 = st.columns(2, gap="large")
 
-with col1:
+with row1_col1:
     with st.container(border=True):
         st.markdown("### 📅 段考監考智慧輔助系統")
         st.markdown("""
@@ -86,7 +87,7 @@ with col1:
         st.write("")
         st.page_link("pages/1_監考智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
 
-with col2:
+with row1_col2:
     with st.container(border=True):
         st.markdown("### 📝 補考作業智慧輔助系統")
         st.markdown("""
@@ -102,6 +103,48 @@ with col2:
         """)
         st.write("")
         st.page_link("pages/2_補考智能輔助系統.py", label="啟動補考處理作業 →", icon="⚡")
+
+st.write("") # 增加排與排之間的間距
+
+# --- 第二排：教師甄選與模擬考 (未來擴充模組) ---
+row2_col1, row2_col2 = st.columns(2, gap="large")
+
+with row2_col1:
+    with st.container(border=True):
+        st.markdown("### 👨‍🏫 教師甄選智能輔助系統")
+        st.markdown("""
+        <p class="module-desc">
+        自動化排定口試與面試時程，快速生成公平公正的甄選順序名單。
+        </p>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        - 🎙️ **時程自動排定**：無縫接軌口試、試教與面試的時間點配置。
+        - 📋 **順序演算法**：智慧產出公平防弊的應考與報到順序。
+        - 🖨️ **甄選報表輸出**：自動匯出給評審委員與考生的專屬簽到表單。
+        """)
+        st.write("")
+        # 未來開發鎖定按鈕 (防止尚未建立 py 檔案時當機)
+        st.button("🔒 模組開發中 (Coming Soon)", key="btn_teacher", disabled=True, use_container_width=True)
+
+with row2_col2:
+    with st.container(border=True):
+        st.markdown("### 📊 模擬考調查智能輔助系統")
+        st.markdown("""
+        <p class="module-desc">
+        數位化統整各科別模擬考報名意願，自動精算測驗費用與收據報表。
+        </p>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        - 📑 **科別智慧調查**：快速整合各班級與類科的模擬考參與意願。
+        - 💰 **金額自動統計**：精準計算各班、各科的收費總計與跨科差額。
+        - 📈 **圖表化清單**：自動匯出清晰的總務處繳費單與書商訂卷清單。
+        """)
+        st.write("")
+        # 未來開發鎖定按鈕
+        st.button("🔒 模組開發中 (Coming Soon)", key="btn_mock", disabled=True, use_container_width=True)
+
 
 # ==========================================
 # 4. 底部沉穩頁尾
