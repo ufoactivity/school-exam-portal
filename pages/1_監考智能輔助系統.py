@@ -12,8 +12,8 @@ from datetime import datetime
 # 1. 網頁頁面配置
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
-st.title("🏫 試務組-段考監考全自動化系統 (格式大滿貫完全體)")
-st.info("💡 重大更新：已加裝「合併儲存格防護罩」，完美解決 MergedCell 唯讀報錯，日期填寫將自動閃避幽靈格子！")
+st.title("🏫 試務組-段考監考全自動化系統 (動態映射完美版)")
+st.info("💡 終極修復：已加裝「幽靈標題過濾器」與「動態節次映射引擎」，徹底解決一覽表錯位吃字，以及標籤下午節次留白問題！")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -169,9 +169,14 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             # --- 監考一覽表分配邏輯 ---
             with st.spinner("🎯 執行班級自動分配..."):
                 df_assign_calc = pd.read_excel(file_assign, header=None).fillna("")
-                df_assign_calc = df_assign_calc.iloc[2:].copy()
-                df_assign_calc = df_assign_calc[df_assign_calc.iloc[:, 0].astype(str).str.strip() != ""]
-                class_names_raw = df_assign_calc.iloc[:, 0].tolist()
+                raw_list = df_assign_calc.iloc[:, 0].astype(str).str.strip().tolist()
+                
+                # 【核心修復一】：幽靈標題過濾器，絕對不把「班級」當成第一班！
+                class_names_raw = []
+                for x in raw_list:
+                    if not x: continue
+                    if any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考"]): continue
+                    class_names_raw.append(x)
                 
                 norm_class_names = [normalize_cls(c) for c in class_names_raw]
                 assign_map = {name: idx for idx, name in enumerate(norm_class_names)}
@@ -213,15 +218,15 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     norm_c = normalize_cls(c_name)
                     class_proctor_schedule[norm_c] = [assigned_matrix[r_idx, col] for col in range(10)]
 
-                # 讀取一覽表並保留格式
                 wb_assign = openpyxl.load_workbook(file_assign)
                 ws_assign = wb_assign.active
                 
                 first_class_row = -1
                 class_col_idx = 1
-                for r in range(1, 15):
+                for r in range(1, 20):
                     for c in range(1, 5):
                         v = ws_assign.cell(row=r, column=c).value
+                        # 找到真正的第一班 (例如: 商ㄧ1)
                         if v and str(v).strip() in class_names_raw:
                             first_class_row = r
                             class_col_idx = c
@@ -231,11 +236,9 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 if first_class_row != -1:
                     date_row = first_class_row - 2
                     if date_row >= 1:
-                        # 【關鍵修復】：使用 try-except 完美閃避「合併儲存格 (MergedCell)」
                         for offset in range(1, 6): 
                             try: ws_assign.cell(row=date_row, column=class_col_idx+offset).value = d1_str
-                            except AttributeError: pass # 若遇到合併儲存格的唯讀格，直接跳過
-                            
+                            except AttributeError: pass
                         for offset in range(6, 11): 
                             try: ws_assign.cell(row=date_row, column=class_col_idx+offset).value = d2_str
                             except AttributeError: pass
@@ -267,7 +270,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     if h_row != -1:
                         for c in t_cols:
                             if h_row - 1 >= 1:
-                                # 同樣為公布版加入防護罩
                                 try: ws.cell(row=h_row-1, column=c+2).value = d1_str
                                 except AttributeError: pass
                                 try: ws.cell(row=h_row-1, column=c+7).value = d2_str
@@ -321,14 +323,33 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                             header_row = r
                             break
                     
-                    unique_dates = set()
-                    if '日期' in col_map:
-                        for r in range(header_row + 1, ws_label.max_row + 1):
-                            d_val = ws_label.cell(row=r, column=col_map['日期']).value
-                            if d_val is not None:
-                                d_str = str(d_val).split()[0].strip()
-                                if d_str: unique_dates.add(d_str)
-                    sorted_dates = sorted(list(unique_dates))
+                    # 【核心修復二】：動態節次映射引擎 (將序號7等奇耙數字，自動排序對應為 1~5 節)
+                    exam_sessions = {}
+                    for r in range(header_row + 1, ws_label.max_row + 1):
+                        if '日期' not in col_map or '序號' not in col_map: continue
+                        d_val = ws_label.cell(row=r, column=col_map['日期']).value
+                        d_str = str(d_val).split()[0].strip() if d_val is not None else ""
+                        seq_val = ws_label.cell(row=r, column=col_map['序號']).value
+                        
+                        try: p_val = int(float(seq_val))
+                        except: continue
+                        
+                        if d_str:
+                            if d_str not in exam_sessions: exam_sessions[d_str] = set()
+                            exam_sessions[d_str].add(p_val)
+                    
+                    # 判斷哪天是 Day 1，哪天是 Day 2
+                    sorted_dates = sorted(list(exam_sessions.keys()))
+                    date_to_day_offset = {}
+                    for i, d in enumerate(sorted_dates):
+                        if i == 0: date_to_day_offset[d] = 0
+                        elif i == 1: date_to_day_offset[d] = 5
+                    
+                    # 把每天的「序號」按大小排序，變成 0, 1, 2, 3, 4 (對應考試的5節)
+                    seq_to_col_offset = {}
+                    for d_str, seqs in exam_sessions.items():
+                        sorted_seqs = sorted(list(seqs))
+                        seq_to_col_offset[d_str] = {s: idx for idx, s in enumerate(sorted_seqs)}
 
                     for r in range(header_row + 1, ws_label.max_row + 1):
                         if '班級' not in col_map: continue
@@ -344,7 +365,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         date_str = str(date_val).split()[0].strip() if date_val is not None else ""
                         
                         seq_val = ws_label.cell(row=r, column=col_map['序號']).value if '序號' in col_map else ""
-                        seq_val = str(seq_val).strip() if seq_val is not None else ""
                         
                         cls = normalize_cls(cls_raw)
                         subj = normalize_subject(subj_raw)
@@ -361,16 +381,16 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         try: p_val = int(float(seq_val))
                         except: p_val = -1
                         
-                        if cls in class_proctor_schedule:
-                            if 1 <= p_val <= 5 and '監考老師' in col_map:
-                                day_offset = -1
-                                if len(sorted_dates) >= 1 and date_str == sorted_dates[0]: day_offset = 0
-                                elif len(sorted_dates) >= 2 and date_str == sorted_dates[1]: day_offset = 5
-                                
-                                if day_offset != -1:
-                                    target_col = day_offset + p_val - 1
-                                    proctor = class_proctor_schedule[cls][target_col]
-                                    ws_label.cell(row=r, column=col_map['監考老師']).value = proctor
+                        # 透過動態引擎精準找出監考老師
+                        if cls in class_proctor_schedule and '監考老師' in col_map:
+                            if date_str in date_to_day_offset and date_str in seq_to_col_offset:
+                                day_offset = date_to_day_offset[date_str]
+                                if p_val in seq_to_col_offset[date_str]:
+                                    period_idx = seq_to_col_offset[date_str][p_val]
+                                    if period_idx < 5:
+                                        target_col = day_offset + period_idx
+                                        proctor = class_proctor_schedule[cls][target_col]
+                                        ws_label.cell(row=r, column=col_map['監考老師']).value = proctor
 
                     out_label = io.BytesIO()
                     wb_label.save(out_label)
