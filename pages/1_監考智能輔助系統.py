@@ -12,8 +12,8 @@ from datetime import datetime
 # 1. 網頁頁面配置
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
-st.title("🏫 試務組-段考監考全自動化系統 (雙欄精準修復版)")
-st.info("💡 已完美修復：修正 openpyxl 讀取範本時最大欄位誤判問題，確保右半邊資料 100% 完整套印！")
+st.title("🏫 試務組-段考監考全自動化系統 (防呆極致版)")
+st.info("💡 已完美修復：加入「Excel 幽靈空白行過濾」與「連堂空值防護」，徹底根除 KeyError: None 閃退問題！")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -37,7 +37,6 @@ def to_excel_bytes(df, header_df=None):
         final_out.to_excel(writer, index=False, header=False)
     return output.getvalue()
 
-# 班級與科目名稱自動校正器
 def normalize_cls(c):
     s = str(c).strip().replace('ㄧ', '一').replace(' ', '').replace('　', '')
     s = s.translate(str.maketrans('１２３４５６７８９０', '1234567890'))
@@ -174,6 +173,9 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 for c in range(6, 11): assign_header.iloc[0, c] = d2_str
 
                 df_assign = df_assign_raw.iloc[2:].copy()
+                
+                # 【新增防禦】：過濾掉「幽靈空白行」，只保留真正有打班級名稱的列
+                df_assign = df_assign[df_assign.iloc[:, 0].astype(str).str.strip() != ""]
                 class_names_raw = df_assign.iloc[:, 0].tolist()
                 
                 norm_class_names = [normalize_cls(c) for c in class_names_raw]
@@ -184,53 +186,55 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     j1 = day_start
                     proctors_j1 = [t for t in teachers if schedule_dict[t][j1] in ["△", "※"]]
                     random.shuffle(proctors_j1)
-                    for idx, p in enumerate(proctors_j1): assigned_matrix[idx, j1] = p
+                    
+                    # 防呆：避免老師不夠分發生的索引越界
+                    for idx, p in enumerate(proctors_j1): 
+                        if idx < len(class_names_raw):
+                            assigned_matrix[idx, j1] = p
                     
                     j2 = day_start + 1
                     proctors_j2 = [t for t in teachers if schedule_dict[t][j2] in ["△", "※"]]
                     bound = {}
                     for idx in range(len(class_names_raw)):
                         p_prev = assigned_matrix[idx, j1]
-                        if schedule_dict[p_prev][j1] == "※" and schedule_dict[p_prev][j2] == "△":
-                            assigned_matrix[idx, j2] = p_prev
-                            bound[p_prev] = True
+                        # 【新增防禦】：確認 p_prev 不是 None (這班有排到人) 再檢查連堂
+                        if p_prev is not None and p_prev in schedule_dict:
+                            if schedule_dict[p_prev][j1] == "※" and schedule_dict[p_prev][j2] == "△":
+                                assigned_matrix[idx, j2] = p_prev
+                                bound[p_prev] = True
                     
                     rem = [p for p in proctors_j2 if p not in bound]
                     random.shuffle(rem)
                     r_idx = 0
                     for idx in range(len(class_names_raw)):
-                        if assigned_matrix[idx, j2] is None:
-                            assigned_matrix[idx, j2] = rem[r_idx]; r_idx += 1
+                        if assigned_matrix[idx, j2] is None and r_idx < len(rem):
+                            assigned_matrix[idx, j2] = rem[r_idx]
+                            r_idx += 1
 
                     for offset in [2, 3, 4]:
                         curr_j = day_start + offset
                         proctors = [t for t in teachers if schedule_dict[t][curr_j] in ["△", "※"]]
                         random.shuffle(proctors)
-                        for idx, p in enumerate(proctors): assigned_matrix[idx, curr_j] = p
+                        for idx, p in enumerate(proctors): 
+                            if idx < len(class_names_raw):
+                                assigned_matrix[idx, curr_j] = p
 
                 for r in range(len(class_names_raw)):
                     for c in range(10): df_assign.iloc[r, c+1] = assigned_matrix[r, c]
 
-            # --- 公布版套印 (地毯式全域雷達修復版) ---
+            # --- 公布版套印 ---
             pub_bytes = None
             if file_pub:
                 with st.spinner("🖨️ 正在將資料無縫套印至公布版(雙欄強制掃描)..."):
                     wb = openpyxl.load_workbook(file_pub)
                     ws = wb.active
-                    
-                    h_row = -1
-                    t_cols = []
-                    
-                    # 【核心修正】：不依賴 ws.max_column，強行地毯式掃描前15行、前60欄，絕對抓出左右兩個「教師」欄位
+                    h_row = -1; t_cols = []
                     for r in range(1, 16):
                         for c in range(1, 61):
                             val = ws.cell(row=r, column=c).value
                             if val and "教師" in str(val):
-                                h_row = r
-                                t_cols.append(c)
-                        if len(t_cols) > 0:
-                            break
-                    
+                                h_row = r; t_cols.append(c)
+                        if len(t_cols) > 0: break
                     if h_row != -1:
                         for c in t_cols:
                             if h_row - 1 >= 1:
@@ -259,7 +263,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                             subj_raw = str(row.iloc[0]).strip()
                             if not subj_raw: continue
                             subj_norm = normalize_subject(subj_raw)
-                            
                             for c_idx in range(1, len(df_c.columns)):
                                 cls_raw = str(df_c.columns[c_idx]).strip()
                                 teacher = str(row.iloc[c_idx]).strip()
@@ -269,7 +272,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     
                     wb_label = openpyxl.load_workbook(file_label)
                     ws_label = wb_label.active
-                    
                     col_map = {}
                     for c in range(1, ws_label.max_column + 1):
                         val = str(ws_label.cell(row=1, column=c).value).strip()
@@ -277,7 +279,8 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     
                     unique_dates = set()
                     for r in range(2, ws_label.max_row + 1):
-                        d_val = get_val(r, '日期') if '日期' in col_map else ""
+                        d_val = ws_label.cell(row=r, column=col_map['日期']).value if '日期' in col_map else ""
+                        d_val = str(d_val).strip() if d_val is not None else ""
                         if d_val: unique_dates.add(d_val)
                     sorted_dates = sorted(list(unique_dates))
 
@@ -285,18 +288,14 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         if '班級' not in col_map: continue
                         cls_raw = ws_label.cell(row=r, column=col_map['班級']).value
                         cls_raw = str(cls_raw).strip() if cls_raw is not None else ""
-                        
                         subj_raw = ws_label.cell(row=r, column=col_map['科目']).value if '科目' in col_map else ""
                         subj_raw = str(subj_raw).strip() if subj_raw is not None else ""
-                        
                         date_val = ws_label.cell(row=r, column=col_map['日期']).value if '日期' in col_map else ""
                         date_val = str(date_val).strip() if date_val is not None else ""
-                        
                         seq_val = ws_label.cell(row=r, column=col_map['序號']).value if '序號' in col_map else ""
                         seq_val = str(seq_val).strip() if seq_val is not None else ""
                         
                         if not cls_raw: continue
-                        
                         cls = normalize_cls(cls_raw)
                         subj = normalize_subject(subj_raw)
                         
@@ -307,8 +306,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                                     if c == cls and (subj in s or s in subj):
                                         teacher = t
                                         break
-                            if teacher:
-                                ws_label.cell(row=r, column=col_map['任課教師']).value = teacher
+                            if teacher: ws_label.cell(row=r, column=col_map['任課教師']).value = teacher
                         
                         try: p_val = int(float(seq_val))
                         except: p_val = -1
