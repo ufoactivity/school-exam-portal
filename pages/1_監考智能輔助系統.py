@@ -12,8 +12,8 @@ from datetime import datetime
 # 1. 網頁頁面配置
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
-st.title("🏫 試務組-段考監考全自動化系統 (格式大滿貫完全體)")
-st.info("💡 重大更新：監考一覽表已全面升級 openpyxl 引擎，100% 完美保留原始格線與字體格式！同時修復標籤欄位名稱干擾問題。")
+st.title("🏫 試務組-段考監考全自動化系統 (防當機穩健版)")
+st.info("💡 重大更新：已修復標籤列印時「高三班級不在一覽表內」所造成的 KeyError 閃退問題！")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -168,7 +168,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
 
             # --- 監考一覽表分配邏輯 ---
             with st.spinner("🎯 執行班級自動分配..."):
-                # 先用 pandas 計算好純純的分配結果
                 df_assign_calc = pd.read_excel(file_assign, header=None).fillna("")
                 df_assign_calc = df_assign_calc.iloc[2:].copy()
                 df_assign_calc = df_assign_calc[df_assign_calc.iloc[:, 0].astype(str).str.strip() != ""]
@@ -209,17 +208,14 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         for idx, p in enumerate(proctors): 
                             if idx < len(class_names_raw): assigned_matrix[idx, curr_j] = p
 
-                # 建立班級對應監考名單的方便查找字典
-                class_proctor_schedule = {} # key: normalize_cls(班級), value: [10節課老師名字]
+                class_proctor_schedule = {} 
                 for r_idx, c_name in enumerate(class_names_raw):
                     norm_c = normalize_cls(c_name)
                     class_proctor_schedule[norm_c] = [assigned_matrix[r_idx, col] for col in range(10)]
 
-                # 【關鍵修改】：改用 openpyxl 讀取一覽表，填寫內容並 100% 保留格線格式
                 wb_assign = openpyxl.load_workbook(file_assign)
                 ws_assign = wb_assign.active
                 
-                # 尋找班級名稱在哪一列、哪一欄
                 start_row = -1
                 class_col_idx = -1
                 for r in range(1, 10):
@@ -230,14 +226,11 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                             class_col_idx = c
                             break
                 
-                # 填入一覽表的日期與老師名字
                 if class_col_idx != -1:
-                    # 填寫日期 (通常在班級名稱那一列的上方第一列)
                     if start_row - 1 >= 1:
                         for offset in range(1, 6): ws_assign.cell(row=start_row-1, column=class_col_idx+offset).value = d1_str
                         for offset in range(6, 11): ws_assign.cell(row=start_row-1, column=class_col_idx+offset).value = d2_str
                     
-                    # 填寫老師名字
                     for r in range(start_row + 1, ws_assign.max_row + 1):
                         c_val = ws_assign.cell(row=r, column=class_col_idx).value
                         if c_val:
@@ -278,7 +271,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     wb.save(out_pub)
                     pub_bytes = out_pub.getvalue()
 
-            # --- 標籤列印自動生成邏輯 (模糊包含匹配防禦版) ---
+            # --- 標籤列印自動生成邏輯 ---
             label_bytes = None
             if file_course and file_label:
                 with st.spinner("🏷️ 正在合成試卷袋標籤..."):
@@ -300,7 +293,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     wb_label = openpyxl.load_workbook(file_label)
                     ws_label = wb_label.active
                     
-                    # 【關鍵修正】：模糊包含尋欄器，解決欄位名稱黏著逗號或檢核字眼的 Bug
                     col_map = {}
                     for c in range(1, ws_label.max_column + 1):
                         val = str(ws_label.cell(row=1, column=c).value).strip()
@@ -351,14 +343,15 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         try: p_val = int(float(seq_val))
                         except: p_val = -1
                         
-                        if norm_c in class_proctor_schedule or cls in class_proctor_schedule:
+                        # 【關鍵修正】：如果這個班級有在監考一覽表裡，才去抓監考老師，避免 KeyError
+                        if cls in class_proctor_schedule:
                             if 1 <= p_val <= 5 and '監考老師' in col_map:
                                 day_offset = -1
                                 if len(sorted_dates) >= 1 and date_val == sorted_dates[0]: day_offset = 0
                                 elif len(sorted_dates) >= 2 and date_val == sorted_dates[1]: day_offset = 5
                                 
                                 if day_offset != -1:
-                                    target_col = day_offset + p_val - 1 # 換算回 0~9 的索引
+                                    target_col = day_offset + p_val - 1
                                     proctor = class_proctor_schedule[cls][target_col]
                                     ws_label.cell(row=r, column=col_map['監考老師']).value = proctor
 
@@ -369,7 +362,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             st.balloons()
             st.session_state['results'] = {
                 'orig': to_excel_bytes(df_out_master, header_df),
-                'assign': assign_bytes, # 已經是完美的 openpyxl 格式
+                'assign': assign_bytes,
                 'pub': pub_bytes,
                 'label': label_bytes
             }
