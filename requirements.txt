@@ -1,4 +1,5 @@
-streamlit 
+streamlit
 pandas
-openpyxl
 pulp
+openpyxl
+xlsxwriter
