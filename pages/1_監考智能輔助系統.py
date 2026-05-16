@@ -12,8 +12,8 @@ from datetime import datetime
 # 1. 網頁頁面配置
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
-st.title("🏫 試務組-段考監考全自動化系統 (防呆極致版)")
-st.info("💡 已完美修復：加入「Excel 幽靈空白行過濾」與「連堂空值防護」，徹底根除 KeyError: None 閃退問題！")
+st.title("🏫 試務組-段考監考全自動化系統 (格式大滿貫完全體)")
+st.info("💡 重大更新：監考一覽表已全面升級 openpyxl 引擎，100% 完美保留原始格線與字體格式！同時修復標籤欄位名稱干擾問題。")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -37,6 +37,7 @@ def to_excel_bytes(df, header_df=None):
         final_out.to_excel(writer, index=False, header=False)
     return output.getvalue()
 
+# 班級與科目名稱自動校正器
 def normalize_cls(c):
     s = str(c).strip().replace('ㄧ', '一').replace(' ', '').replace('　', '')
     s = s.translate(str.maketrans('１２３４５６７８９０', '1234567890'))
@@ -167,16 +168,11 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
 
             # --- 監考一覽表分配邏輯 ---
             with st.spinner("🎯 執行班級自動分配..."):
-                df_assign_raw = pd.read_excel(file_assign, header=None).fillna("")
-                assign_header = df_assign_raw.iloc[0:2].copy().astype(str).replace('nan', '')
-                for c in range(1, 6): assign_header.iloc[0, c] = d1_str
-                for c in range(6, 11): assign_header.iloc[0, c] = d2_str
-
-                df_assign = df_assign_raw.iloc[2:].copy()
-                
-                # 【新增防禦】：過濾掉「幽靈空白行」，只保留真正有打班級名稱的列
-                df_assign = df_assign[df_assign.iloc[:, 0].astype(str).str.strip() != ""]
-                class_names_raw = df_assign.iloc[:, 0].tolist()
+                # 先用 pandas 計算好純純的分配結果
+                df_assign_calc = pd.read_excel(file_assign, header=None).fillna("")
+                df_assign_calc = df_assign_calc.iloc[2:].copy()
+                df_assign_calc = df_assign_calc[df_assign_calc.iloc[:, 0].astype(str).str.strip() != ""]
+                class_names_raw = df_assign_calc.iloc[:, 0].tolist()
                 
                 norm_class_names = [normalize_cls(c) for c in class_names_raw]
                 assign_map = {name: idx for idx, name in enumerate(norm_class_names)}
@@ -186,18 +182,14 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     j1 = day_start
                     proctors_j1 = [t for t in teachers if schedule_dict[t][j1] in ["△", "※"]]
                     random.shuffle(proctors_j1)
-                    
-                    # 防呆：避免老師不夠分發生的索引越界
                     for idx, p in enumerate(proctors_j1): 
-                        if idx < len(class_names_raw):
-                            assigned_matrix[idx, j1] = p
+                        if idx < len(class_names_raw): assigned_matrix[idx, j1] = p
                     
                     j2 = day_start + 1
                     proctors_j2 = [t for t in teachers if schedule_dict[t][j2] in ["△", "※"]]
                     bound = {}
                     for idx in range(len(class_names_raw)):
                         p_prev = assigned_matrix[idx, j1]
-                        # 【新增防禦】：確認 p_prev 不是 None (這班有排到人) 再檢查連堂
                         if p_prev is not None and p_prev in schedule_dict:
                             if schedule_dict[p_prev][j1] == "※" and schedule_dict[p_prev][j2] == "△":
                                 assigned_matrix[idx, j2] = p_prev
@@ -208,32 +200,67 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     r_idx = 0
                     for idx in range(len(class_names_raw)):
                         if assigned_matrix[idx, j2] is None and r_idx < len(rem):
-                            assigned_matrix[idx, j2] = rem[r_idx]
-                            r_idx += 1
+                            assigned_matrix[idx, j2] = rem[r_idx]; r_idx += 1
 
                     for offset in [2, 3, 4]:
                         curr_j = day_start + offset
                         proctors = [t for t in teachers if schedule_dict[t][curr_j] in ["△", "※"]]
                         random.shuffle(proctors)
                         for idx, p in enumerate(proctors): 
-                            if idx < len(class_names_raw):
-                                assigned_matrix[idx, curr_j] = p
+                            if idx < len(class_names_raw): assigned_matrix[idx, curr_j] = p
 
-                for r in range(len(class_names_raw)):
-                    for c in range(10): df_assign.iloc[r, c+1] = assigned_matrix[r, c]
+                # 建立班級對應監考名單的方便查找字典
+                class_proctor_schedule = {} # key: normalize_cls(班級), value: [10節課老師名字]
+                for r_idx, c_name in enumerate(class_names_raw):
+                    norm_c = normalize_cls(c_name)
+                    class_proctor_schedule[norm_c] = [assigned_matrix[r_idx, col] for col in range(10)]
+
+                # 【關鍵修改】：改用 openpyxl 讀取一覽表，填寫內容並 100% 保留格線格式
+                wb_assign = openpyxl.load_workbook(file_assign)
+                ws_assign = wb_assign.active
+                
+                # 尋找班級名稱在哪一列、哪一欄
+                start_row = -1
+                class_col_idx = -1
+                for r in range(1, 10):
+                    for c in range(1, ws_assign.max_column + 1):
+                        v = ws_assign.cell(row=r, column=c).value
+                        if v and ("班級" in str(v) or str(v).strip() in class_names_raw):
+                            start_row = r if start_row == -1 else start_row
+                            class_col_idx = c
+                            break
+                
+                # 填入一覽表的日期與老師名字
+                if class_col_idx != -1:
+                    # 填寫日期 (通常在班級名稱那一列的上方第一列)
+                    if start_row - 1 >= 1:
+                        for offset in range(1, 6): ws_assign.cell(row=start_row-1, column=class_col_idx+offset).value = d1_str
+                        for offset in range(6, 11): ws_assign.cell(row=start_row-1, column=class_col_idx+offset).value = d2_str
+                    
+                    # 填寫老師名字
+                    for r in range(start_row + 1, ws_assign.max_row + 1):
+                        c_val = ws_assign.cell(row=r, column=class_col_idx).value
+                        if c_val:
+                            norm_c = normalize_cls(c_val)
+                            if norm_c in class_proctor_schedule:
+                                for j in range(10):
+                                    ws_assign.cell(row=r, column=class_col_idx + 1 + j).value = class_proctor_schedule[norm_c][j]
+                
+                out_assign = io.BytesIO()
+                wb_assign.save(out_assign)
+                assign_bytes = out_assign.getvalue()
 
             # --- 公布版套印 ---
             pub_bytes = None
             if file_pub:
-                with st.spinner("🖨️ 正在將資料無縫套印至公布版(雙欄強制掃描)..."):
+                with st.spinner("🖨️ 正在將資料無縫套印至公布版..."):
                     wb = openpyxl.load_workbook(file_pub)
                     ws = wb.active
                     h_row = -1; t_cols = []
                     for r in range(1, 16):
                         for c in range(1, 61):
                             val = ws.cell(row=r, column=c).value
-                            if val and "教師" in str(val):
-                                h_row = r; t_cols.append(c)
+                            if val and "教師" in str(val): h_row = r; t_cols.append(c)
                         if len(t_cols) > 0: break
                     if h_row != -1:
                         for c in t_cols:
@@ -251,10 +278,10 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     wb.save(out_pub)
                     pub_bytes = out_pub.getvalue()
 
-            # --- 標籤列印自動生成邏輯 ---
+            # --- 標籤列印自動生成邏輯 (模糊包含匹配防禦版) ---
             label_bytes = None
             if file_course and file_label:
-                with st.spinner("🏷️ 正在啟動模糊比對合成試卷袋標籤..."):
+                with st.spinner("🏷️ 正在合成試卷袋標籤..."):
                     course_dict = {}
                     xls_course = pd.ExcelFile(file_course)
                     for sheet in xls_course.sheet_names:
@@ -272,33 +299,45 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     
                     wb_label = openpyxl.load_workbook(file_label)
                     ws_label = wb_label.active
+                    
+                    # 【關鍵修正】：模糊包含尋欄器，解決欄位名稱黏著逗號或檢核字眼的 Bug
                     col_map = {}
                     for c in range(1, ws_label.max_column + 1):
                         val = str(ws_label.cell(row=1, column=c).value).strip()
-                        col_map[val] = c
+                        if "班級" in val: col_map['班級'] = c
+                        elif "科目" in val: col_map['科目'] = c
+                        elif "日期" in val: col_map['日期'] = c
+                        elif "序號" in val: col_map['序號'] = c
+                        elif "任課" in val: col_map['任課教師'] = c
+                        elif "監考" in val: col_map['監考老師'] = c
                     
                     unique_dates = set()
-                    for r in range(2, ws_label.max_row + 1):
-                        d_val = ws_label.cell(row=r, column=col_map['日期']).value if '日期' in col_map else ""
-                        d_val = str(d_val).strip() if d_val is not None else ""
-                        if d_val: unique_dates.add(d_val)
+                    if '日期' in col_map:
+                        for r in range(2, ws_label.max_row + 1):
+                            d_val = ws_label.cell(row=r, column=col_map['日期']).value
+                            d_val = str(d_val).strip() if d_val is not None else ""
+                            if d_val: unique_dates.add(d_val)
                     sorted_dates = sorted(list(unique_dates))
 
                     for r in range(2, ws_label.max_row + 1):
                         if '班級' not in col_map: continue
                         cls_raw = ws_label.cell(row=r, column=col_map['班級']).value
                         cls_raw = str(cls_raw).strip() if cls_raw is not None else ""
+                        if not cls_raw: continue
+                        
                         subj_raw = ws_label.cell(row=r, column=col_map['科目']).value if '科目' in col_map else ""
                         subj_raw = str(subj_raw).strip() if subj_raw is not None else ""
+                        
                         date_val = ws_label.cell(row=r, column=col_map['日期']).value if '日期' in col_map else ""
                         date_val = str(date_val).strip() if date_val is not None else ""
+                        
                         seq_val = ws_label.cell(row=r, column=col_map['序號']).value if '序號' in col_map else ""
                         seq_val = str(seq_val).strip() if seq_val is not None else ""
                         
-                        if not cls_raw: continue
                         cls = normalize_cls(cls_raw)
                         subj = normalize_subject(subj_raw)
                         
+                        # 填寫任課教師
                         if '任課教師' in col_map:
                             teacher = course_dict.get((cls, subj), "")
                             if not teacher:
@@ -308,18 +347,20 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                                         break
                             if teacher: ws_label.cell(row=r, column=col_map['任課教師']).value = teacher
                         
+                        # 填寫監考老師
                         try: p_val = int(float(seq_val))
                         except: p_val = -1
                         
-                        if cls in assign_map and 1 <= p_val <= 5 and '監考老師' in col_map:
-                            day_offset = -1
-                            if len(sorted_dates) >= 1 and date_val == sorted_dates[0]: day_offset = 0
-                            elif len(sorted_dates) >= 2 and date_val == sorted_dates[1]: day_offset = 5
-                            
-                            if day_offset != -1:
-                                target_col = day_offset + p_val
-                                proctor = df_assign.iloc[assign_map[cls], target_col]
-                                ws_label.cell(row=r, column=col_map['監考老師']).value = proctor
+                        if norm_c in class_proctor_schedule or cls in class_proctor_schedule:
+                            if 1 <= p_val <= 5 and '監考老師' in col_map:
+                                day_offset = -1
+                                if len(sorted_dates) >= 1 and date_val == sorted_dates[0]: day_offset = 0
+                                elif len(sorted_dates) >= 2 and date_val == sorted_dates[1]: day_offset = 5
+                                
+                                if day_offset != -1:
+                                    target_col = day_offset + p_val - 1 # 換算回 0~9 的索引
+                                    proctor = class_proctor_schedule[cls][target_col]
+                                    ws_label.cell(row=r, column=col_map['監考老師']).value = proctor
 
                     out_label = io.BytesIO()
                     wb_label.save(out_label)
@@ -328,7 +369,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             st.balloons()
             st.session_state['results'] = {
                 'orig': to_excel_bytes(df_out_master, header_df),
-                'assign': to_excel_bytes(df_assign, assign_header),
+                'assign': assign_bytes, # 已經是完美的 openpyxl 格式
                 'pub': pub_bytes,
                 'label': label_bytes
             }
@@ -345,8 +386,8 @@ if st.session_state['results']:
     res = st.session_state['results']
     c1, c2, c3, c4 = st.columns(4)
     with c1: st.download_button("📥 1. 監考總表", res['orig'], "監考總表.xlsx", "application/vnd.ms-excel", use_container_width=True)
-    with c2: st.download_button("📥 2. 監考一覽表", res['assign'], "監考一覽表_分配完成.xlsx", "application/vnd.ms-excel", use_container_width=True, type="primary")
+    with c2: st.download_button("📥 2. 監考一覽表(完美格式)", res['assign'], "監考一覽表_分配完成.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
     with c3: 
         if res['pub']: st.download_button("📥 3. 公布版套印總表", res['pub'], "公布版總表.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     with c4:
-        if res.get('label'): st.download_button("📥 4. 標籤列印(完整)", res['label'], "標籤列印_完整版.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+        if res.get('label'): st.download_button("📥 4. 標籤列印(完整填滿)", res['label'], "標籤列印_完整版.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
