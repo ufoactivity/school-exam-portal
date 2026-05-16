@@ -10,8 +10,8 @@ import traceback
 # ==========================================
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
-st.title("🏫 試務組-全校補考自動化神器 (Web 終極大滿貫版)")
-st.info("💡 修正說明：修復清除按鈕！現在按下清除，連同上傳的檔案也會一併完美清空！")
+st.title("🏫 試務組-全校補考自動化神器")
+st.info("💡 修正說明：修復清除按鈕！現在按下清除，連同上傳的檔案也會一併完美清空！115.05.12更新")
 
 # --- 初始化快取記憶體與清空鑰匙 ---
 if 'results' not in st.session_state:
