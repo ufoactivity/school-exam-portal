@@ -12,8 +12,8 @@ from datetime import datetime
 # 1. 網頁頁面配置
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
-st.title("🏫 試務組-段考監考全自動化系統 (防當機穩健版)")
-st.info("💡 重大更新：已修復標籤列印時「高三班級不在一覽表內」所造成的 KeyError 閃退問題！")
+st.title("🏫 試務組-段考監考全自動化系統 (防禦型精準對位版)")
+st.info("💡 終極修復：已加裝「防禦型雷達掃描」，徹底解決一覽表錯位、蓋掉節次數字，以及標籤列印空白的問題！")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -100,7 +100,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
         st.error("🚨 請至少確認【1, 2, 3, 5】號基礎檔案皆已上傳！")
     else:
         try:
-            # --- 讀取基礎資料 ---
             df_quota = pd.read_excel(file_quota, sheet_name=selected_sheet).fillna("")
             quota_dict = dict(zip(df_quota.iloc[:, 0].astype(str).str.strip(), pd.to_numeric(df_quota.iloc[:, 1], errors='coerce').fillna(0)))
             
@@ -213,25 +212,30 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     norm_c = normalize_cls(c_name)
                     class_proctor_schedule[norm_c] = [assigned_matrix[r_idx, col] for col in range(10)]
 
+                # 【核心修復一：一覽表不依賴標題，直接鎖定第一班】
                 wb_assign = openpyxl.load_workbook(file_assign)
                 ws_assign = wb_assign.active
                 
-                start_row = -1
-                class_col_idx = -1
-                for r in range(1, 10):
-                    for c in range(1, ws_assign.max_column + 1):
+                first_class_row = -1
+                class_col_idx = 1
+                for r in range(1, 15):
+                    for c in range(1, 5):
                         v = ws_assign.cell(row=r, column=c).value
-                        if v and ("班級" in str(v) or str(v).strip() in class_names_raw):
-                            start_row = r if start_row == -1 else start_row
+                        if v and str(v).strip() in class_names_raw:
+                            first_class_row = r
                             class_col_idx = c
                             break
+                    if first_class_row != -1: break
                 
-                if class_col_idx != -1:
-                    if start_row - 1 >= 1:
-                        for offset in range(1, 6): ws_assign.cell(row=start_row-1, column=class_col_idx+offset).value = d1_str
-                        for offset in range(6, 11): ws_assign.cell(row=start_row-1, column=class_col_idx+offset).value = d2_str
+                if first_class_row != -1:
+                    # 日期列通常在班級名稱的「上方第二列」，這樣就不會蓋掉節次數字 (1,2,3,4,5)
+                    date_row = first_class_row - 2
+                    if date_row >= 1:
+                        for offset in range(1, 6): ws_assign.cell(row=date_row, column=class_col_idx+offset).value = d1_str
+                        for offset in range(6, 11): ws_assign.cell(row=date_row, column=class_col_idx+offset).value = d2_str
                     
-                    for r in range(start_row + 1, ws_assign.max_row + 1):
+                    # 從第一班開始，一行一行往下填寫
+                    for r in range(first_class_row, ws_assign.max_row + 1):
                         c_val = ws_assign.cell(row=r, column=class_col_idx).value
                         if c_val:
                             norm_c = normalize_cls(c_val)
@@ -293,35 +297,44 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     wb_label = openpyxl.load_workbook(file_label)
                     ws_label = wb_label.active
                     
+                    # 【核心修復二：首位攔截器，防止被最後一欄的多餘班級騙走】
                     col_map = {}
-                    for c in range(1, ws_label.max_column + 1):
-                        val = str(ws_label.cell(row=1, column=c).value).strip()
-                        if "班級" in val: col_map['班級'] = c
-                        elif "科目" in val: col_map['科目'] = c
-                        elif "日期" in val: col_map['日期'] = c
-                        elif "序號" in val: col_map['序號'] = c
-                        elif "任課" in val: col_map['任課教師'] = c
-                        elif "監考" in val: col_map['監考老師'] = c
+                    header_row = 1
+                    for r in range(1, 6):
+                        for c in range(1, ws_label.max_column + 1):
+                            val = str(ws_label.cell(row=r, column=c).value).strip()
+                            if "班級" in val and '班級' not in col_map: col_map['班級'] = c
+                            elif "科目" in val and '科目' not in col_map: col_map['科目'] = c
+                            elif "日期" in val and '日期' not in col_map: col_map['日期'] = c
+                            elif "序號" in val and '序號' not in col_map: col_map['序號'] = c
+                            elif "任課" in val and '任課教師' not in col_map: col_map['任課教師'] = c
+                            elif "監考" in val and '監考老師' not in col_map: col_map['監考老師'] = c
+                        if '班級' in col_map and '監考老師' in col_map:
+                            header_row = r
+                            break
                     
+                    # 日期時間尾巴淨化器
                     unique_dates = set()
                     if '日期' in col_map:
-                        for r in range(2, ws_label.max_row + 1):
+                        for r in range(header_row + 1, ws_label.max_row + 1):
                             d_val = ws_label.cell(row=r, column=col_map['日期']).value
-                            d_val = str(d_val).strip() if d_val is not None else ""
-                            if d_val: unique_dates.add(d_val)
+                            if d_val is not None:
+                                d_str = str(d_val).split()[0].strip() # 砍掉時間尾巴
+                                if d_str: unique_dates.add(d_str)
                     sorted_dates = sorted(list(unique_dates))
 
-                    for r in range(2, ws_label.max_row + 1):
+                    for r in range(header_row + 1, ws_label.max_row + 1):
                         if '班級' not in col_map: continue
                         cls_raw = ws_label.cell(row=r, column=col_map['班級']).value
-                        cls_raw = str(cls_raw).strip() if cls_raw is not None else ""
+                        if cls_raw is None: continue
+                        cls_raw = str(cls_raw).strip()
                         if not cls_raw: continue
                         
                         subj_raw = ws_label.cell(row=r, column=col_map['科目']).value if '科目' in col_map else ""
                         subj_raw = str(subj_raw).strip() if subj_raw is not None else ""
                         
                         date_val = ws_label.cell(row=r, column=col_map['日期']).value if '日期' in col_map else ""
-                        date_val = str(date_val).strip() if date_val is not None else ""
+                        date_str = str(date_val).split()[0].strip() if date_val is not None else ""
                         
                         seq_val = ws_label.cell(row=r, column=col_map['序號']).value if '序號' in col_map else ""
                         seq_val = str(seq_val).strip() if seq_val is not None else ""
@@ -329,7 +342,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         cls = normalize_cls(cls_raw)
                         subj = normalize_subject(subj_raw)
                         
-                        # 填寫任課教師
                         if '任課教師' in col_map:
                             teacher = course_dict.get((cls, subj), "")
                             if not teacher:
@@ -339,16 +351,14 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                                         break
                             if teacher: ws_label.cell(row=r, column=col_map['任課教師']).value = teacher
                         
-                        # 填寫監考老師
                         try: p_val = int(float(seq_val))
                         except: p_val = -1
                         
-                        # 【關鍵修正】：如果這個班級有在監考一覽表裡，才去抓監考老師，避免 KeyError
                         if cls in class_proctor_schedule:
                             if 1 <= p_val <= 5 and '監考老師' in col_map:
                                 day_offset = -1
-                                if len(sorted_dates) >= 1 and date_val == sorted_dates[0]: day_offset = 0
-                                elif len(sorted_dates) >= 2 and date_val == sorted_dates[1]: day_offset = 5
+                                if len(sorted_dates) >= 1 and date_str == sorted_dates[0]: day_offset = 0
+                                elif len(sorted_dates) >= 2 and date_str == sorted_dates[1]: day_offset = 5
                                 
                                 if day_offset != -1:
                                     target_col = day_offset + p_val - 1
@@ -379,7 +389,7 @@ if st.session_state['results']:
     res = st.session_state['results']
     c1, c2, c3, c4 = st.columns(4)
     with c1: st.download_button("📥 1. 監考總表", res['orig'], "監考總表.xlsx", "application/vnd.ms-excel", use_container_width=True)
-    with c2: st.download_button("📥 2. 監考一覽表(完美格式)", res['assign'], "監考一覽表_分配完成.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+    with c2: st.download_button("📥 2. 監考一覽表(完美對齊)", res['assign'], "監考一覽表_分配完成.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
     with c3: 
         if res['pub']: st.download_button("📥 3. 公布版套印總表", res['pub'], "公布版總表.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     with c4:
