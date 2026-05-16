@@ -83,7 +83,7 @@ row1_col1, row1_col2 = st.columns(2, gap="large")
 
 with row1_col1:
     with st.container(border=True):
-        st.markdown("### 📅 段考監考智慧輔助系統")
+        st.markdown("### 📅 監考作業智能輔助系統")
         st.markdown("""
         <p class="module-desc">
         整合 AI 線性規劃算法，全自動最佳化全校排班與座位分發。
@@ -100,7 +100,7 @@ with row1_col1:
 
 with row1_col2:
     with st.container(border=True):
-        st.markdown("### 📝 補考作業智慧輔助系統")
+        st.markdown("### 📝 補考作業智能輔助系統")
         st.markdown("""
         <p class="module-desc">
         一鍵清洗多科補考學生複雜數據，智慧重組考場與座位配置。
