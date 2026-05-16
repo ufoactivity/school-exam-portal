@@ -55,14 +55,25 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 歡迎與標頭區塊
+# 2. 左側邊欄 (Sidebar) 手動新增預告區塊
+# ==========================================
+with st.sidebar:
+    st.divider()
+    st.markdown("### 🚀 未來擴充模組")
+    # 使用 disabled=True 讓按鈕呈現反灰的「建構中」狀態
+    st.button("🔒 👨‍🏫 教師甄選系統 (建構中)", disabled=True, use_container_width=True)
+    st.button("🔒 📊 模擬考調查系統 (建構中)", disabled=True, use_container_width=True)
+    st.caption("🛠️ 工程師努力開發中，敬請期待...")
+
+# ==========================================
+# 3. 歡迎與標頭區塊
 # ==========================================
 st.markdown('<h1 class="main-title">⚡ 試務組 AI 智能輔助平台</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">Intelligent Examination Administration Ecosystem</p>', unsafe_allow_html=True)
 st.divider()
 
 # ==========================================
-# 3. 核心工具矩陣入口 (2x2 模組排列)
+# 4. 核心工具矩陣入口 (2x2 模組排列)
 # ==========================================
 st.markdown("### ⚙️ 核心自動化模組 / Production Modules")
 st.write("")
@@ -124,7 +135,6 @@ with row2_col1:
         - 🖨️ **甄選報表輸出**：自動匯出給評審委員與考生的專屬簽到表單。
         """)
         st.write("")
-        # 未來開發鎖定按鈕 (防止尚未建立 py 檔案時當機)
         st.button("🔒 模組開發中 (Coming Soon)", key="btn_teacher", disabled=True, use_container_width=True)
 
 with row2_col2:
@@ -142,12 +152,10 @@ with row2_col2:
         - 📈 **圖表化清單**：自動匯出清晰的總務處繳費單與書商訂卷清單。
         """)
         st.write("")
-        # 未來開發鎖定按鈕
         st.button("🔒 模組開發中 (Coming Soon)", key="btn_mock", disabled=True, use_container_width=True)
 
-
 # ==========================================
-# 4. 底部沉穩頁尾
+# 5. 底部沉穩頁尾
 # ==========================================
 st.divider()
 st.markdown(
