@@ -6,14 +6,15 @@ import pulp
 import traceback
 import random
 import openpyxl
+import re
 from datetime import datetime
 
 # ==========================================
 # 1. 網頁頁面配置
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
-st.title("🏫 試務組-段考監考全自動化系統 (堂數完美補齊版)")
-st.info("💡 終極修復：已加裝「表頭精準雷達」，徹底解決節次辨識錯誤！並新增「監考配額自動填入」功能，總表將完美顯示應監堂數。")
+st.title("🏫 試務組-段考監考全自動化系統 (自然語言辨識版)")
+st.info("💡 終極升級：加裝「自然語言萃取引擎」，現可完美讀懂「第七節」、「第一節」等國字標題！並完美保留手打代號與填入配額堂數。")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -52,6 +53,20 @@ def get_ai_date_str(j, day_starts, ai_date_strs):
     for idx, ds in enumerate(day_starts):
         if j >= ds: day_idx = idx
     return ai_date_strs[min(day_idx, len(ai_date_strs)-1)]
+
+# 【全新升級】：自然語言數字萃取引擎，看得懂「第七節」
+def extract_period_num(s):
+    if pd.isna(s): return -1
+    s = str(s).strip()
+    cn_to_num = {'一':'1', '二':'2', '三':'3', '四':'4', '五':'5', 
+                 '六':'6', '七':'7', '八':'8', '九':'9', '十':'10', 
+                 '１':'1', '２':'2', '３':'3', '４':'4', '５':'5', '６':'6', '７':'7'}
+    for k, v in cn_to_num.items():
+        s = s.replace(k, v)
+    nums = re.findall(r'\d+', s)
+    if nums:
+        return int(nums[0])
+    return -1
 
 # ==========================================
 # 3. 介面佈局
@@ -122,7 +137,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             
             df_list_raw = pd.read_excel(file_list, header=None).fillna("")
             
-            # 【核心修復一】：動態定位「教師標題行」，絕對避開「日期行」的干擾
+            # 定位「教師標題行」
             header_row_idx = -1
             teacher_col_idx = -1
             for r in range(min(5, df_list_raw.shape[0])):
@@ -131,35 +146,46 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     if any(k in val for k in ["教師", "姓名", "老師"]):
                         header_row_idx = r; teacher_col_idx = c; break
                 if header_row_idx != -1: break
+            if header_row_idx == -1: header_row_idx = 1; teacher_col_idx = 1
             
-            if header_row_idx == -1:
-                header_row_idx = 1; teacher_col_idx = 1 # 防呆預設
-                
-            # 【核心修復二】：尋找節次欄位與「監考堂數(配額)」欄位
-            period_cols = []
-            quota_col_in_list = -1
-            
+            # 尋找「監考堂數(配額)」欄位
+            existing_quota_col = -1
             for c in range(teacher_col_idx + 1, df_list_raw.shape[1]):
                 val = str(df_list_raw.iloc[header_row_idx, c]).strip()
-                if any(k in val for k in ["教師", "姓名", "標號", "老師"]): 
-                    break # 防止讀到公布版右半邊
-                try:
-                    int(float(val))
-                    period_cols.append(c)
-                except:
-                    if quota_col_in_list == -1 and any(k in val for k in ["堂", "次", "監考", "數", "應監", "配額"]):
-                        quota_col_in_list = c
-            
-            # 如果沒有寫堂數標題，但欄位正好卡在教師跟節次中間，自動認定為配額欄
-            if quota_col_in_list == -1 and period_cols and period_cols[0] > teacher_col_idx + 1:
+                if any(k in val for k in ["堂", "次", "監考", "數", "應監", "配額"]):
+                    existing_quota_col = c; break
+                if extract_period_num(val) != -1: break # 遇到節次就停
+                
+            if existing_quota_col != -1:
+                quota_col_in_list = existing_quota_col
+            else:
+                df_list_raw.insert(teacher_col_idx + 1, '應監', "")
+                df_list_raw.iloc[header_row_idx, teacher_col_idx + 1] = "應監"
                 quota_col_in_list = teacher_col_idx + 1
 
-            total_periods = len(period_cols)
-            if total_periods < 1:
-                st.error("🚨 無法從檔案中辨識出節次數量，請檢查監考名單格式。")
+            # 【完美修復】：多層雷達尋找真正的「節次行」，並利用國字轉換引擎
+            period_cols = []
+            best_row = -1
+            max_nums = 0
+            for r in range(min(6, df_list_raw.shape[0])):
+                cols = []
+                for c in range(quota_col_in_list + 1, df_list_raw.shape[1]):
+                    val = str(df_list_raw.iloc[r, c]).strip()
+                    if any(k in val for k in ["教師", "姓名", "標號", "老師"]): break 
+                    p = extract_period_num(val)
+                    if 1 <= p <= 15: cols.append(c)
+                if len(cols) > max_nums:
+                    max_nums = len(cols)
+                    best_row = r
+                    period_cols = cols
+            
+            if max_nums < 1:
+                st.error("🚨 無法從檔案中辨識出節次數量，請確認有打上 第七節、第一節 或 1,2,3... 等文字。")
                 st.stop()
+            
+            period_row_idx = best_row
+            total_periods = len(period_cols)
                 
-            # 切分欄位
             if has_manual:
                 manual_col = period_cols[0]
                 ai_period_cols = period_cols[1:]
@@ -168,7 +194,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 ai_period_cols = period_cols
                 
             ai_periods = len(ai_period_cols)
-            ai_period_nums = [int(float(str(df_list_raw.iloc[header_row_idx, c]).strip())) for c in ai_period_cols]
+            ai_period_nums = [extract_period_num(str(df_list_raw.iloc[period_row_idx, c])) for c in ai_period_cols]
             
             # 動態偵測換日線
             day_starts = [0]
@@ -189,9 +215,8 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
 
             ai_date_strs = [d1_date.strftime('%m月%d日'), d2_date.strftime('%m月%d日')]
             
-            # 切割表頭與資料列
-            header_df = df_list_raw.iloc[0:header_row_idx+1].copy().astype(str).replace('nan', '')
-            date_row_idx = header_row_idx - 1 if header_row_idx > 0 else 0
+            header_df = df_list_raw.iloc[0:period_row_idx+1].copy().astype(str).replace('nan', '')
+            date_row_idx = period_row_idx - 1 if period_row_idx > 0 else 0
             
             if has_manual and d0_date:
                 header_df.iloc[date_row_idx, manual_col] = d0_date.strftime('%m月%d日')
@@ -199,7 +224,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 d_str = get_ai_date_str(j, day_starts, ai_date_strs)
                 header_df.iloc[date_row_idx, ai_period_cols[j]] = d_str
             
-            df_list = df_list_raw.iloc[header_row_idx+1:].copy()
+            df_list = df_list_raw.iloc[period_row_idx+1:].copy()
             teachers = df_list.iloc[:, teacher_col_idx].astype(str).str.strip().tolist()
 
             # --- PuLP 運算 ---
@@ -242,10 +267,9 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 df_out_master = df_list.copy()
                 for i, t in enumerate(teachers):
                     res = []
-                    # 【核心需求：自動填寫應監配額堂數】
-                    if quota_col_in_list != -1:
-                        df_out_master.iloc[i, quota_col_in_list] = int(quota_dict.get(t, 0))
-                        
+                    # 把配額完美補進總表
+                    df_out_master.iloc[i, quota_col_in_list] = int(quota_dict.get(t, 0))
+                    
                     for j in range(ai_periods):
                         val = str(df_list.iloc[i, ai_period_cols[j]]).strip()
                         if val == "" or val == "nan":
@@ -322,10 +346,8 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         t_cols = []
                         for c in range(class_col_idx + 1, ws_assign.max_column + 1):
                             val = str(ws_assign.cell(row=r, column=c).value).strip()
-                            try:
-                                int(float(val))
-                                t_cols.append(c)
-                            except: pass
+                            p = extract_period_num(val)
+                            if p != -1: t_cols.append(c)
                         if len(t_cols) >= total_periods:
                             temp_cols = t_cols[:total_periods]; break
                     
@@ -384,10 +406,8 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                             for scan_c in range(c + 1, c + 20):
                                 val = str(ws.cell(row=h_row, column=scan_c).value).strip()
                                 if any(k in val for k in ["教師", "姓名", "標號", "老師"]): break
-                                try:
-                                    int(float(val))
-                                    t_col_target.append(scan_c)
-                                except: pass
+                                p = extract_period_num(val)
+                                if p != -1: t_col_target.append(scan_c)
                             
                             if len(t_col_target) >= total_periods:
                                 if has_manual:
@@ -481,8 +501,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                                         teacher = t; break
                             if teacher: ws_label.cell(row=r, column=col_map['任課教師']).value = teacher
                         
-                        try: p_val = int(float(str(seq_val).strip()))
-                        except: p_val = -1
+                        p_val = extract_period_num(seq_val)
                         
                         if '監考老師' in col_map:
                             if has_manual and d0_date and any(d in date_str for d in [d0_ymd, d0_short, d0_slash]):
