@@ -96,7 +96,7 @@ with row1_col1:
         - 🏷️ **標籤全聯動**：交叉比對配課表，一鍵合成試卷袋列印貼紙。
         """)
         st.write("")
-        st.page_link("pages/1_監考智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
+        st.page_link("pages/1_監考作業智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
 
 with row1_col2:
     with st.container(border=True):
@@ -113,7 +113,7 @@ with row1_col2:
         - 🖨️ **考務報表輸出**：自動生成個人補考通知單與考場對照表。
         """)
         st.write("")
-        st.page_link("pages/2_補考智能輔助系統.py", label="啟動補考處理作業 →", icon="⚡")
+        st.page_link("pages/2_補考作業智能輔助系統.py", label="啟動補考處理作業 →", icon="⚡")
 
 st.write("") # 增加排與排之間的間距
 
@@ -161,7 +161,7 @@ st.divider()
 st.markdown(
     """
     <div style="text-align: center; color: #bbb; font-size: 0.8rem; letter-spacing: 0.05rem;">
-        © 2026 國立華南高商 教務處試務組 · Data-Driven Examination Administration
+        © 2026 國立華南高商 教務處試務組 劉耀中 · Data-Driven Examination Administration
     </div>
     """, 
     unsafe_allow_html=True
