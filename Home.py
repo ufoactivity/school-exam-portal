@@ -4,7 +4,7 @@ import streamlit as st
 # 1. 網頁頁面配置 (極簡現代風科技感)
 # ==========================================
 st.set_page_config(
-    page_title="教務處試務組-智慧戰情門戶",
+    page_title="教務處試務組-AI智能輔助平台",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
