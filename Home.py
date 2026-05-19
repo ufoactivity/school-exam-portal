@@ -60,8 +60,7 @@ st.markdown("""
 with st.sidebar:
     st.divider()
     st.markdown("### 🚀 未來擴充模組")
-    # 使用 disabled=True 讓按鈕呈現反灰的「建構中」狀態
-    st.button("🔒 👨‍🏫 教師甄選系統 (建構中)", disabled=True, use_container_width=True)
+    # 教師甄選系統已完成並上線，將其從「未來擴充模組」中移除
     st.button("🔒 📊 模擬考調查系統 (建構中)", disabled=True, use_container_width=True)
     st.caption("🛠️ 工程師努力開發中，敬請期待...")
 
@@ -117,7 +116,7 @@ with row1_col2:
 
 st.write("") # 增加排與排之間的間距
 
-# --- 第二排：教師甄選與模擬考 (未來擴充模組) ---
+# --- 第二排：教師甄選與模擬考 ---
 row2_col1, row2_col2 = st.columns(2, gap="large")
 
 with row2_col1:
@@ -125,17 +124,18 @@ with row2_col1:
         st.markdown("### 👨‍🏫 教師甄選智能輔助系統")
         st.markdown("""
         <p class="module-desc">
-        自動化排定口試與面試時程，快速生成公平公正的甄選順序名單。
+        自動化排定口試與面試時程，場地、排版、蓋章一鍵直出零失誤。
         </p>
         """, unsafe_allow_html=True)
         
         st.markdown("""
-        - 🎙️ **時程自動排定**：無縫接軌口試、試教與面試的時間點配置。
-        - 📋 **順序演算法**：智慧產出公平防弊的應考與報到順序。
-        - 🖨️ **甄選報表輸出**：自動匯出給評審委員與考生的專屬簽到表單。
+        - 🎙️ **時程自動排定**：無縫接軌口試與試教，智能避開衝堂與重疊。
+        - 📋 **場地動態對位**：自動分配各科休息室與試場，資料無縫串接。
+        - 🖨️ **一鍵直出報表**：自動生成大字體、紅字免責且已蓋妥官印之 Word 公告單。
         """)
         st.write("")
-        st.button("🔒 模組開發中 (Coming Soon)", key="btn_teacher", disabled=True, use_container_width=True)
+        # 【解鎖模組】：替換成正確的 page_link
+        st.page_link("pages/3_教師甄選智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
 
 with row2_col2:
     with st.container(border=True):
