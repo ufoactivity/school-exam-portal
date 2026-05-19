@@ -16,8 +16,8 @@ except ImportError:
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系統", page_icon="🏫", layout="wide")
-st.title("🏫 教務處-教師甄選智能排程系統 (終極排版與蓋印版)")
-st.info("💡 終極優化：已完美校正頁尾欄寬！確保右側印章有充足空間完整呈現，左側紅字警語單行無縫連接。")
+st.title("🏫 教務處-教師甄選智能排程系統 (排版置中旗艦版)")
+st.info("💡 終極優化：Word 公告單的表格標題與內容已「全面置中對齊」，且已微調欄寬解決「編號」換行問題，排版更加專業美觀！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -171,8 +171,8 @@ with col2:
     st.markdown("""
     本系統現已成為**全自動試務產出中心**：
     
-    1. **排版優化**：Word 報表全面放大至 **標楷體 16pt**，且表格欄寬已重新調配，確保時間不換行。
-    2. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，**右側印章欄寬已放大至 4.5cm**，保證圖章 100% 完整不裁切！
+    1. **排版優化**：表格標題與內容皆已「全面置中」，「編號」欄寬微調加寬防換行。
+    2. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，隱形排版技術讓兩者完美並排。
     3. **雙軌下載**：提供手動 Excel 套印與 Word 一鍵直出雙功能。
     """)
 
@@ -254,7 +254,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 
             df_master = pd.DataFrame(all_schedules)
             
-            # --- 建立完美契合 Word 的合併列印表 (Excel) ---
+            # --- Excel 產出 ---
             df_merge = df_master.copy()
             df_merge = df_merge.rename(columns={'報考科目': '科目', '准考證號': '准考證', '試教(實作)時間': '試教時間'})
             
@@ -274,7 +274,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 prev_subj = curr_subj
             df_merge_final = pd.DataFrame(merge_with_blanks)
             
-            # 產出 Excel
             output_excel = io.BytesIO()
             with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
                 df_master.to_excel(writer, index=False, sheet_name='試務中心總表')
@@ -288,37 +287,33 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             
             st.session_state.excel_data = output_excel.getvalue()
 
-            # --- Word 直出引擎 (自訂欄寬 + 隱形底邊排版 + 單行紅字) ---
+            # --- Word 直出引擎 (置中排版 + 自動蓋章) ---
             if HAS_DOCX:
                 doc = docx.Document()
                 
-                # 【全域設定】：版面邊界與標楷體、16pt
+                # 【全域設定】
                 section = doc.sections[0]
-                section.footer_distance = Cm(1.0) # 距離底部 1 公分
-                section.bottom_margin = Cm(3.0)   # 確保本文不會去壓到頁尾
+                section.footer_distance = Cm(1.0)
+                section.bottom_margin = Cm(3.0)
                 
                 style = doc.styles['Normal']
                 style.font.name = '標楷體'
                 style._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
                 style.font.size = Pt(16)
                 
-                # 【頁尾引擎：隱形排版桌設計】
+                # 【頁尾引擎】
                 footer = section.footer
-                # 清除預設空行以免把頁尾頂上去
                 for p in footer.paragraphs:
                     p._element.getparent().remove(p._element)
                 
-                # 建立一列兩欄的無邊框表格 (總寬度 16cm)
                 footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
                 footer_table.autofit = False
                 
-                # 【關鍵修正】：右側欄寬放大至 4.5 公分，左側縮小至 11.5 公分
                 cell_left = footer_table.rows[0].cells[0]
                 cell_left.width = Cm(11.5)
                 cell_right = footer_table.rows[0].cells[1]
                 cell_right.width = Cm(4.5)
                 
-                # 1. 寫入紅色防呆提醒 (放左格，取消換行)
                 p_footer_text = cell_left.paragraphs[0]
                 p_footer_text.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 run_footer_text = p_footer_text.add_run("※試教及口試時間將依現場實際報到人數及試場情形作調整，請考生於各科指定之休息室等候叫號")
@@ -327,13 +322,11 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 run_footer_text.font.size = Pt(16)
                 run_footer_text.font.color.rgb = RGBColor(255, 0, 0)
                 
-                # 2. 寫入印章 (放右格)
                 if file_stamp:
                     p_stamp = cell_right.paragraphs[0]
                     p_stamp.alignment = WD_ALIGN_PARAGRAPH.RIGHT 
                     run_stamp = p_stamp.add_run()
                     stamp_bytes = io.BytesIO(file_stamp.getvalue())
-                    # 印章維持 4 公分寬，裝在 4.5 公分的格子裡綽綽有餘！
                     run_stamp.add_picture(stamp_bytes, width=Cm(4.0)) 
                 
                 # 內容生成
@@ -359,32 +352,42 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                     doc.add_paragraph(f"試教場地：{v.get('試教', '未設定')}")
                     doc.add_paragraph(f"口試場地：{v.get('口試', '未設定')}")
                     
+                    # 【核心修正】：強制置中與欄寬微調
                     table = doc.add_table(rows=1, cols=5)
                     table.style = 'Table Grid'
                     table.autofit = False 
                     
-                    col_widths = [Cm(3.0), Cm(1.5), Cm(3.8), Cm(3.8), Cm(3.8)]
+                    # 將編號加寬至 2.0cm 確保 16pt 不會換行，其餘平均分配 (總計約 16cm)
+                    col_widths = [Cm(3.5), Cm(2.0), Cm(3.5), Cm(3.5), Cm(3.5)]
                     
                     table.style.font.name = '標楷體'
                     table.style._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
                     table.style.font.size = Pt(16)
                     
+                    # 設定表頭與置中
                     hdr_cells = table.rows[0].cells
                     hdr_headers = ['甄選證號', '編號', '試教準備室', '試教', '口試']
                     for col_idx in range(5):
                         hdr_cells[col_idx].text = hdr_headers[col_idx]
+                        hdr_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # 標題置中
                         hdr_cells[col_idx].width = col_widths[col_idx]
                         table.columns[col_idx].width = col_widths[col_idx]
                     
+                    # 填入考生資料並全部置中
                     for _, cand in df_sub_sched.iterrows():
                         row_cells = table.add_row().cells
-                        row_cells[0].text = str(cand['准考證號'])
-                        row_cells[1].text = str(cand['排序'])
-                        row_cells[2].text = str(cand['準備時間'])
-                        row_cells[3].text = str(cand['試教(實作)時間'])
-                        row_cells[4].text = str(cand['口試時間'])
+                        
+                        row_data = [
+                            str(cand['准考證號']),
+                            str(cand['排序']),
+                            str(cand['準備時間']),
+                            str(cand['試教(實作)時間']),
+                            str(cand['口試時間'])
+                        ]
                         
                         for col_idx in range(5):
+                            row_cells[col_idx].text = row_data[col_idx]
+                            row_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # 內容也全面置中
                             row_cells[col_idx].width = col_widths[col_idx]
                     
                     doc.add_page_break()
@@ -407,7 +410,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 # ==========================================
 if st.session_state.processed:
     st.balloons()
-    st.success("🎉 排版完美達成！右側印章現在擁有充足的專屬空間，絕對不會再被裁切到了！")
+    st.success("🎉 排版完美達成！表格標題與內容皆已置中，編號欄位不再換行。")
     
     c_d1, c_d2 = st.columns(2)
     with c_d1:
@@ -422,7 +425,7 @@ if st.session_state.processed:
     with c_d2:
         if HAS_DOCX and st.session_state.word_data:
             st.download_button(
-                label="📥 2. 下載 Word 各科公告時間表 (完美排版蓋章版)",
+                label="📥 2. 下載 Word 各科公告時間表 (置中排版蓋章版)",
                 data=st.session_state.word_data,
                 file_name=st.session_state.word_filename,
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
