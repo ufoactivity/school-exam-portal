@@ -16,8 +16,8 @@ except ImportError:
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系統", page_icon="🏫", layout="wide")
-st.title("🏫 教務處-教師甄選智能排程系統 (完美編號與人數核對版)")
-st.info("💡 終極優化：試教接力時「編號」將自動歸零從 1 開始，且 Word 報表表格右下方會自動帶出「實際到考人數」，方便試務核對！")
+st.title("🏫 教務處-教師甄選智能排程系統 (口試無縫接軌版)")
+st.info("💡 終極優化：已修正合併群組的口試時間邏輯！現在實作科若接在一般科後面，口試時間將完美無縫接力 (如 13:35 結束，13:40 立即接續)，不會再發生時空跳躍。")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -190,9 +190,9 @@ with col2:
     st.markdown("""
     本系統現已成為**全自動試務產出中心**：
     
-    1. **試教獨立與接力**：分離時間查表與編號邏輯，無論試教是否接力，紙本編號皆從 1 重新開始！
-    2. **核對人數功能**：Word 表格右下方將自動列出該科目的「實際到考人數」，方便試務核對。
-    3. **排版優化**：表格標題與內容皆已「全面置中」，「編號」欄寬微調加寬防換行。
+    1. **口試無縫接軌**：合併群組的口試將完全共用第一科目的時間軸。如一般科結束於 13:35，後續的實作科將完美由 13:40 繼續接力！
+    2. **試教獨立與接力**：分離時間查表與編號邏輯，紙本編號皆從 1 重新開始！
+    3. **排版優化**：表格全面置中，支援人數核對與紅字蓋印。
     """)
 
 st.divider()
@@ -254,6 +254,10 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 global_teach_idx = 1
                 is_teach_merged = group.get('teach_merged', False)
                 
+                # 【核心邏輯修正】：判斷這整個群組的「口試委員會」是以什麼科目打頭陣
+                # 若打頭陣的是實作科，整個委員會走 ORAL_30_MATRIX；否則走 ORAL_15_MATRIX，保證無縫接軌！
+                is_group_base_practical = group['subjects'][0] in practical_subjects
+                
                 for s_idx, subject in enumerate(group['subjects']):
                     is_practical = subject in practical_subjects
                     df_sub = df_candidates[df_candidates['報考科目'] == subject]
@@ -264,24 +268,26 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                     for i in range(n_candidates):
                         cand = candidates[i]
                         
-                        # 【核心修正1】：分離時間查詢索引與畫面顯示編號
-                        # time_lookup_idx 負責查時間 (接力時會延續)
-                        # display_sort_num 負責顯示編號 (永遠從 1 開始)
                         time_lookup_idx = global_teach_idx if is_teach_merged else (i + 1)
                         display_sort_num = i + 1 
                         
+                        # 1. 試教時間：完全依照科目本身的特性獨立查表
                         if is_practical:
                             times_tuple = TEACH_30_MATRIX.get(time_lookup_idx, ("請手動調整", "請手動調整"))
-                            oral_range = ORAL_30_MATRIX.get(global_oral_idx, "請手動調整")
                         else:
                             times_tuple = TEACH_15_MATRIX.get(time_lookup_idx, ("請手動調整", "請手動調整"))
+                            
+                        # 2. 口試時間：完全依照委員會 (群組首科) 的時間軸無縫查表
+                        if is_group_base_practical:
+                            oral_range = ORAL_30_MATRIX.get(global_oral_idx, "請手動調整")
+                        else:
                             lookup_n = group_total_candidates if group_total_candidates <= 9 else 10
                             oral_range = ORAL_15_MATRIX.get(lookup_n, {}).get(global_oral_idx, "請手動調整")
                             
                         all_schedules.append({
                             '報考科目': subject,
                             '准考證號': cand['准考證號'],
-                            '排序': display_sort_num,  # 永遠輸出 1, 2, 3...
+                            '排序': display_sort_num, 
                             '準備時間': times_tuple[0],
                             '試教(實作)時間': times_tuple[1],
                             '口試時間': oral_range
@@ -422,7 +428,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                             row_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                             row_cells[col_idx].width = col_widths[col_idx]
                     
-                    # 【核心修正2】：在表格畫完之後，靠右新增「實際到考人數」
                     p_count = doc.add_paragraph()
                     p_count.alignment = WD_ALIGN_PARAGRAPH.RIGHT
                     run_count = p_count.add_run(f"實際到考人數：{len(df_sub_sched)}人")
@@ -450,7 +455,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 # ==========================================
 if st.session_state.processed:
     st.balloons()
-    st.success("🎉 排版與邏輯更新完美達成！編號已確保從 1 開始，且實際到考人數將自動附加於表格下方。")
+    st.success("🎉 排程完美達成！口試時間已成功無縫接力，不受跨科影響！")
     
     c_d1, c_d2 = st.columns(2)
     with c_d1:
@@ -465,7 +470,7 @@ if st.session_state.processed:
     with c_d2:
         if HAS_DOCX and st.session_state.word_data:
             st.download_button(
-                label="📥 2. 下載 Word 各科公告時間表 (人數核對與蓋章版)",
+                label="📥 2. 下載 Word 各科公告時間表 (完美排版蓋章版)",
                 data=st.session_state.word_data,
                 file_name=st.session_state.word_filename,
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
