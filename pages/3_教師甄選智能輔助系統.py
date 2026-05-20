@@ -16,8 +16,8 @@ except ImportError:
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系統", page_icon="🏫", layout="wide")
-st.title("🏫 教務處-教師甄選智能排程系統 (試教雙軌切換版)")
-st.info("💡 終極優化：已於合併群組新增「試教模式切換開關」，可自由定義合併科目的試教要「個別獨立」還是「合併接力」！")
+st.title("🏫 教務處-教師甄選智能排程系統 (完美編號與人數核對版)")
+st.info("💡 終極優化：試教接力時「編號」將自動歸零從 1 開始，且 Word 報表表格右下方會自動帶出「實際到考人數」，方便試務核對！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -141,7 +141,6 @@ with col1:
                 num_groups = st.number_input("欲建立的「合併口試組」數量：", min_value=0, max_value=5, value=0, step=1)
                 already_assigned = set()
                 
-                # 【新增】動態切換試教合併/獨立開關
                 for g_i in range(int(num_groups)):
                     available_options = [s for s in all_subjs if s not in already_assigned]
                     
@@ -191,9 +190,9 @@ with col2:
     st.markdown("""
     本系統現已成為**全自動試務產出中心**：
     
-    1. **排版優化**：表格標題與內容皆已「全面置中」，「編號」欄寬微調加寬防換行。
-    2. **雙軌試教**：支援同組口試的科目，試教可選擇「各自獨立」或「合併接力」。
-    3. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，隱形排版技術讓兩者完美並排。
+    1. **試教獨立與接力**：分離時間查表與編號邏輯，無論試教是否接力，紙本編號皆從 1 重新開始！
+    2. **核對人數功能**：Word 表格右下方將自動列出該科目的「實際到考人數」，方便試務核對。
+    3. **排版優化**：表格標題與內容皆已「全面置中」，「編號」欄寬微調加寬防換行。
     """)
 
 st.divider()
@@ -251,10 +250,8 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             for group in final_processing_groups:
                 group_total_candidates = sum(len(df_candidates[df_candidates['報考科目'] == sub]) for sub in group['subjects'])
                 
-                # 全局流水號 (跨科目接力用)
                 global_oral_idx = 1
                 global_teach_idx = 1
-                
                 is_teach_merged = group.get('teach_merged', False)
                 
                 for s_idx, subject in enumerate(group['subjects']):
@@ -267,30 +264,29 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                     for i in range(n_candidates):
                         cand = candidates[i]
                         
-                        # 核心邏輯：決定該科目的試教流水號是否接力
-                        if is_teach_merged:
-                            sort_num = global_teach_idx
-                        else:
-                            sort_num = i + 1 
+                        # 【核心修正1】：分離時間查詢索引與畫面顯示編號
+                        # time_lookup_idx 負責查時間 (接力時會延續)
+                        # display_sort_num 負責顯示編號 (永遠從 1 開始)
+                        time_lookup_idx = global_teach_idx if is_teach_merged else (i + 1)
+                        display_sort_num = i + 1 
                         
                         if is_practical:
-                            times_tuple = TEACH_30_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
+                            times_tuple = TEACH_30_MATRIX.get(time_lookup_idx, ("請手動調整", "請手動調整"))
                             oral_range = ORAL_30_MATRIX.get(global_oral_idx, "請手動調整")
                         else:
-                            times_tuple = TEACH_15_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
+                            times_tuple = TEACH_15_MATRIX.get(time_lookup_idx, ("請手動調整", "請手動調整"))
                             lookup_n = group_total_candidates if group_total_candidates <= 9 else 10
                             oral_range = ORAL_15_MATRIX.get(lookup_n, {}).get(global_oral_idx, "請手動調整")
                             
                         all_schedules.append({
                             '報考科目': subject,
                             '准考證號': cand['准考證號'],
-                            '排序': sort_num,
+                            '排序': display_sort_num,  # 永遠輸出 1, 2, 3...
                             '準備時間': times_tuple[0],
                             '試教(實作)時間': times_tuple[1],
                             '口試時間': oral_range
                         })
                         
-                        # 遞增全局流水號
                         global_oral_idx += 1
                         if is_teach_merged:
                             global_teach_idx += 1
@@ -331,7 +327,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             
             st.session_state.excel_data = output_excel.getvalue()
 
-            # --- Word 直出引擎 (自訂欄寬 + 隱形底邊排版 + 單行紅字) ---
+            # --- Word 直出引擎 ---
             if HAS_DOCX:
                 doc = docx.Document()
                 
@@ -344,7 +340,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 style._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
                 style.font.size = Pt(16)
                 
-                # 頁尾引擎：隱形排版桌設計
                 footer = section.footer
                 for p in footer.paragraphs:
                     p._element.getparent().remove(p._element)
@@ -372,7 +367,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                     stamp_bytes = io.BytesIO(file_stamp.getvalue())
                     run_stamp.add_picture(stamp_bytes, width=Cm(4.0)) 
                 
-                # 內容生成
                 for subject in all_subjs:
                     df_sub_sched = df_master[df_master['報考科目'] == subject]
                     if df_sub_sched.empty: continue
@@ -409,13 +403,12 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                     hdr_headers = ['甄選證號', '編號', '試教準備室', '試教', '口試']
                     for col_idx in range(5):
                         hdr_cells[col_idx].text = hdr_headers[col_idx]
-                        hdr_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # 標題置中
+                        hdr_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                         hdr_cells[col_idx].width = col_widths[col_idx]
                         table.columns[col_idx].width = col_widths[col_idx]
                     
                     for _, cand in df_sub_sched.iterrows():
                         row_cells = table.add_row().cells
-                        
                         row_data = [
                             str(cand['准考證號']),
                             str(cand['排序']),
@@ -426,8 +419,16 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                         
                         for col_idx in range(5):
                             row_cells[col_idx].text = row_data[col_idx]
-                            row_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # 內容也全面置中
+                            row_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                             row_cells[col_idx].width = col_widths[col_idx]
+                    
+                    # 【核心修正2】：在表格畫完之後，靠右新增「實際到考人數」
+                    p_count = doc.add_paragraph()
+                    p_count.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    run_count = p_count.add_run(f"實際到考人數：{len(df_sub_sched)}人")
+                    run_count.font.name = '標楷體'
+                    run_count._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                    run_count.font.size = Pt(16)
                     
                     doc.add_page_break()
                     
@@ -449,7 +450,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 # ==========================================
 if st.session_state.processed:
     st.balloons()
-    st.success("🎉 排程完美達成！您可自由切換試教是否接力。請重新確認您的原始 Excel 報考名單是否有填寫錯誤喔！")
+    st.success("🎉 排版與邏輯更新完美達成！編號已確保從 1 開始，且實際到考人數將自動附加於表格下方。")
     
     c_d1, c_d2 = st.columns(2)
     with c_d1:
@@ -464,7 +465,7 @@ if st.session_state.processed:
     with c_d2:
         if HAS_DOCX and st.session_state.word_data:
             st.download_button(
-                label="📥 2. 下載 Word 各科公告時間表 (完美排版蓋章版)",
+                label="📥 2. 下載 Word 各科公告時間表 (人數核對與蓋章版)",
                 data=st.session_state.word_data,
                 file_name=st.session_state.word_filename,
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
