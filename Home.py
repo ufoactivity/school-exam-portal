@@ -135,7 +135,7 @@ with row2_col1:
         """)
         st.write("")
         # 【解鎖模組】：替換成正確的 page_link
-        st.page_link("pages/3_教師作業智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
+        st.page_link("pages/3_教甄作業智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
 
 with row2_col2:
     with st.container(border=True):
