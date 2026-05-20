@@ -123,7 +123,7 @@ col1, col2 = st.columns([1, 1], gap="large")
 with col1:
     st.subheader("📂 1. 上傳考生名單與場地")
     file_candidates = st.file_uploader("1️⃣ 上傳報考名單 (准考證號, 報考科目).xlsx", type=['xlsx'])
-    file_venues = st.file_uploader("2️⃣ 上傳場地配置 (如 3.場地.xlsx)", type=['xlsx'])
+    file_venues = st.file_uploader("2️⃣ 上傳場地配置 (如 2.場地.xlsx)", type=['xlsx'])
     
     group_settings = []
     practical_subjects = []
