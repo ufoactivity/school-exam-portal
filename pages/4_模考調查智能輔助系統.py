@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：技高右側對照表防呆鎖定！強制使用標準 20 群類名稱，防範自訂檔案格式干擾！")
+st.info("💡 試務組終極進化：第二階段收費明細表底部已同步實裝「紅框警語與期限」引擎，收費流程更明確！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -133,7 +133,6 @@ with tab1:
                     dynamic_target_mapping = [] 
                     fee_map = {}
                     
-                    # 1. 處理設定檔
                     if file_preset:
                         xls = pd.ExcelFile(file_preset)
                         df_preset_dept = pd.read_excel(xls, sheet_name=0).fillna("")
@@ -174,7 +173,6 @@ with tab1:
                                     'fee': fee_map.get(c_str, "")
                                 }
 
-                    # 2. 處理名單
                     if file_roster.name.endswith('.csv'):
                         df_roster = pd.read_csv(file_roster).fillna("")
                     else:
@@ -208,7 +206,6 @@ with tab1:
                             if matched['code']: df_temp.at[idx, '報考類組'] = matched['code']
                             if matched['fee']: df_temp.at[idx, '單次費用'] = matched['fee']
 
-                    # 3. 生成 Excel
                     output_template = io.BytesIO()
                     with pd.ExcelWriter(output_template, engine='xlsxwriter') as writer:
                         workbook = writer.book
@@ -219,7 +216,6 @@ with tab1:
                         worksheet.center_horizontally()
                         worksheet.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4)
                         
-                        # --- 樣式設定 ---
                         title_format = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'})
                         header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center', 'valign': 'vcenter'})
                         data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
@@ -237,9 +233,7 @@ with tab1:
                         
                         headers = ['班級', '座號', '學號', '姓名', '單次費用', '報考類組', '簽名']
                         
-                        # 整理最終的代碼對照表 (技高防呆鎖定)
                         if "技高" in school_type:
-                            # 技高強制使用預設名稱，不管上傳什麼設定檔都只抓費用
                             target_mapping = [(k, v, fee_map.get(k, str(default_price)) if fee_map.get(k, "") != "" else str(default_price)) for k, v in STANDARD_MAPPING_VOC.items()]
                         else:
                             if dynamic_target_mapping:
@@ -267,7 +261,7 @@ with tab1:
                                 
                             if not is_gen_hs:
                                 worksheet.write(current_row, 8, "代碼", mapping_head_format)
-                                worksheet.write(current_row, 9, "類別", mapping_head_format) # 改回類別
+                                worksheet.write(current_row, 9, "類別", mapping_head_format)
                                 
                             worksheet.set_row(current_row, 20)
                             current_row += 1
@@ -299,7 +293,6 @@ with tab1:
                                 
                             current_row = start_data_row + rows_needed
                             
-                            # 4. 導師簽名列
                             worksheet.set_row(current_row, 10) 
                             current_row += 1
                             worksheet.merge_range(current_row, 0, current_row, merge_end_col, "導師確認簽章：________________________", signature_format)
@@ -309,7 +302,6 @@ with tab1:
                             worksheet.set_row(current_row, 15) 
                             current_row += 1
                             
-                            # 5. 普高專屬：底部對照表
                             if is_gen_hs:
                                 worksheet.write(current_row, 0, "代碼", mapping_head_format)
                                 worksheet.merge_range(current_row, 1, current_row, 4, "考科組合", mapping_head_format)
@@ -327,9 +319,6 @@ with tab1:
                                 worksheet.set_row(current_row, 10) 
                                 current_row += 1
                             
-                            # ====================================================
-                            # 🚀 終極動態警語產生引擎 (統一9級字，加句號)
-                            # ====================================================
                             if is_gen_hs and selected_preset_sheet:
                                 if "高一" in selected_preset_sheet or "仿真" in selected_preset_sheet:
                                     memo_lines = [
@@ -389,7 +378,6 @@ with tab1:
                                 else:
                                     worksheet.write(current_row, 0, rich_parts[0], fmt)
                                     
-                                # 依據行數與字數計算最佳高度 (配合字體9級微調)
                                 text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
                                 
                                 if line_idx == 0:
@@ -401,11 +389,9 @@ with tab1:
                                     
                                 worksheet.set_row(current_row, row_height)
                                 current_row += 1
-                            # ====================================================
 
                             page_breaks.append(current_row)
                             
-                        # 整體欄寬配置
                         worksheet.set_column('A:B', 8)
                         worksheet.set_column('C:D', 10)
                         worksheet.set_column('E:G', 12)
@@ -488,7 +474,6 @@ with tab2:
                         for r in range(len(df_data_preload)):
                             cv = str(df_data_preload.iloc[r, c_col]).strip().split('.')[0]
                             nv = str(df_data_preload.iloc[r, n_col]).strip()
-                            # 支援英文字母代碼
                             if cv and nv and cv != 'nan' and nv != 'nan' and cv != '代碼':
                                 preload_mapping[cv] = nv
                                 
@@ -524,6 +509,9 @@ with tab2:
         st.subheader("⚙️ 2. 收費檢核與測驗設定")
         mock_name_p2 = st.text_input("🎯 產出報表標題", value="114學年度高職模擬考(全學年共5次)")
         base_fee_p2 = st.number_input("💰 預設單次報名費", min_value=0, max_value=5000, value=160, step=10)
+        # --- 🚀 階段二新增明細表繳回截止日 ---
+        deadline_date_p2 = st.date_input("📅 收費明細表繳回截止日", value=datetime.today(), key="deadline_p2")
+        deadline_str_p2 = f"{deadline_date_p2.month}月{deadline_date_p2.day}日"
         
         special_fee_dict = {}
         if file_survey and detected_categories:
@@ -680,7 +668,7 @@ with tab2:
                     df_clean = df_clean.sort_values(by=['班級', '座號_Num']).drop(columns=['座號_Num'])
 
                     df_details_raw = df_clean[['班級', '座號', '學號', '姓名', '報考類群', '單次應繳費用', '五次總繳費金額']].copy()
-                    df_details_raw = df_details_raw.rename(columns={'單次應繳費用': '單次費用(參考)', '五次總繳費金額': '應繳總金額(5次)'})
+                    df_details_raw = df_details_raw.rename(columns={'單次應繳費用': '單次費用', '五次總繳費金額': '應繳費用(5次)'})
                     
                     df_class_summary = df_clean.groupby('班級').agg(
                         報考人數=('姓名', 'count'),
@@ -741,7 +729,14 @@ with tab2:
                         memo_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'border': 1, 'bg_color': '#FDFAD9'}) 
                         grand_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFF2CC', 'align': 'center', 'valign': 'vcenter', 'font_size': 12})
                         
-                        headers = ['班級', '座號', '學號', '姓名', '報考類群', '單次費用(參考)', '應繳總金額(5次)', '學生簽名']
+                        # 🚀 階段二專屬紅框警語格式
+                        note_format_top_p2 = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
+                        note_format_middle_p2 = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
+                        note_format_bottom_p2 = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
+                        note_format_single_p2 = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
+                        red_alert_format_p2 = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 9})
+
+                        headers = ['班級', '座號', '學號', '姓名', '報考類群', '單次費用', '應繳費用(5次)', '學生簽名']
                         
                         current_row = 0
                         page_breaks = []
@@ -765,13 +760,13 @@ with tab2:
                                 ws_details.write(current_row, 2, str(row['學號']), data_format)
                                 ws_details.write(current_row, 3, str(row['姓名']), data_format)
                                 ws_details.write(current_row, 4, str(row['報考類群']), data_format)
-                                ws_details.write(current_row, 5, row['單次費用(參考)'], data_format)
-                                ws_details.write(current_row, 6, row['應繳總金額(5次)'], data_format)
+                                ws_details.write(current_row, 5, row['單次費用'], data_format)
+                                ws_details.write(current_row, 6, row['應繳費用(5次)'], data_format)
                                 ws_details.write(current_row, 7, '', data_format) 
                                 ws_details.set_row(current_row, 16)
                                 current_row += 1
                                 
-                            cls_total_amt = df_cls['應繳總金額(5次)'].sum()
+                            cls_total_amt = df_cls['應繳費用(5次)'].sum()
                             cls_count = len(df_cls)
                             
                             ws_details.write(current_row, 0, f'{cls_name} 小計', total_format)
@@ -781,20 +776,68 @@ with tab2:
                             ws_details.write(current_row, 4, '', total_format)
                             ws_details.write(current_row, 5, '', total_format)
                             ws_details.write(current_row, 6, cls_total_amt, total_format)
-                            ws_details.write(current_row, 7, '導師簽章：', total_format) 
+                            ws_details.write(current_row, 7, '', total_format) 
                             ws_details.set_row(current_row, 26) 
                             current_row += 1
                             
-                            cls_fee_info = df_cls[['報考類群', '單次費用(參考)']].drop_duplicates().sort_values('報考類群')
+                            cls_fee_info = df_cls[['報考類群', '單次費用']].drop_duplicates().sort_values('報考類群')
                             memo_title = "💡 【本班單次報名費參考】 (※ 應繳總額 = 單次費用 × 5次)："
                             ws_details.merge_range(current_row, 0, current_row, len(headers)-1, memo_title, memo_format)
                             ws_details.set_row(current_row, 18)
                             current_row += 1
                             
                             for _, r in cls_fee_info.iterrows():
-                                bullet_text = f"      ▪ {r['報考類群']}：單次 {r['單次費用(參考)']} 元"
+                                bullet_text = f"      ▪ {r['報考類群']}：單次 {r['單次費用']} 元"
                                 ws_details.merge_range(current_row, 0, current_row, len(headers)-1, bullet_text, memo_format)
                                 ws_details.set_row(current_row, 16)
+                                current_row += 1
+                                
+                            ws_details.set_row(current_row, 15) 
+                            current_row += 1
+                            
+                            signature_format_p2 = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
+                            ws_details.merge_range(current_row, 0, current_row, len(headers)-1, "導師確認簽章：________________________", signature_format_p2)
+                            ws_details.set_row(current_row, 35) 
+                            current_row += 1
+
+                            ws_details.set_row(current_row, 15) 
+                            current_row += 1
+
+                            # 🚀 階段二底部動態紅框警語
+                            memo_lines_p2 = [
+                                ["\n1.上下學期總共參加5次模擬考。"],
+                                ["2.開學初進行收費相關事宜。"],
+                                ["3.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至總務處出納組，此張單子請繳回到教務處試務組。\n"]
+                            ]
+
+                            for line_idx, rich_parts in enumerate(memo_lines_p2):
+                                if len(memo_lines_p2) == 1:
+                                    fmt = note_format_single_p2
+                                elif line_idx == 0:
+                                    fmt = note_format_top_p2
+                                elif line_idx == len(memo_lines_p2) - 1:
+                                    fmt = note_format_bottom_p2
+                                else:
+                                    fmt = note_format_middle_p2
+                                    
+                                ws_details.merge_range(current_row, 0, current_row, len(headers)-1, "", fmt)
+                                
+                                has_format = any(type(x) != str for x in rich_parts)
+                                if has_format:
+                                    ws_details.write_rich_string(current_row, 0, *rich_parts, fmt)
+                                else:
+                                    ws_details.write(current_row, 0, rich_parts[0], fmt)
+                                    
+                                text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
+                                
+                                if line_idx == 0:
+                                    row_height = 36 if text_length > 60 else 30  
+                                elif line_idx == len(memo_lines_p2) - 1:
+                                    row_height = 28  
+                                else:
+                                    row_height = 18  
+                                    
+                                ws_details.set_row(current_row, row_height)
                                 current_row += 1
                             
                             page_breaks.append(current_row) 
@@ -805,7 +848,7 @@ with tab2:
                         ws_details.write(current_row, 3, '', grand_format)
                         ws_details.write(current_row, 4, '', grand_format)
                         ws_details.write(current_row, 5, '', grand_format)
-                        ws_details.write(current_row, 6, df_details_raw['應繳總金額(5次)'].sum(), grand_format)
+                        ws_details.write(current_row, 6, df_details_raw['應繳費用(5次)'].sum(), grand_format)
                         ws_details.write(current_row, 7, '', grand_format)
                         ws_details.set_row(current_row, 24)
                         
