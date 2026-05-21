@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (全流程預填套印版)")
-st.info("💡 試務組終極進化：第一階段產出調查表時，底部已新增「繳回截止日」與「注意事項警語」，方便學藝股長與同學查核！")
+st.info("💡 試務組終極進化：調查表底部警語已實裝「紅字醒目標示」與「抗截斷加高排版」，簽名欄距亦已拉開，確保列印零死角！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -79,7 +79,7 @@ tab1, tab2 = st.tabs(["📄 階段一：從名條產出【空白/預填意願調
 # ---------------------------------------------------------
 with tab1:
     st.subheader("🛠️ 製作公版模擬考意願調查表 (支援跨表自動套印)")
-    st.markdown("上傳學生名單與「預設對照表（工作表1=科別預設類組、工作表2=類組單次費用）」，系統將為您自動排版並預填好各班學生的類組與費用！")
+    st.markdown("上傳學生名單與「預設對照表」，系統將為您自動排版並預填好各班學生的類組與費用！")
     
     col1_t1, col2_t1 = st.columns([1, 1], gap="large")
     
@@ -92,7 +92,7 @@ with tab1:
         default_title = "114學年度國立華南高商統測模擬考 報考類組調查表" if "技高" in school_type else "114學年度國立華南高商學測模擬考 報考考科調查表"
         template_name = st.text_input("🎯 擬定表單大標題", value=default_title)
         default_price = st.number_input("💰 預設單次費用 (無對照檔或查無資料時套用，可留 0)", min_value=0, max_value=2000, value=0, step=10)
-        # --- 新增動態截止日選擇 ---
+        # --- 動態截止日選擇 ---
         deadline_date = st.date_input("📅 調查表繳回截止日", value=datetime.today())
         deadline_str = f"{deadline_date.month}月{deadline_date.day}日"
         
@@ -184,14 +184,17 @@ with tab1:
                         worksheet.center_horizontally()
                         worksheet.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4)
                         
+                        # --- 樣式設定 ---
                         title_format = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'})
                         header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center', 'valign': 'vcenter'})
                         data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         mapping_head_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFF2CC', 'align': 'center', 'valign': 'vcenter'})
                         mapping_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         signature_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
-                        # --- 新增警語專用排版 ---
+                        
+                        # --- 警語專用排版 (自動換行與富文本對應格式) ---
                         note_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True})
+                        red_alert_format = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 12})
                         
                         headers = ['班級', '座號', '學號', '姓名', '單次費用', '報考類組', '簽名']
                         target_mapping = list((STANDARD_MAPPING_VOC if "技高" in school_type else STANDARD_MAPPING_GEN).items())
@@ -240,23 +243,32 @@ with tab1:
                                 
                             current_row = start_data_row + rows_needed
                             
-                            # 空白與導師簽名列
+                            # --- 導師簽名列 ---
                             worksheet.set_row(current_row, 10) 
                             current_row += 1
                             worksheet.merge_range(current_row, 0, current_row, 6, "導師確認簽章：________________________", signature_format)
                             worksheet.set_row(current_row, 35) 
                             current_row += 1
                             
-                            # --- 寫入注意事項警語 (跨欄置底) ---
-                            memo_1 = f"1.請學藝股長協助調查考試類別，如有更正請同學用紅筆更正並簽名，調查期間未到校者，簽名欄請空著不須代簽，此調查表請於 {deadline_str} 前交回教務處試務組。"
-                            memo_2 = "2.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"
-                            
-                            worksheet.merge_range(current_row, 0, current_row, 9, memo_1, note_format)
-                            worksheet.set_row(current_row, 22)
+                            # --- 修正 1：拉大簽名區與警語的間距 ---
+                            worksheet.set_row(current_row, 15) 
                             current_row += 1
                             
+                            # --- 修正 2 & 3：紅字放大標示與加高抗截斷 (富文本引擎) ---
+                            worksheet.merge_range(current_row, 0, current_row, 9, "", note_format) # 先畫出跨欄範圍
+                            worksheet.write_rich_string(current_row, 0,
+                                "1.請學藝股長協助調查考試類別，",
+                                red_alert_format, "如有更正請同學用紅筆更正並簽名",
+                                "，調查期間未到校者，簽名欄請空著不須代簽，",
+                                red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。",
+                                note_format)
+                            # 加高列高，確保 2 到 3 行的長文字不會被切掉
+                            worksheet.set_row(current_row, 45) 
+                            current_row += 1
+                            
+                            memo_2 = "2.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"
                             worksheet.merge_range(current_row, 0, current_row, 9, memo_2, note_format)
-                            worksheet.set_row(current_row, 18)
+                            worksheet.set_row(current_row, 25)
                             current_row += 1
                             
                             # 設定分頁
@@ -280,7 +292,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！底部警語與截止日已完美套印。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！底部紅字警語與截止日已完美套印。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
