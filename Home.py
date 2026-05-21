@@ -59,10 +59,9 @@ st.markdown("""
 # ==========================================
 with st.sidebar:
     st.divider()
-    st.markdown("### 🚀 未來擴充模組")
-    # 教師甄選系統已完成並上線，將其從「未來擴充模組」中移除
-    st.button("🔒 📊 模擬考調查系統 (建構中)", disabled=True, use_container_width=True)
-    st.caption("🛠️ 工程師努力開發中，敬請期待...")
+    st.markdown("### 🚀 最新上線模組")
+    # 這裡也替您換成了正式連結，方便從側邊欄直接點擊
+    st.page_link("pages/4_模擬考調查智能輔助系統.py", label="📊 模擬考調查系統", icon="✨")
 
 # ==========================================
 # 3. 歡迎與標頭區塊
@@ -95,7 +94,7 @@ with row1_col1:
         - 🏷️ **標籤全聯動**：交叉比對配課表，一鍵合成試卷袋列印貼紙。
         """)
         st.write("")
-        st.page_link("pages/1_監考作業智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
+        st.page_link("pages/1_監考智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
 
 with row1_col2:
     with st.container(border=True):
@@ -112,7 +111,7 @@ with row1_col2:
         - 🖨️ **考務報表輸出**：自動生成個人補考通知單與考場對照表。
         """)
         st.write("")
-        st.page_link("pages/2_補考作業智能輔助系統.py", label="啟動補考處理作業 →", icon="⚡")
+        st.page_link("pages/2_補考智能輔助系統.py", label="啟動補考處理作業 →", icon="⚡")
 
 st.write("") # 增加排與排之間的間距
 
@@ -134,8 +133,7 @@ with row2_col1:
         - 🖨️ **一鍵直出報表**：自動生成大字體、紅字免責且已蓋妥官印之 Word 公告單。
         """)
         st.write("")
-        # 【解鎖模組】：替換成正確的 page_link
-        st.page_link("pages/3_教甄作業智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
+        st.page_link("pages/3_教師甄選智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
 
 with row2_col2:
     with st.container(border=True):
@@ -152,7 +150,8 @@ with row2_col2:
         - 📈 **圖表化清單**：自動匯出清晰的總務處繳費單與書商訂卷清單。
         """)
         st.write("")
-        st.button("🔒 模組開發中 (Coming Soon)", key="btn_mock", disabled=True, use_container_width=True)
+        # 【解鎖完成】：正式替換為導航按鈕！
+        st.page_link("pages/4_模擬考調查智能輔助系統.py", label="啟動模擬考調查作業 →", icon="📊")
 
 # ==========================================
 # 5. 底部沉穩頁尾
