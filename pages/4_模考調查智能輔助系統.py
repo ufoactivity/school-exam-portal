@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (全流程預填套印版)")
-st.info("💡 試務組終極進化：調查表底部警語已實裝「紅/藍雙色醒目標示」，版面層次分明，確保學藝股長與同學一看就懂！")
+st.info("💡 試務組終極進化：調查表底部警語已實裝「紅/藍雙色醒目標示」與「紅色粗體大外框」，版面層次分明，確保學藝股長與同學一看就懂！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -188,8 +188,9 @@ with tab1:
                         mapping_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         signature_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
                         
-                        # --- 警語專用排版 (新增藍字樣式) ---
-                        note_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True})
+                        # --- 警語專用排版：分離上下邊框，組合成一個無縫的大外框 ---
+                        note_format_top = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
+                        note_format_bottom = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
                         red_alert_format = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 12})
                         blue_alert_format = workbook.add_format({'font_color': '#1976D2', 'bold': True, 'font_size': 12})
                         
@@ -249,8 +250,8 @@ with tab1:
                             worksheet.set_row(current_row, 15) 
                             current_row += 1
                             
-                            # --- 紅藍跳色放大標示 ---
-                            worksheet.merge_range(current_row, 0, current_row, 9, "", note_format)
+                            # --- 完美一體成型：紅字框列排版 ---
+                            worksheet.merge_range(current_row, 0, current_row, 9, "", note_format_top)
                             worksheet.write_rich_string(current_row, 0,
                                 "1.請學藝股長協助調查考試類別，",
                                 red_alert_format, "如有更正請同學用紅筆更正並簽名",
@@ -258,12 +259,12 @@ with tab1:
                                 blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽",
                                 "，",
                                 red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。",
-                                note_format)
+                                note_format_top)
                             worksheet.set_row(current_row, 45) 
                             current_row += 1
                             
                             memo_2 = "2.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"
-                            worksheet.merge_range(current_row, 0, current_row, 9, memo_2, note_format)
+                            worksheet.merge_range(current_row, 0, current_row, 9, memo_2, note_format_bottom)
                             worksheet.set_row(current_row, 25)
                             current_row += 1
                             
@@ -287,7 +288,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！底部紅/藍跳色警語已完美套印。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！底部紅字警語已被醒目紅框完美框列。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
