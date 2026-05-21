@@ -161,7 +161,7 @@ with row2_col1:
 
 with row2_col2:
     with st.container(border=True):
-        st.markdown("### 📊 模擬考調查智能輔助系統")
+        st.markdown("### 📊 模考調查智能輔助系統")
         st.markdown("""
         <p class="module-desc">
         數位化統整各科別模擬考報名意願，自動精算測驗費用與收據報表。
