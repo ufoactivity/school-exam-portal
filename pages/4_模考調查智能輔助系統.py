@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (全流程預填套印版)")
-st.info("💡 試務組終極進化：調查表底部警語已實裝「紅字醒目標示」，且導師簽名欄位已完美貼齊右側邊界，確保列印零死角！")
+st.info("💡 試務組終極進化：調查表底部警語已實裝「紅/藍雙色醒目標示」，版面層次分明，確保學藝股長與同學一看就懂！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -92,7 +92,6 @@ with tab1:
         default_title = "114學年度國立華南高商統測模擬考 報考類組調查表" if "技高" in school_type else "114學年度國立華南高商學測模擬考 報考考科調查表"
         template_name = st.text_input("🎯 擬定表單大標題", value=default_title)
         default_price = st.number_input("💰 預設單次費用 (無對照檔或查無資料時套用，可留 0)", min_value=0, max_value=2000, value=0, step=10)
-        # --- 動態截止日選擇 ---
         deadline_date = st.date_input("📅 調查表繳回截止日", value=datetime.today())
         deadline_str = f"{deadline_date.month}月{deadline_date.day}日"
         
@@ -102,7 +101,6 @@ with tab1:
         else:
             with st.spinner("正在智能合成調查表與自動套印中..."):
                 try:
-                    # 讀取雙工作表預設檔
                     preset_mapping = {}
                     if file_preset:
                         xls = pd.ExcelFile(file_preset)
@@ -139,7 +137,6 @@ with tab1:
                                     'fee': fee_map.get(c_str, "")
                                 }
 
-                    # 讀取名條
                     if file_roster.name.endswith('.csv'):
                         df_roster = pd.read_csv(file_roster).fillna("")
                     else:
@@ -157,7 +154,6 @@ with tab1:
                     df_temp['座號_Num'] = pd.to_numeric(df_temp['座號'], errors='coerce').fillna(999)
                     df_temp = df_temp.sort_values(by=['班級', '座號_Num']).drop(columns=['座號_Num'])
                     
-                    # 智慧自動套印
                     df_temp['單次費用'] = default_price if default_price > 0 else ""
                     df_temp['報考類組'] = ""
                     df_temp['簽名'] = ""
@@ -192,9 +188,10 @@ with tab1:
                         mapping_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         signature_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
                         
-                        # --- 警語專用排版 ---
+                        # --- 警語專用排版 (新增藍字樣式) ---
                         note_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True})
                         red_alert_format = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 12})
+                        blue_alert_format = workbook.add_format({'font_color': '#1976D2', 'bold': True, 'font_size': 12})
                         
                         headers = ['班級', '座號', '學號', '姓名', '單次費用', '報考類組', '簽名']
                         target_mapping = list((STANDARD_MAPPING_VOC if "技高" in school_type else STANDARD_MAPPING_GEN).items())
@@ -243,23 +240,23 @@ with tab1:
                                 
                             current_row = start_data_row + rows_needed
                             
-                            # --- 導師簽名列 (修正：將合併範圍擴大到 J 欄，使其完美靠在紙張最右側) ---
                             worksheet.set_row(current_row, 10) 
                             current_row += 1
                             worksheet.merge_range(current_row, 0, current_row, 9, "導師確認簽章：________________________", signature_format)
                             worksheet.set_row(current_row, 35) 
                             current_row += 1
                             
-                            # --- 簽名區與警語的間距 ---
                             worksheet.set_row(current_row, 15) 
                             current_row += 1
                             
-                            # --- 紅字放大標示與加高抗截斷 ---
+                            # --- 紅藍跳色放大標示 ---
                             worksheet.merge_range(current_row, 0, current_row, 9, "", note_format)
                             worksheet.write_rich_string(current_row, 0,
                                 "1.請學藝股長協助調查考試類別，",
                                 red_alert_format, "如有更正請同學用紅筆更正並簽名",
-                                "，調查期間未到校者，簽名欄請空著不須代簽，",
+                                "，",
+                                blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽",
+                                "，",
                                 red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。",
                                 note_format)
                             worksheet.set_row(current_row, 45) 
@@ -270,7 +267,6 @@ with tab1:
                             worksheet.set_row(current_row, 25)
                             current_row += 1
                             
-                            # 設定分頁
                             page_breaks.append(current_row)
                             
                         worksheet.set_column('A:B', 8)
@@ -291,7 +287,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！底部紅字警語與截止日已完美套印。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！底部紅/藍跳色警語已完美套印。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
@@ -695,7 +691,7 @@ with tab2:
     # ==========================================
     if st.session_state.mock_processed:
         st.balloons()
-        st.success("🎉 第二階段試務報表結算完成！收費明細已新增學號，方便導師精準核對。")
+        st.success("🎉 第二階段試務報表結算完成！")
         
         st.download_button(
             label="📥 點擊下載【模擬考收費與各班未報考人數交叉檢核總表】",
