@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：支援普高「單一檔案、多工作表」的考科設定！上傳設定檔後，可直接於選單切換【第一次/第二次...】，系統將自動動態套印對應的考科與費用！")
+st.info("💡 試務組終極進化：支援普高動態切換工作表！系統會根據您選擇的次數（第一次/第二次...）自動變換專屬警語與紅藍跳色排版！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -86,7 +86,6 @@ with tab1:
     with col1_t1:
         file_roster = st.file_uploader("📥 1. 上傳學生原始名條 (必填，支援多工作表)", type=['xlsx', 'xls', 'csv'], key="roster_uploader")
         
-        # 動態偵測名單工作表
         selected_roster_sheet = 0
         if file_roster and not file_roster.name.endswith('.csv'):
             try:
@@ -101,14 +100,12 @@ with tab1:
 
         file_preset = st.file_uploader("📥 2. 上傳【多工作表預設考科檔】 (選填)", type=['xlsx', 'xls'], key="preset_uploader")
         
-        # --- 動態偵測設定檔工作表 (普高 1, 2, 3, 4 次模考切換) ---
         selected_preset_sheet = None
         if file_preset:
             try:
                 xls_preset = pd.ExcelFile(file_preset)
                 p_sheet_names = xls_preset.sheet_names
                 if len(p_sheet_names) > 1:
-                    # 排除第一個班級對照表，讓老師選擇費用表
                     options = p_sheet_names[1:]
                     st.success("✅ 已偵測到多個考科費用分頁！")
                     selected_preset_sheet = st.selectbox("📝 請選擇本次對應的【模擬考考科費用表】：", options)
@@ -137,12 +134,10 @@ with tab1:
                     
                     if file_preset:
                         xls = pd.ExcelFile(file_preset)
-                        # 永遠拿第一個分頁當作「班級預設代碼」
                         df_preset_dept = pd.read_excel(xls, sheet_name=0).fillna("")
                         
                         fee_map = {}
                         if selected_preset_sheet:
-                            # 讀取使用者選擇的該次模考分頁 (例如：第一次類組費用)
                             df_preset_fee = pd.read_excel(xls, sheet_name=selected_preset_sheet).fillna("")
                             
                             f_code = get_str_col(df_preset_fee, ['代碼', '類別', '群別', '類組', '代號'])
@@ -159,7 +154,6 @@ with tab1:
                                     if c_str not in [x[0] for x in dynamic_target_mapping]:
                                         dynamic_target_mapping.append((c_str, final_name))
                         else:
-                            # 備用機制
                             f_code = get_str_col(df_preset_dept, ['代碼', '類組', '類別'])
                             f_fee = get_str_col(df_preset_dept, ['費用', '金額', '單價'])
                             for c_val, f_val in zip(f_code, f_fee):
@@ -167,7 +161,6 @@ with tab1:
                                 f_str = str(f_val).strip()
                                 if c_str and f_str: fee_map[c_str] = f_str
 
-                        # 合併兩者
                         s_key = get_str_col(df_preset_dept, ['科別', '班級', '字首'])
                         s_code = get_str_col(df_preset_dept, ['代碼', '類組', '預設'])
                         
@@ -205,7 +198,6 @@ with tab1:
                         cls_name = str(row['班級'])
                         matched = preset_mapping.get(cls_name)
                         if not matched:
-                            # 模糊匹配 (支援前綴、後綴或包含)
                             for k, v in preset_mapping.items():
                                 if k in cls_name or cls_name.startswith(k):
                                     matched = v
@@ -224,7 +216,7 @@ with tab1:
                         worksheet.center_horizontally()
                         worksheet.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4)
                         
-                        # --- 樣式設定 ---
+                        # --- 基本樣式設定 ---
                         title_format = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'})
                         header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center', 'valign': 'vcenter'})
                         data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
@@ -232,14 +224,17 @@ with tab1:
                         mapping_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         signature_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
                         
+                        # --- 警語無縫拼接方框引擎 ---
                         note_format_top = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
+                        note_format_middle = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
                         note_format_bottom = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
+                        note_format_single = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
+                        
                         red_alert_format = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 12})
                         blue_alert_format = workbook.add_format({'font_color': '#1976D2', 'bold': True, 'font_size': 12})
                         
                         headers = ['班級', '座號', '學號', '姓名', '單次費用', '報考類組', '簽名']
                         
-                        # ✨ 動態對照表引擎
                         if dynamic_target_mapping:
                             target_mapping = dynamic_target_mapping
                         else:
@@ -298,23 +293,66 @@ with tab1:
                             worksheet.set_row(current_row, 15) 
                             current_row += 1
                             
-                            worksheet.merge_range(current_row, 0, current_row, 9, "", note_format_top)
-                            worksheet.write_rich_string(current_row, 0,
-                                "1.請學藝股長協助調查考試類別，",
-                                red_alert_format, "如有更正請同學用紅筆更正並簽名",
-                                "，",
-                                blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽",
-                                "，",
-                                red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。",
-                                note_format_top)
-                            worksheet.set_row(current_row, 45) 
-                            current_row += 1
-                            
-                            memo_2 = "2.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"
-                            worksheet.merge_range(current_row, 0, current_row, 9, memo_2, note_format_bottom)
-                            worksheet.set_row(current_row, 25)
-                            current_row += 1
-                            
+                            # ====================================================
+                            # 🚀 終極動態警語產生引擎
+                            # ====================================================
+                            if "普高" in school_type and selected_preset_sheet:
+                                if "第一" in selected_preset_sheet:
+                                    memo_lines = [
+                                        [red_alert_format, "1.未參加暑期輔導的同學，不能參加第一次模擬考，『組別』欄位請填不參加。"],
+                                        ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
+                                        ["3.模擬考費用將於調查表回收後，進行收取費用。"]
+                                    ]
+                                elif "第二" in selected_preset_sheet:
+                                    memo_lines = [
+                                        [blue_alert_format, "1.第二次模擬考，統一加考英聽。"],
+                                        ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
+                                        ["3.模擬考費用將於新學期時9月初進行收取費用。"]
+                                    ]
+                                elif "第三" in selected_preset_sheet or "第四" in selected_preset_sheet:
+                                    memo_lines = [
+                                        ["1.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此張單子交回教務處『試務組』。"],
+                                        ["2.第三、四次費用將調查完畢後一起收取費用。"]
+                                    ]
+                                else:
+                                    # 防呆備用
+                                    memo_lines = [
+                                        ["1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
+                                        ["2.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"]
+                                    ]
+                            else:
+                                # 技高與其他預設情況
+                                memo_lines = [
+                                    ["1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
+                                    ["2.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"]
+                                ]
+
+                            # 智慧畫框與高度適配
+                            for line_idx, rich_parts in enumerate(memo_lines):
+                                if len(memo_lines) == 1:
+                                    fmt = note_format_single
+                                elif line_idx == 0:
+                                    fmt = note_format_top
+                                elif line_idx == len(memo_lines) - 1:
+                                    fmt = note_format_bottom
+                                else:
+                                    fmt = note_format_middle
+                                    
+                                worksheet.merge_range(current_row, 0, current_row, 9, "", fmt)
+                                
+                                has_format = any(type(x) != str for x in rich_parts)
+                                if has_format:
+                                    worksheet.write_rich_string(current_row, 0, *rich_parts, fmt)
+                                else:
+                                    worksheet.write(current_row, 0, rich_parts[0], fmt)
+                                    
+                                # 根據字串長度自動適配高度，防截斷
+                                text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
+                                row_height = 45 if text_length > 65 else 26
+                                worksheet.set_row(current_row, row_height)
+                                current_row += 1
+                            # ====================================================
+
                             page_breaks.append(current_row)
                             
                         worksheet.set_column('A:B', 8)
@@ -322,7 +360,7 @@ with tab1:
                         worksheet.set_column('E:G', 12)
                         worksheet.set_column('H:H', 3) 
                         worksheet.set_column('I:I', 10) 
-                        worksheet.set_column('J:J', 32) # 極限加寬，容納普高複雜考科名稱
+                        worksheet.set_column('J:J', 32) 
                         
                         if page_breaks:
                             worksheet.set_h_pagebreaks(page_breaks)
@@ -335,7 +373,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！已成功套用動態切換的考科費用表。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！右側代碼表與底部警語皆已動態切換。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
