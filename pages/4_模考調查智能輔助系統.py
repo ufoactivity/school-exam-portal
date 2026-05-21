@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：已實裝「智能防溢頁引擎」，超過 32 人的大班級會自動微縮列高，保證絕對一班一頁！")
+st.info("💡 試務組終極進化：第二階段「記憶清空 Bug」已修復！萬向解析引擎將穩定抓取底部與右側的對照表，順利結算！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -253,7 +253,6 @@ with tab1:
                             merge_end_col = 6 if is_gen_hs else 9
                             rows_needed = len(df_cls) if is_gen_hs else max(len(df_cls), len(target_mapping))
                             
-                            # 🚀 智能防溢頁列高計算 (Phase 1)
                             if rows_needed >= 38:
                                 scale = 0.75
                                 data_h = 13.5
@@ -403,7 +402,6 @@ with tab1:
 
                             page_breaks.append(current_row)
                             
-                        # 整體欄寬配置
                         worksheet.set_column('A:B', 8)
                         worksheet.set_column('C:D', 10)
                         worksheet.set_column('E:G', 12)
@@ -457,7 +455,51 @@ with tab2:
                     df_preload = pd.read_csv(file_survey, header=None).fillna("")
                 else:
                     df_preload = pd.read_excel(file_survey, header=None).fillna("")
+                
+                # 🚀 階段二前端預覽：萬向解析引擎
+                for r in range(len(df_preload)):
+                    row_vals = [str(x).strip() for x in df_preload.iloc[r].tolist()]
                     
+                    c_idx = -1
+                    for i, val in enumerate(row_vals):
+                        if val == '代碼':
+                            c_idx = i
+                            break
+                    
+                    if c_idx != -1:
+                        n_idx = -1
+                        for i in range(c_idx + 1, len(row_vals)):
+                            if any(k in row_vals[i] for k in ['類別', '考科', '組合', '名稱', '類群']):
+                                n_idx = i
+                                break
+                        
+                        f_idx = -1
+                        for i in range(c_idx + 1, len(row_vals)):
+                            if '費用' in row_vals[i] or '金額' in row_vals[i] or '單價' in row_vals[i]:
+                                f_idx = i
+                                break
+                        
+                        if n_idx != -1:
+                            for sub_r in range(r + 1, min(r + 40, len(df_preload))):
+                                sub_row = [str(x).strip() for x in df_preload.iloc[sub_r].tolist()]
+                                if len(sub_row) <= max(c_idx, n_idx): continue
+                                
+                                cv = sub_row[c_idx].split('.')[0]
+                                nv = sub_row[n_idx]
+                                
+                                if any(k in cv for k in ['導師', '1.', '2.', '3.', '4.', '備註', '說明', '小計', '總計']):
+                                    break
+                                    
+                                if cv and nv and cv != 'nan' and nv != 'nan':
+                                    preload_mapping[cv] = nv
+                                    if f_idx != -1 and len(sub_row) > f_idx:
+                                        fv = sub_row[f_idx]
+                                        if fv and fv != 'nan':
+                                            try:
+                                                extracted_fees[nv] = int(float(fv))
+                                            except:
+                                                pass
+
                 h_idx = None
                 for r in range(min(15, len(df_preload))):
                     row_vals = [str(x).strip() for x in df_preload.iloc[r].tolist()]
@@ -470,33 +512,17 @@ with tab2:
                     df_data_preload = df_preload.iloc[h_idx+1:].copy()
                     df_data_preload.columns = df_headers
                     
-                    c_col, n_col = None, None
-                    for i, col in enumerate(df_data_preload.columns):
-                        col_name = str(col).strip()
-                        if col_name == '代碼' and i > 4: c_col = i
-                        if col_name in ['類別', '類群', '名稱', '科別', '群別', '報考類組', '考科/類別', '考科組合'] and i > 4: n_col = i
-                        
-                    if c_col is None or n_col is None:
-                        for i, col in enumerate(df_data_preload.columns):
-                            col_str = str(col).strip()
-                            if '代碼' in col_str and i > 4: c_col = i
-                            if any(k in col_str for k in ['類別', '類群', '群', '類', '考科']) and i > 4: n_col = i
-                            
-                    if c_col is not None and n_col is not None:
-                        for r in range(len(df_data_preload)):
-                            cv = str(df_data_preload.iloc[r, c_col]).strip().split('.')[0]
-                            nv = str(df_data_preload.iloc[r, n_col]).strip()
-                            # 支援英文字母代碼
-                            if cv and nv and cv != 'nan' and nv != 'nan' and cv != '代碼':
-                                preload_mapping[cv] = nv
-                                
                     raw_cat_series = get_str_col(df_data_preload, ['報考', '類群', '科目', '組別', '類組'])
-                    raw_fee_series = get_str_col(df_data_preload, ['單次費用', '費用', '單價', '金額', '報名費'])
+                    raw_name_series = get_str_col(df_data_preload, ['姓名', '學生姓名'])
                     
                     unique_cats = set()
-                    for cat_val, fee_val in zip(raw_cat_series, raw_fee_series):
+                    for cat_val, name_val in zip(raw_cat_series, raw_name_series):
+                        if str(name_val).strip() == "" or str(name_val).strip() == "nan": 
+                            continue
+                            
                         cv = str(cat_val).strip().split('.')[0]
                         cat_name = ""
+                        
                         if cv in preload_mapping:
                             cat_name = preload_mapping[cv]
                         elif cv and cv not in ["", "報考類組", "不升學", "休學", "重讀", "長期未到校", "否", "nan"] and not str(cat_val).startswith('*'):
@@ -504,12 +530,6 @@ with tab2:
                             
                         if cat_name:
                             unique_cats.add(cat_name)
-                            try:
-                                fee_num = int(float(str(fee_val).strip()))
-                                if cat_name not in extracted_fees or extracted_fees[cat_name] == 0:
-                                    extracted_fees[cat_name] = fee_num
-                            except:
-                                pass
                                 
                     detected_categories = sorted(list(unique_cats))
             except Exception as e:
@@ -572,45 +592,45 @@ with tab2:
                 try:
                     file_survey.seek(0)
                     if file_survey.name.endswith('.csv'):
-                        df_raw = pd.read_csv(file_survey, header=None).fillna("")
+                        df_raw_full = pd.read_csv(file_survey, header=None).fillna("")
                     else:
-                        df_raw = pd.read_excel(file_survey, header=None).fillna("")
+                        df_raw_full = pd.read_excel(file_survey, header=None).fillna("")
+
+                    # 🚀 第二次精準解析 (完全移除舊版清空邏輯)
+                    mapping_dict = {}
+                    for r in range(len(df_raw_full)):
+                        row_vals = [str(x).strip() for x in df_raw_full.iloc[r].tolist()]
+                        c_idx = -1
+                        for i, val in enumerate(row_vals):
+                            if val == '代碼': c_idx = i; break
+                        if c_idx != -1:
+                            n_idx = -1
+                            for i in range(c_idx + 1, len(row_vals)):
+                                if any(k in row_vals[i] for k in ['類別', '考科', '組合', '名稱', '類群']): n_idx = i; break
+                            if n_idx != -1:
+                                for sub_r in range(r + 1, min(r + 40, len(df_raw_full))):
+                                    sub_row = [str(x).strip() for x in df_raw_full.iloc[sub_r].tolist()]
+                                    if len(sub_row) <= max(c_idx, n_idx): continue
+                                    cv = sub_row[c_idx].split('.')[0]
+                                    nv = sub_row[n_idx]
+                                    if any(k in cv for k in ['導師', '1.', '2.', '3.', '4.', '備註', '小計', '總計']): break
+                                    if cv and nv and cv != 'nan' and nv != 'nan':
+                                        mapping_dict[cv] = nv
 
                     header_row_idx = None
-                    for r in range(min(15, len(df_raw))):
-                        row_vals = [str(x).strip() for x in df_raw.iloc[r].tolist()]
+                    for r in range(min(15, len(df_raw_full))):
+                        row_vals = [str(x).strip() for x in df_raw_full.iloc[r].tolist()]
                         if '班級' in row_vals or '座號' in row_vals or '姓名' in row_vals:
                             header_row_idx = r
                             break
                     
                     if header_row_idx is not None:
-                        new_columns = [str(x).strip() for x in df_raw.iloc[header_row_idx].tolist()]
-                        df_raw = df_raw.iloc[header_row_idx+1:].copy()
+                        new_columns = [str(x).strip() for x in df_raw_full.iloc[header_row_idx].tolist()]
+                        df_raw = df_raw_full.iloc[header_row_idx+1:].copy()
                         df_raw.columns = new_columns
                     else:
                         st.error("🚨 找不到包含『班級』或『座號』的表頭欄位！")
                         st.stop()
-
-                    mapping_dict = {}
-                    code_col_idx = None
-                    name_col_idx = None
-                    for i, col in enumerate(df_raw.columns):
-                        col_name = str(col).strip()
-                        if col_name == '代碼' and i > 4: code_col_idx = i
-                        if col_name in ['類別', '類群', '名稱', '科別', '群別', '報考類組'] and i > 4: name_col_idx = i
-
-                    if code_col_idx is None or name_col_idx is None:
-                        for i, col in enumerate(df_raw.columns):
-                            col_str = str(col).strip()
-                            if '代碼' in col_str and i > 4: code_col_idx = i
-                            if any(k in col_str for k in ['類別', '類群', '群', '類']) and i > 4: name_col_idx = i
-
-                    if code_col_idx is not None and name_col_idx is not None:
-                        for r in range(len(df_raw)):
-                            cv = str(df_raw.iloc[r, code_col_idx]).strip().split('.')[0]
-                            nv = str(df_raw.iloc[r, name_col_idx]).strip()
-                            if cv and nv and cv != 'nan' and nv != 'nan' and cv.isdigit():
-                                mapping_dict[cv] = nv
 
                     df_all = pd.DataFrame()
                     df_all['班級_Raw'] = get_str_col(df_raw, ['班級', '科別'])
@@ -620,13 +640,16 @@ with tab2:
                     df_all['原始報考'] = get_str_col(df_raw, ['報考', '類群', '科目', '組別', '類組'])
                     df_all['班級_Clean'] = df_all['班級_Raw'].apply(clean_class_name)
                     
-                    df_students_only = df_all[
-                        (df_all['班級_Clean'] != "") & 
-                        (df_all['姓名'] != "") & 
-                        (~df_all['班級_Clean'].str.contains('\*', na=False)) &
-                        (df_all['姓名'].str.lower() != "姓名") &
-                        (df_all['班級_Clean'].str.lower() != "班級")
-                    ].copy()
+                    def is_valid_student(row):
+                        c = str(row['班級_Clean'])
+                        n = str(row['姓名'])
+                        if not c or not n or c == 'nan' or n == 'nan': return False
+                        if c in ['代碼', '班級', '姓名']: return False
+                        if any(c.startswith(k) for k in ['1.', '2.', '3.', '4.', '導師']): return False
+                        if n in ['姓名', '考科組合', '類別']: return False
+                        return True
+                        
+                    df_students_only = df_all[df_all.apply(is_valid_student, axis=1)].copy()
 
                     def determine_status_or_cat(row):
                         raw = str(row['原始報考']).strip().split('.')[0]
@@ -741,7 +764,6 @@ with tab2:
                         memo_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'border': 1, 'bg_color': '#FDFAD9'}) 
                         grand_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFF2CC', 'align': 'center', 'valign': 'vcenter', 'font_size': 12})
                         
-                        # 🚀 階段二專屬紅框警語格式 (9級字)
                         note_format_top_p2 = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
                         note_format_middle_p2 = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
                         note_format_bottom_p2 = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
@@ -758,7 +780,6 @@ with tab2:
                             df_cls = df_details_raw[df_details_raw['班級'] == cls_name]
                             cls_count = len(df_cls)
                             
-                            # 🚀 智能防溢頁列高計算 (Phase 2)
                             if cls_count >= 38:
                                 scale = 0.75
                                 data_h = 13.5
@@ -826,7 +847,6 @@ with tab2:
                             ws_details.set_row(current_row, int(15 * scale)) 
                             current_row += 1
 
-                            # 🚀 階段二底部動態紅框警語
                             memo_lines_p2 = [
                                 ["\n1.上下學期總共參加5次模擬考。"],
                                 ["2.開學初進行收費相關事宜。"],
