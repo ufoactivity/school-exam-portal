@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：收費明細表之「報考類群」已導入自動微縮 (Shrink to fit) 技術，文字再長也能完美塞進同一格！")
+st.info("💡 試務組終極進化：第二階段已導入「普高彈性收費倍率引擎」，可自由切換 1次、2次 或 5次 收費，並自動套用對應的教務處/總務處警語！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -535,11 +535,23 @@ with tab2:
                 st.error(f"預讀取檔案進行群別與費用分析時發生錯誤: {e}")
 
         st.markdown("📝 **列印優化說明**：")
-        st.success("已擴充「學號」欄位！啟動 A4 極限微調排版，確保 40 人以上的大班級依然能完美塞進一頁 A4 之中！")
+        st.success("已擴充「學號」欄位！啟動 A4 極限微調排版，確保大班級依然能完美塞進一頁 A4 之中！")
 
     with col2:
         st.subheader("⚙️ 2. 收費檢核與測驗設定")
-        mock_name_p2 = st.text_input("🎯 產出報表標題", value="114學年度高職模擬考(全學年共5次)")
+        
+        # 🚀 階段二專屬：動態學制與期數乘數器
+        school_type_p2 = st.radio("🏫 選擇本表單學制類型：", ["技高 (全學年5次合併收費)", "普高 (依次數彈性收費)"], horizontal=True, key="school_type_p2")
+        
+        if "普高" in school_type_p2:
+            fee_mode = st.radio("🔄 普高本次收費模式：", ["收 1 次費用 (如：第一、二次模考)", "收 2 次費用 (如：第三、四次合併)"], horizontal=True)
+            fee_multiplier = 1 if "1 次" in fee_mode else 2
+            mock_name_default = "114學年度普高模擬考"
+        else:
+            fee_multiplier = 5
+            mock_name_default = "114學年度高職模擬考(全學年共5次)"
+            
+        mock_name_p2 = st.text_input("🎯 產出報表標題", value=mock_name_default)
         base_fee_p2 = st.number_input("💰 預設單次報名費", min_value=0, max_value=5000, value=160, step=10)
         deadline_date_p2 = st.date_input("📅 收費明細表繳回截止日", value=datetime.today(), key="deadline_p2")
         deadline_str_p2 = f"{deadline_date_p2.month}月{deadline_date_p2.day}日"
@@ -694,26 +706,28 @@ with tab2:
                         st.warning("⚠️ 攔截警告：經過分析後檔案內找不到有效報考資料。")
                         st.stop()
 
+                    # 🚀 動態乘數器：根據選擇的次數計算應繳費用
                     df_clean['單次應繳費用'] = df_clean['報考類群'].apply(lambda x: special_fee_dict.get(x, base_fee_p2))
-                    df_clean['五次總繳費金額'] = df_clean['單次應繳費用'] * 5
+                    df_clean['總繳費金額'] = df_clean['單次應繳費用'] * fee_multiplier
                     
                     df_clean['座號_Num'] = pd.to_numeric(df_clean['座號'], errors='coerce').fillna(999)
                     df_clean = df_clean.sort_values(by=['班級', '座號_Num']).drop(columns=['座號_Num'])
 
-                    df_details_raw = df_clean[['班級', '座號', '學號', '姓名', '報考類群', '單次應繳費用', '五次總繳費金額']].copy()
-                    df_details_raw = df_details_raw.rename(columns={'單次應繳費用': '單次費用', '五次總繳費金額': '應繳費用(5次)'})
+                    df_details_raw = df_clean[['班級', '座號', '學號', '姓名', '報考類群', '單次應繳費用', '總繳費金額']].copy()
+                    df_details_raw = df_details_raw.rename(columns={'單次應繳費用': '單次費用', '總繳費金額': f'應繳費用({fee_multiplier}次)'})
                     
                     df_class_summary = df_clean.groupby('班級').agg(
                         報考人數=('姓名', 'count'),
-                        五次應收總金額=('五次總繳費金額', 'sum')
+                        應收總金額=('總繳費金額', 'sum')
                     ).reset_index()
                     
                     total_row = pd.DataFrame({
                         '班級': ['總計 (Total)'],
                         '報考人數': [df_class_summary['報考人數'].sum()],
-                        '五次應收總金額': [df_class_summary['五次應收總金額'].sum()]
+                        '應收總金額': [df_class_summary['應收總金額'].sum()]
                     })
                     df_class_summary = pd.concat([df_class_summary, total_row], ignore_index=True)
+                    df_class_summary = df_class_summary.rename(columns={'應收總金額': f'{fee_multiplier}次應收總金額'})
 
                     df_publisher = df_clean.groupby('報考類群').agg(
                         需求卷數=('姓名', 'count')
@@ -728,40 +742,40 @@ with tab2:
                     output_excel = io.BytesIO()
                     with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
                         
-                        df_class_summary.to_excel(writer, index=False, sheet_name='1_總務處班級5次收費總表')
+                        sheet1_name = f'1_班級{fee_multiplier}次收費總表'
+                        sheet2_name = f'2_各班繳費明細({fee_multiplier}次總額)'
+                        
+                        df_class_summary.to_excel(writer, index=False, sheet_name=sheet1_name)
                         workbook  = writer.book
-                        worksheet1 = writer.sheets['1_總務處班級5次收費總表']
+                        worksheet1 = writer.sheets[sheet1_name]
                         worksheet1.set_column('A:F', 24) 
                         
                         start_row = len(df_class_summary) + 4
                         bold_format = workbook.add_format({'bold': True, 'font_color': '#D32F2F', 'font_size': 12})
                         worksheet1.write(start_row - 2, 0, "🔍 各班級未報考原因/狀態交叉檢核表", bold_format)
-                        df_reason_by_class.to_excel(writer, index=False, sheet_name='1_總務處班級5次收費總表', startrow=start_row)
+                        df_reason_by_class.to_excel(writer, index=False, sheet_name=sheet1_name, startrow=start_row)
                         
-                        ws_details = workbook.add_worksheet('2_各班繳費明細(5次總額)')
-                        writer.sheets['2_各班繳費明細(5次總額)'] = ws_details 
+                        ws_details = workbook.add_worksheet(sheet2_name)
+                        writer.sheets[sheet2_name] = ws_details 
                         
                         ws_details.set_paper(9)
                         ws_details.fit_to_pages(1, 0)
                         ws_details.center_horizontally()
                         ws_details.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4) 
                         
-                        # 🚀 【核心修正】微調欄寬分配，給報考類群最大的空間
                         ws_details.set_column('A:A', 9)  
                         ws_details.set_column('B:B', 6)  
                         ws_details.set_column('C:C', 10) 
                         ws_details.set_column('D:D', 10) 
-                        ws_details.set_column('E:E', 23) # 原本 21，微調加大給報考類群
-                        ws_details.set_column('F:F', 11) # 原本 13，縮小給單次費用
-                        ws_details.set_column('G:G', 13) # 原本 14，縮小給應繳費用
+                        ws_details.set_column('E:E', 23) 
+                        ws_details.set_column('F:F', 11) 
+                        ws_details.set_column('G:G', 13) 
                         ws_details.set_column('H:H', 15) 
                         
                         title_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#F2F2F2', 'border': 1})
                         header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center', 'valign': 'vcenter'})
                         data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 11}) 
-                        # 🚀 【專屬格式】報考類群專屬縮放格式
                         cat_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 9, 'shrink': True})
-                        
                         total_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#E2EFDA', 'align': 'center', 'valign': 'vcenter', 'font_size': 11})
                         memo_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'border': 1, 'bg_color': '#FDFAD9'}) 
                         grand_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFF2CC', 'align': 'center', 'valign': 'vcenter', 'font_size': 12})
@@ -772,7 +786,7 @@ with tab2:
                         note_format_single_p2 = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
                         red_alert_format_p2 = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 9})
 
-                        headers = ['班級', '座號', '學號', '姓名', '報考類群', '單次費用', '應繳費用(5次)', '學生簽名']
+                        headers = ['班級', '座號', '學號', '姓名', '報考類群', '單次費用', f'應繳費用({fee_multiplier}次)', '學生簽名']
                         
                         current_row = 0
                         page_breaks = []
@@ -806,15 +820,14 @@ with tab2:
                                 ws_details.write(current_row, 1, str(row['座號']), data_format)
                                 ws_details.write(current_row, 2, str(row['學號']), data_format)
                                 ws_details.write(current_row, 3, str(row['姓名']), data_format)
-                                # 🚀 套用微縮防切斷格式
                                 ws_details.write(current_row, 4, str(row['報考類群']), cat_data_format)
                                 ws_details.write(current_row, 5, row['單次費用'], data_format)
-                                ws_details.write(current_row, 6, row['應繳費用(5次)'], data_format)
+                                ws_details.write(current_row, 6, row[f'應繳費用({fee_multiplier}次)'], data_format)
                                 ws_details.write(current_row, 7, '', data_format) 
                                 ws_details.set_row(current_row, data_h)
                                 current_row += 1
                                 
-                            cls_total_amt = df_cls['應繳費用(5次)'].sum()
+                            cls_total_amt = df_cls[f'應繳費用({fee_multiplier}次)'].sum()
                             
                             ws_details.write(current_row, 0, f'{cls_name} 小計', total_format)
                             ws_details.write(current_row, 1, f'共 {cls_count} 人', total_format)
@@ -828,7 +841,7 @@ with tab2:
                             current_row += 1
                             
                             cls_fee_info = df_cls[['報考類群', '單次費用']].drop_duplicates().sort_values('報考類群')
-                            memo_title = "💡 【本班單次報名費參考】 (※ 應繳總額 = 單次費用 × 5次)："
+                            memo_title = f"💡 【本班單次報名費參考】 (※ 應繳總額 = 單次費用 × {fee_multiplier}次)："
                             ws_details.merge_range(current_row, 0, current_row, len(headers)-1, memo_title, memo_format)
                             ws_details.set_row(current_row, int(18 * scale))
                             current_row += 1
@@ -850,11 +863,17 @@ with tab2:
                             ws_details.set_row(current_row, int(15 * scale)) 
                             current_row += 1
 
-                            memo_lines_p2 = [
-                                ["\n1.上下學期總共參加5次模擬考。"],
-                                ["2.開學初進行收費相關事宜。"],
-                                ["3.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至總務處出納組，此張單子請繳回到教務處試務組。\n"]
-                            ]
+                            # 🚀 階段二底部動態紅框警語：依照普高/技高切換專屬內容
+                            if "普高" in school_type_p2:
+                                memo_lines_p2 = [
+                                    ["\n1.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至教務處試務組。\n"]
+                                ]
+                            else:
+                                memo_lines_p2 = [
+                                    ["\n1.上下學期總共參加5次模擬考。"],
+                                    ["2.開學初進行收費相關事宜。"],
+                                    ["3.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至總務處出納組，此張單子請繳回到教務處試務組。\n"]
+                                ]
 
                             for line_idx, rich_parts in enumerate(memo_lines_p2):
                                 if len(memo_lines_p2) == 1:
@@ -894,7 +913,7 @@ with tab2:
                         ws_details.write(current_row, 3, '', grand_format)
                         ws_details.write(current_row, 4, '', grand_format)
                         ws_details.write(current_row, 5, '', grand_format)
-                        ws_details.write(current_row, 6, df_details_raw['應繳費用(5次)'].sum(), grand_format)
+                        ws_details.write(current_row, 6, df_details_raw[f'應繳費用({fee_multiplier}次)'].sum(), grand_format)
                         ws_details.write(current_row, 7, '', grand_format)
                         ws_details.set_row(current_row, 24)
                         
