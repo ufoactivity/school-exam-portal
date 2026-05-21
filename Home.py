@@ -97,7 +97,8 @@ with st.container():
 # ==========================================
 # 4. 核心工具矩陣入口 (2x2 模組排列)
 # ==========================================
-
+st.markdown("### ⚙️ 核心自動化模組 / Production Modules")
+st.write("")
 
 # --- 第一排：監考與補考 ---
 row1_col1, row1_col2 = st.columns(2, gap="large")
