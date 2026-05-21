@@ -4,3 +4,4 @@ pulp
 openpyxl
 xlsxwriter
 python-docx
+xlrd
