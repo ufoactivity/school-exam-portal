@@ -1,10 +1,11 @@
 import streamlit as st
+import os
 
 # ==========================================
 # 1. 網頁頁面配置 (極簡現代風科技感)
 # ==========================================
 st.set_page_config(
-    page_title="教務處試務組-AI智能輔助平台",
+    page_title="教務處試務組-智慧戰情門戶",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -15,6 +16,11 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     
+    /* --- 全域設定 --- */
+    html, body, [data-testid="stSidebar"] {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
     /* --- 主標題與副標題 --- */
     .main-title {
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -33,8 +39,10 @@ st.markdown("""
         color: #888888;
         text-transform: uppercase;
         letter-spacing: 0.15rem;
-        margin-bottom: 2.5rem !important;
+        margin-bottom: 1.5rem !important; /* 微調間距 */
     }
+    
+    /* --- 模組區塊樣式 --- */
     .module-desc {
         color: #666666;
         font-size: 0.95rem;
@@ -51,24 +59,40 @@ st.markdown("""
     [data-testid="stSidebar"] {
         font-size: 1.1rem !important;
     }
+    
+    /* --- 【NEW】吉卜力風圖片容器樣式 --- */
+    .ghibli-banner {
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        margin-bottom: 2.5rem;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 左側邊欄 (Sidebar) 手動新增預告區塊
-# ==========================================
-with st.sidebar:
-    st.divider()
-    st.markdown("### 🚀 最新上線模組")
-    # 這裡也替您換成了正式連結，方便從側邊欄直接點擊
-    st.page_link("pages/4_模考調查智能輔助系統.py", label="📊 模擬考調查系統", icon="✨")
-
-# ==========================================
-# 3. 歡迎與標頭區塊
+# 2. 歡迎與標頭區塊
 # ==========================================
 st.markdown('<h1 class="main-title">⚡ 試務組 AI 智能輔助平台</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">Intelligent Examination Administration Ecosystem</p>', unsafe_allow_html=True)
-st.divider()
+
+# ==========================================
+# 3. 【NEW】吉卜力風校園建築物 Banner
+# ==========================================
+# 使用 st.container 包裹 st.image 以進行 UX 防呆與排版
+with st.container():
+    #UX 防呆：檢查檔案是否存在
+    image_path = os.path.join("assets", "school_ghibli.png")
+    if os.path.exists(image_path):
+        # 放置圖片，使用 relative_width 讓圖片自然適應寬版佈局
+        st.image(image_path, use_column_width=True, caption="校園一隅 (吉卜力動畫風插畫)", output_format="PNG")
+        # 加上間距與分割線
+        st.write("")
+        st.divider()
+    else:
+        # 防呆機制：檔案不存在時顯示專業警示，不影響系統執行
+        st.warning(f"⚠️ 找不到吉卜力風 Banner 圖片。請確認檔案放置於 `assets/school_ghibli.png`。")
+        st.divider()
 
 # ==========================================
 # 4. 核心工具矩陣入口 (2x2 模組排列)
@@ -81,7 +105,7 @@ row1_col1, row1_col2 = st.columns(2, gap="large")
 
 with row1_col1:
     with st.container(border=True):
-        st.markdown("### 📅 監考作業智能輔助系統")
+        st.markdown("### 📅 段考監考智慧輔助系統")
         st.markdown("""
         <p class="module-desc">
         整合 AI 線性規劃算法，全自動最佳化全校排班與座位分發。
@@ -94,11 +118,11 @@ with row1_col1:
         - 🏷️ **標籤全聯動**：交叉比對配課表，一鍵合成試卷袋列印貼紙。
         """)
         st.write("")
-        st.page_link("pages/1_監考作業智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
+        st.page_link("pages/1_監考智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
 
 with row1_col2:
     with st.container(border=True):
-        st.markdown("### 📝 補考作業智能輔助系統")
+        st.markdown("### 📝 補考作業智慧輔助系統")
         st.markdown("""
         <p class="module-desc">
         一鍵清洗多科補考學生複雜數據，智慧重組考場與座位配置。
@@ -111,11 +135,11 @@ with row1_col2:
         - 🖨️ **考務報表輸出**：自動生成個人補考通知單與考場對照表。
         """)
         st.write("")
-        st.page_link("pages/2_補考作業智能輔助系統.py", label="啟動補考處理作業 →", icon="⚡")
+        st.page_link("pages/2_補考智能輔助系統.py", label="啟動補考處理作業 →", icon="⚡")
 
 st.write("") # 增加排與排之間的間距
 
-# --- 第二排：教師甄選與模擬考 ---
+# --- 第二排：教師甄選與模擬考 (未來擴充模組) ---
 row2_col1, row2_col2 = st.columns(2, gap="large")
 
 with row2_col1:
@@ -128,16 +152,16 @@ with row2_col1:
         """, unsafe_allow_html=True)
         
         st.markdown("""
-        - 🎙️ **時程自動排定**：無縫接軌口試與試教，智能避開衝堂與重疊。
+        - 🎙️ **時程自動排定**：無縫接軌口試與試教，智慧避開衝堂與重疊。
         - 📋 **場地動態對位**：自動分配各科休息室與試場，資料無縫串接。
-        - 🖨️ **一鍵直出報表**：自動生成大字體、紅字免責且已蓋妥官印之 Word 公告單。
+        - 🖨️ **一鍵直出報表**：自動生成大字體、紅字警語且已蓋妥官印之Word公告單。
         """)
         st.write("")
-        st.page_link("pages/3_教甄作業智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
+        st.page_link("pages/3_教甄智能排程系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
 
 with row2_col2:
     with st.container(border=True):
-        st.markdown("### 📊 模考調查智能輔助系統")
+        st.markdown("### 📊 模擬考調查智能輔助系統")
         st.markdown("""
         <p class="module-desc">
         數位化統整各科別模擬考報名意願，自動精算測驗費用與收據報表。
@@ -150,8 +174,9 @@ with row2_col2:
         - 📈 **圖表化清單**：自動匯出清晰的總務處繳費單與書商訂卷清單。
         """)
         st.write("")
-        # 【解鎖完成】：正式替換為導航按鈕！
-        st.page_link("pages/4_模考調查智能輔助系統.py", label="啟動模擬考調查作業 →", icon="📊")
+        # 未來開發鎖定按鈕
+        st.button("🔒 模組開發中 (Coming Soon)", key="btn_mock", disabled=True, use_container_width=True)
+
 
 # ==========================================
 # 5. 底部沉穩頁尾
@@ -160,7 +185,7 @@ st.divider()
 st.markdown(
     """
     <div style="text-align: center; color: #bbb; font-size: 0.8rem; letter-spacing: 0.05rem;">
-        © 2026 國立華南高商 教務處試務組 劉耀中 · Data-Driven Examination Administration
+        © 2026 國立華南高商 教務處試務組 · Data-Driven Examination Administration
     </div>
     """, 
     unsafe_allow_html=True
