@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：第二階段「記憶清空 Bug」已修復！萬向解析引擎將穩定抓取底部與右側的對照表，順利結算！")
+st.info("💡 試務組終極進化：收費明細表之「報考類群」已導入自動微縮 (Shrink to fit) 技術，文字再長也能完美塞進同一格！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -456,7 +456,6 @@ with tab2:
                 else:
                     df_preload = pd.read_excel(file_survey, header=None).fillna("")
                 
-                # 🚀 階段二前端預覽：萬向解析引擎
                 for r in range(len(df_preload)):
                     row_vals = [str(x).strip() for x in df_preload.iloc[r].tolist()]
                     
@@ -596,7 +595,6 @@ with tab2:
                     else:
                         df_raw_full = pd.read_excel(file_survey, header=None).fillna("")
 
-                    # 🚀 第二次精準解析 (完全移除舊版清空邏輯)
                     mapping_dict = {}
                     for r in range(len(df_raw_full)):
                         row_vals = [str(x).strip() for x in df_raw_full.iloc[r].tolist()]
@@ -748,18 +746,22 @@ with tab2:
                         ws_details.center_horizontally()
                         ws_details.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4) 
                         
+                        # 🚀 【核心修正】微調欄寬分配，給報考類群最大的空間
                         ws_details.set_column('A:A', 9)  
                         ws_details.set_column('B:B', 6)  
                         ws_details.set_column('C:C', 10) 
                         ws_details.set_column('D:D', 10) 
-                        ws_details.set_column('E:E', 21) 
-                        ws_details.set_column('F:F', 13) 
-                        ws_details.set_column('G:G', 14) 
+                        ws_details.set_column('E:E', 23) # 原本 21，微調加大給報考類群
+                        ws_details.set_column('F:F', 11) # 原本 13，縮小給單次費用
+                        ws_details.set_column('G:G', 13) # 原本 14，縮小給應繳費用
                         ws_details.set_column('H:H', 15) 
                         
                         title_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#F2F2F2', 'border': 1})
                         header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center', 'valign': 'vcenter'})
                         data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 11}) 
+                        # 🚀 【專屬格式】報考類群專屬縮放格式
+                        cat_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 9, 'shrink': True})
+                        
                         total_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#E2EFDA', 'align': 'center', 'valign': 'vcenter', 'font_size': 11})
                         memo_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'border': 1, 'bg_color': '#FDFAD9'}) 
                         grand_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFF2CC', 'align': 'center', 'valign': 'vcenter', 'font_size': 12})
@@ -804,7 +806,8 @@ with tab2:
                                 ws_details.write(current_row, 1, str(row['座號']), data_format)
                                 ws_details.write(current_row, 2, str(row['學號']), data_format)
                                 ws_details.write(current_row, 3, str(row['姓名']), data_format)
-                                ws_details.write(current_row, 4, str(row['報考類群']), data_format)
+                                # 🚀 套用微縮防切斷格式
+                                ws_details.write(current_row, 4, str(row['報考類群']), cat_data_format)
                                 ws_details.write(current_row, 5, row['單次費用'], data_format)
                                 ws_details.write(current_row, 6, row['應繳費用(5次)'], data_format)
                                 ws_details.write(current_row, 7, '', data_format) 
