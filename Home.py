@@ -85,7 +85,7 @@ with st.container():
     image_path = os.path.join("assets", "school_ghibli.png")
     if os.path.exists(image_path):
         # 放置圖片，自然適應寬版佈局
-        st.image(image_path, use_container_width=True, caption="校園一隅 (吉卜力動畫風插畫)")
+        st.image(image_path, use_container_width=True, caption="校園一隅")
         # 加上間距與分割線
         st.write("")
         st.divider()
