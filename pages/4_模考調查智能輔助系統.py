@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：普高版面已專屬客製化！考科與費用對照表自動移至簽名欄下方，版面更加寬敞舒適，完美適應各種考科組合！")
+st.info("💡 試務組終極進化：警語字體大小已統一優化以防止斷行，並針對外框加入了「頂部舒適留白排版」！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -60,7 +60,7 @@ STANDARD_MAPPING_VOC = {
     '54': '商管外語群(2)-(9+16類)', '55': '商管外語群(3)-(15+16類)', '56': '商管外語群(4)-(9+15+16類)'
 }
 
-# 學測常見考科組合代碼表 (若無上傳設定檔時的備用)
+# 學測常見考科組合代碼表
 STANDARD_MAPPING_GEN = {
     '1': '社會組(國英數B社)',
     '2': '自然組(國英數A自)',
@@ -86,7 +86,6 @@ with tab1:
     with col1_t1:
         file_roster = st.file_uploader("📥 1. 上傳學生原始名條 (必填，支援多工作表)", type=['xlsx', 'xls', 'csv'], key="roster_uploader")
         
-        # 動態偵測名單工作表
         selected_roster_sheet = 0
         if file_roster and not file_roster.name.endswith('.csv'):
             try:
@@ -101,7 +100,6 @@ with tab1:
 
         file_preset = st.file_uploader("📥 2. 上傳【多工作表預設考科檔】 (選填)", type=['xlsx', 'xls'], key="preset_uploader")
         
-        # 動態偵測設定檔工作表
         selected_preset_sheet = None
         if file_preset:
             try:
@@ -134,7 +132,6 @@ with tab1:
                     preset_mapping = {}
                     dynamic_target_mapping = [] 
                     
-                    # 1. 處理設定檔
                     if file_preset:
                         xls = pd.ExcelFile(file_preset)
                         df_preset_dept = pd.read_excel(xls, sheet_name=0).fillna("")
@@ -155,7 +152,6 @@ with tab1:
                                     fee_map[c_str] = f_str
                                     final_name = n_str if n_str else c_str
                                     if c_str not in [x[0] for x in dynamic_target_mapping]:
-                                        # 加入三元組：(代碼, 名稱, 費用)
                                         dynamic_target_mapping.append((c_str, final_name, f_str))
                         else:
                             f_code = get_str_col(df_preset_dept, ['代碼', '類組', '類別'])
@@ -177,7 +173,6 @@ with tab1:
                                     'fee': fee_map.get(c_str, "")
                                 }
 
-                    # 2. 處理名單
                     if file_roster.name.endswith('.csv'):
                         df_roster = pd.read_csv(file_roster).fillna("")
                     else:
@@ -211,7 +206,6 @@ with tab1:
                             if matched['code']: df_temp.at[idx, '報考類組'] = matched['code']
                             if matched['fee']: df_temp.at[idx, '單次費用'] = matched['fee']
 
-                    # 3. 生成 Excel
                     output_template = io.BytesIO()
                     with pd.ExcelWriter(output_template, engine='xlsxwriter') as writer:
                         workbook = writer.book
@@ -235,12 +229,12 @@ with tab1:
                         note_format_bottom = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
                         note_format_single = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
                         
-                        red_alert_format = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 12})
-                        blue_alert_format = workbook.add_format({'font_color': '#1976D2', 'bold': True, 'font_size': 12})
+                        # 修正：字體統一為 11 級，防斷行
+                        red_alert_format = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 11})
+                        blue_alert_format = workbook.add_format({'font_color': '#1976D2', 'bold': True, 'font_size': 11})
                         
                         headers = ['班級', '座號', '學號', '姓名', '單次費用', '報考類組', '簽名']
                         
-                        # 整理最終的代碼對照表
                         if dynamic_target_mapping:
                             target_mapping = dynamic_target_mapping
                         else:
@@ -256,32 +250,26 @@ with tab1:
                         for cls in unique_classes:
                             df_cls = df_temp[df_temp['班級'] == cls]
                             
-                            # 依據學制決定合併的寬度 (普高A-G, 技高A-J)
                             merge_end_col = 6 if is_gen_hs else 9
                             
-                            # 1. 大標題
                             worksheet.merge_range(current_row, 0, current_row, merge_end_col, template_name, title_format)
                             worksheet.set_row(current_row, 25)
                             current_row += 1
                             
-                            # 2. 表頭
                             for col_num, header in enumerate(headers):
                                 worksheet.write(current_row, col_num, header, header_format)
                                 
                             if not is_gen_hs:
-                                # 技高：右側放置對照表
                                 worksheet.write(current_row, 8, "代碼", mapping_head_format)
                                 worksheet.write(current_row, 9, "考科/類別", mapping_head_format)
                                 
                             worksheet.set_row(current_row, 20)
                             current_row += 1
                             
-                            # 3. 學生資料填寫
                             start_data_row = current_row
                             rows_needed = len(df_cls) if is_gen_hs else max(len(df_cls), len(target_mapping))
                             
                             for i in range(rows_needed):
-                                # 左側學生資料
                                 if i < len(df_cls):
                                     row_data = df_cls.iloc[i]
                                     worksheet.write(start_data_row + i, 0, str(row_data['班級']), data_format)
@@ -295,7 +283,6 @@ with tab1:
                                     for c in range(7):
                                         worksheet.write(start_data_row + i, c, "", data_format)
                                         
-                                # 技高右側對照表
                                 if not is_gen_hs:
                                     if i < len(target_mapping):
                                         code, name, _ = target_mapping[i]
@@ -306,7 +293,6 @@ with tab1:
                                 
                             current_row = start_data_row + rows_needed
                             
-                            # 4. 導師簽名列
                             worksheet.set_row(current_row, 10) 
                             current_row += 1
                             worksheet.merge_range(current_row, 0, current_row, merge_end_col, "導師確認簽章：________________________", signature_format)
@@ -316,7 +302,6 @@ with tab1:
                             worksheet.set_row(current_row, 15) 
                             current_row += 1
                             
-                            # 5. 普高專屬：底部對照表
                             if is_gen_hs:
                                 worksheet.write(current_row, 0, "代碼", mapping_head_format)
                                 worksheet.merge_range(current_row, 1, current_row, 4, "考科組合", mapping_head_format)
@@ -334,45 +319,47 @@ with tab1:
                                 worksheet.set_row(current_row, 10) 
                                 current_row += 1
                             
-                            # 6. 終極動態警語產生引擎
+                            # ====================================================
+                            # 🚀 終極動態警語產生引擎 (支援報考類別填代碼紅字，首行頂部留白)
+                            # ====================================================
                             if is_gen_hs and selected_preset_sheet:
                                 if "高一" in selected_preset_sheet or "仿真" in selected_preset_sheet:
                                     memo_lines = [
-                                        ["1.為讓同學了解學測考試時間及題型，將於二年級舉行第一次學測模擬考。"],
+                                        ["\n1.為讓同學了解學測考試時間及題型，將於二年級舉行第一次學測模擬考。"],
                                         ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
                                         ["3.", red_alert_format, "報考類別請填代碼"],
                                         ["4.模擬考費用將於新學期時9月初進行收取。"]
                                     ]
                                 elif "第一" in selected_preset_sheet:
                                     memo_lines = [
-                                        ["1.未參加暑期輔導的同學，不能參加第一次模擬考，", red_alert_format, "『報考類別』欄位請填不參加", "。"],
+                                        ["\n1.未參加暑期輔導的同學，不能參加第一次模擬考，", red_alert_format, "『報考類別』欄位請填不參加", "。"],
                                         ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
                                         ["3.", red_alert_format, "報考類別請填代碼"],
                                         ["4.模擬考費用將於調查表回收後，進行收取費用。"]
                                     ]
                                 elif "第二" in selected_preset_sheet:
                                     memo_lines = [
-                                        ["1.第二次模擬考，", blue_alert_format, "統一加考英聽", "。"],
+                                        ["\n1.第二次模擬考，", blue_alert_format, "統一加考英聽", "。"],
                                         ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
                                         ["3.", red_alert_format, "報考類別請填代碼"],
                                         ["4.模擬考費用將於新學期時9月初進行收取費用。"]
                                     ]
                                 elif "第三" in selected_preset_sheet or "第四" in selected_preset_sheet:
                                     memo_lines = [
-                                        ["1.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此張單子交回教務處『試務組』。"],
+                                        ["\n1.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此張單子交回教務處『試務組』。"],
                                         ["2.", red_alert_format, "報考類別請填代碼"],
                                         ["3.第三、四次費用將調查完畢後一起收取費用。"]
                                     ]
                                 else:
                                     memo_lines = [
-                                        ["1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
+                                        ["\n1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
                                         ["2.", red_alert_format, "報考類別請填代碼"],
                                         ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"]
                                     ]
                             else:
                                 # 技高與其他預設情況
                                 memo_lines = [
-                                    ["1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
+                                    ["\n1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
                                     ["2.", red_alert_format, "報考類別請填代碼"],
                                     ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"]
                                 ]
@@ -396,18 +383,20 @@ with tab1:
                                 else:
                                     worksheet.write(current_row, 0, rich_parts[0], fmt)
                                     
-                                # 根據字串長度自動適配高度，防截斷
                                 text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
-                                if is_gen_hs:
-                                    row_height = 45 if text_length > 60 else (30 if text_length > 30 else 24)
+                                
+                                # 針對第1行的留白加高，第2行的單行高度進行鎖定
+                                if line_idx == 0:
+                                    row_height = 42 if text_length > 45 else 36
                                 else:
-                                    row_height = 30 if text_length > 65 else 22
+                                    row_height = 32 if text_length > 45 else 22
+                                    
                                 worksheet.set_row(current_row, row_height)
                                 current_row += 1
-                            
+                            # ====================================================
+
                             page_breaks.append(current_row)
                             
-                        # 整體欄寬配置
                         worksheet.set_column('A:B', 8)
                         worksheet.set_column('C:D', 10)
                         worksheet.set_column('E:G', 12)
@@ -426,7 +415,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！右側代碼表與底部警語皆已動態切換。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！版面留白與防斷行已完美套用。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
@@ -490,7 +479,6 @@ with tab2:
                         for r in range(len(df_data_preload)):
                             cv = str(df_data_preload.iloc[r, c_col]).strip().split('.')[0]
                             nv = str(df_data_preload.iloc[r, n_col]).strip()
-                            # 支援英文字母代碼
                             if cv and nv and cv != 'nan' and nv != 'nan' and cv != '代碼':
                                 preload_mapping[cv] = nv
                                 
