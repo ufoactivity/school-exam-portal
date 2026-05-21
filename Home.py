@@ -60,7 +60,7 @@ st.markdown("""
         font-size: 1.1rem !important;
     }
     
-    /* --- 【NEW】吉卜力風圖片容器樣式 --- */
+    /* --- 吉卜力風圖片容器樣式 --- */
     .ghibli-banner {
         border-radius: 15px;
         overflow: hidden;
@@ -77,15 +77,15 @@ st.markdown('<h1 class="main-title">⚡ 試務組 AI 智能輔助平台</h1>', u
 st.markdown('<p class="sub-title">Intelligent Examination Administration Ecosystem</p>', unsafe_allow_html=True)
 
 # ==========================================
-# 3. 【NEW】吉卜力風校園建築物 Banner
+# 3. 吉卜力風校園建築物 Banner
 # ==========================================
 # 使用 st.container 包裹 st.image 以進行 UX 防呆與排版
 with st.container():
-    #UX 防呆：檢查檔案是否存在
+    # UX 防呆：檢查檔案是否存在
     image_path = os.path.join("assets", "school_ghibli.png")
     if os.path.exists(image_path):
-        # 放置圖片，使用 relative_width 讓圖片自然適應寬版佈局
-        st.image(image_path, use_column_width=True, caption="校園一隅 (吉卜力動畫風插畫)", output_format="PNG")
+        # 放置圖片，自然適應寬版佈局
+        st.image(image_path, use_container_width=True, caption="校園一隅 (吉卜力動畫風插畫)")
         # 加上間距與分割線
         st.write("")
         st.divider()
@@ -139,7 +139,7 @@ with row1_col2:
 
 st.write("") # 增加排與排之間的間距
 
-# --- 第二排：教師甄選與模擬考 (未來擴充模組) ---
+# --- 第二排：教師甄選與模擬考 ---
 row2_col1, row2_col2 = st.columns(2, gap="large")
 
 with row2_col1:
@@ -154,14 +154,14 @@ with row2_col1:
         st.markdown("""
         - 🎙️ **時程自動排定**：無縫接軌口試與試教，智慧避開衝堂與重疊。
         - 📋 **場地動態對位**：自動分配各科休息室與試場，資料無縫串接。
-        - 🖨️ **一鍵直出報表**：自動生成大字體、紅字警語且已蓋妥官印之Word公告單。
+        - 🖨️ **一鍵直出報表**：自動生成大字體、紅字警語且已蓋妥官印之Word公告單.
         """)
         st.write("")
-        st.page_link("pages/3_教甄作業智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
+        st.page_link("pages/3_教甄作業智能排程系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
 
 with row2_col2:
     with st.container(border=True):
-       st.markdown("### 📊 模考調查智能輔助系統")
+        st.markdown("### 📊 模擬考調查智能輔助系統")
         st.markdown("""
         <p class="module-desc">
         數位化統整各科別模擬考報名意願，自動精算測驗費用與收據報表。
@@ -174,7 +174,7 @@ with row2_col2:
         - 📈 **圖表化清單**：自動匯出清晰的總務處繳費單與書商訂卷清單。
         """)
         st.write("")
-        # 🎉 正式解鎖模考系統！
+        # 🎉 【解鎖成功】：正式替換為導航按鈕，無縫串接您的第 4 個模組檔案！
         st.page_link("pages/4_模考調查智能輔助系統.py", label="啟動模擬考調查作業 →", icon="📊")
 
 
