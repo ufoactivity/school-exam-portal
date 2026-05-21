@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：普高各次模考皆已強制寫入「報考類別請填代碼」之紅字防呆警語！")
+st.info("💡 試務組終極進化：普高版面已專屬客製化！考科與費用對照表自動移至簽名欄下方，版面更加寬敞舒適，完美適應各種考科組合！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -134,6 +134,7 @@ with tab1:
                     preset_mapping = {}
                     dynamic_target_mapping = [] 
                     
+                    # 1. 處理設定檔
                     if file_preset:
                         xls = pd.ExcelFile(file_preset)
                         df_preset_dept = pd.read_excel(xls, sheet_name=0).fillna("")
@@ -154,7 +155,8 @@ with tab1:
                                     fee_map[c_str] = f_str
                                     final_name = n_str if n_str else c_str
                                     if c_str not in [x[0] for x in dynamic_target_mapping]:
-                                        dynamic_target_mapping.append((c_str, final_name))
+                                        # 加入三元組：(代碼, 名稱, 費用)
+                                        dynamic_target_mapping.append((c_str, final_name, f_str))
                         else:
                             f_code = get_str_col(df_preset_dept, ['代碼', '類組', '類別'])
                             f_fee = get_str_col(df_preset_dept, ['費用', '金額', '單價'])
@@ -175,6 +177,7 @@ with tab1:
                                     'fee': fee_map.get(c_str, "")
                                 }
 
+                    # 2. 處理名單
                     if file_roster.name.endswith('.csv'):
                         df_roster = pd.read_csv(file_roster).fillna("")
                     else:
@@ -201,13 +204,14 @@ with tab1:
                         matched = preset_mapping.get(cls_name)
                         if not matched:
                             for k, v in preset_mapping.items():
-                                if cls_name.startswith(k):
+                                if k in cls_name or cls_name.startswith(k):
                                     matched = v
                                     break
                         if matched:
                             if matched['code']: df_temp.at[idx, '報考類組'] = matched['code']
                             if matched['fee']: df_temp.at[idx, '單次費用'] = matched['fee']
 
+                    # 3. 生成 Excel
                     output_template = io.BytesIO()
                     with pd.ExcelWriter(output_template, engine='xlsxwriter') as writer:
                         workbook = writer.book
@@ -236,33 +240,48 @@ with tab1:
                         
                         headers = ['班級', '座號', '學號', '姓名', '單次費用', '報考類組', '簽名']
                         
+                        # 整理最終的代碼對照表
                         if dynamic_target_mapping:
                             target_mapping = dynamic_target_mapping
                         else:
-                            target_mapping = list((STANDARD_MAPPING_VOC if "技高" in school_type else STANDARD_MAPPING_GEN).items())
+                            base_map = STANDARD_MAPPING_VOC if "技高" in school_type else STANDARD_MAPPING_GEN
+                            target_mapping = [(k, v, str(default_price)) for k, v in base_map.items()]
                         
                         current_row = 0
                         page_breaks = []
                         unique_classes = df_temp['班級'].unique()
                         
+                        is_gen_hs = "普高" in school_type
+                        
                         for cls in unique_classes:
                             df_cls = df_temp[df_temp['班級'] == cls]
                             
-                            worksheet.merge_range(current_row, 0, current_row, 6, template_name, title_format)
+                            # 依據學制決定合併的寬度 (普高A-G, 技高A-J)
+                            merge_end_col = 6 if is_gen_hs else 9
+                            
+                            # 1. 大標題
+                            worksheet.merge_range(current_row, 0, current_row, merge_end_col, template_name, title_format)
                             worksheet.set_row(current_row, 25)
                             current_row += 1
                             
+                            # 2. 表頭
                             for col_num, header in enumerate(headers):
                                 worksheet.write(current_row, col_num, header, header_format)
-                            worksheet.write(current_row, 8, "代碼", mapping_head_format)
-                            worksheet.write(current_row, 9, "考科/類別", mapping_head_format)
+                                
+                            if not is_gen_hs:
+                                # 技高：右側放置對照表
+                                worksheet.write(current_row, 8, "代碼", mapping_head_format)
+                                worksheet.write(current_row, 9, "考科/類別", mapping_head_format)
+                                
                             worksheet.set_row(current_row, 20)
                             current_row += 1
                             
+                            # 3. 學生資料填寫
                             start_data_row = current_row
-                            rows_needed = max(len(df_cls), len(target_mapping))
+                            rows_needed = len(df_cls) if is_gen_hs else max(len(df_cls), len(target_mapping))
                             
                             for i in range(rows_needed):
+                                # 左側學生資料
                                 if i < len(df_cls):
                                     row_data = df_cls.iloc[i]
                                     worksheet.write(start_data_row + i, 0, str(row_data['班級']), data_format)
@@ -276,28 +295,47 @@ with tab1:
                                     for c in range(7):
                                         worksheet.write(start_data_row + i, c, "", data_format)
                                         
-                                if i < len(target_mapping):
-                                    code, name = target_mapping[i]
-                                    worksheet.write(start_data_row + i, 8, code, mapping_data_format)
-                                    worksheet.write(start_data_row + i, 9, name, mapping_data_format)
+                                # 技高右側對照表
+                                if not is_gen_hs:
+                                    if i < len(target_mapping):
+                                        code, name, _ = target_mapping[i]
+                                        worksheet.write(start_data_row + i, 8, code, mapping_data_format)
+                                        worksheet.write(start_data_row + i, 9, name, mapping_data_format)
                                 
                                 worksheet.set_row(start_data_row + i, 18)
                                 
                             current_row = start_data_row + rows_needed
                             
+                            # 4. 導師簽名列
                             worksheet.set_row(current_row, 10) 
                             current_row += 1
-                            worksheet.merge_range(current_row, 0, current_row, 9, "導師確認簽章：________________________", signature_format)
+                            worksheet.merge_range(current_row, 0, current_row, merge_end_col, "導師確認簽章：________________________", signature_format)
                             worksheet.set_row(current_row, 35) 
                             current_row += 1
                             
                             worksheet.set_row(current_row, 15) 
                             current_row += 1
                             
-                            # ====================================================
-                            # 🚀 終極動態警語產生引擎 (全境導入「報考類別請填代碼」紅字)
-                            # ====================================================
-                            if "普高" in school_type and selected_preset_sheet:
+                            # 5. 普高專屬：底部對照表
+                            if is_gen_hs:
+                                worksheet.write(current_row, 0, "代碼", mapping_head_format)
+                                worksheet.merge_range(current_row, 1, current_row, 4, "考科組合", mapping_head_format)
+                                worksheet.merge_range(current_row, 5, current_row, 6, "單次費用", mapping_head_format)
+                                worksheet.set_row(current_row, 20)
+                                current_row += 1
+                                
+                                for code, name, fee in target_mapping:
+                                    worksheet.write(current_row, 0, code, mapping_data_format)
+                                    worksheet.merge_range(current_row, 1, current_row, 4, name, mapping_data_format)
+                                    worksheet.merge_range(current_row, 5, current_row, 6, fee, mapping_data_format)
+                                    worksheet.set_row(current_row, 18)
+                                    current_row += 1
+                                
+                                worksheet.set_row(current_row, 10) 
+                                current_row += 1
+                            
+                            # 6. 終極動態警語產生引擎
+                            if is_gen_hs and selected_preset_sheet:
                                 if "高一" in selected_preset_sheet or "仿真" in selected_preset_sheet:
                                     memo_lines = [
                                         ["1.為讓同學了解學測考試時間及題型，將於二年級舉行第一次學測模擬考。"],
@@ -326,7 +364,6 @@ with tab1:
                                         ["3.第三、四次費用將調查完畢後一起收取費用。"]
                                     ]
                                 else:
-                                    # 防呆備用
                                     memo_lines = [
                                         ["1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
                                         ["2.", red_alert_format, "報考類別請填代碼"],
@@ -351,7 +388,7 @@ with tab1:
                                 else:
                                     fmt = note_format_middle
                                     
-                                worksheet.merge_range(current_row, 0, current_row, 9, "", fmt)
+                                worksheet.merge_range(current_row, 0, current_row, merge_end_col, "", fmt)
                                 
                                 has_format = any(type(x) != str for x in rich_parts)
                                 if has_format:
@@ -361,13 +398,16 @@ with tab1:
                                     
                                 # 根據字串長度自動適配高度，防截斷
                                 text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
-                                row_height = 30 if text_length > 65 else 22
+                                if is_gen_hs:
+                                    row_height = 45 if text_length > 60 else (30 if text_length > 30 else 24)
+                                else:
+                                    row_height = 30 if text_length > 65 else 22
                                 worksheet.set_row(current_row, row_height)
                                 current_row += 1
-                            # ====================================================
-
+                            
                             page_breaks.append(current_row)
                             
+                        # 整體欄寬配置
                         worksheet.set_column('A:B', 8)
                         worksheet.set_column('C:D', 10)
                         worksheet.set_column('E:G', 12)
@@ -438,7 +478,7 @@ with tab2:
                     for i, col in enumerate(df_data_preload.columns):
                         col_name = str(col).strip()
                         if col_name == '代碼' and i > 4: c_col = i
-                        if col_name in ['類別', '類群', '名稱', '科別', '群別', '報考類組', '考科/類別'] and i > 4: n_col = i
+                        if col_name in ['類別', '類群', '名稱', '科別', '群別', '報考類組', '考科/類別', '考科組合'] and i > 4: n_col = i
                         
                     if c_col is None or n_col is None:
                         for i, col in enumerate(df_data_preload.columns):
