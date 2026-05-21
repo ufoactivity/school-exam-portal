@@ -9,8 +9,8 @@ from datetime import datetime
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
-st.title("📊 教務處-模擬考調查智能輔助系統 (雙工作表預填套印版)")
-st.info("💡 試務組終極進化：支援上傳「雙工作表設定檔」(工作表1:科別對應, 工作表2:費用對應)，系統會自動跨表比對並套印至調查表中！")
+st.title("📊 教務處-模擬考調查智能輔助系統 (全流程預填套印版)")
+st.info("💡 試務組終極進化：第一階段產出調查表時，底部已新增「繳回截止日」與「注意事項警語」，方便學藝股長與同學查核！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -32,7 +32,6 @@ if 'template_excel_data' not in st.session_state:
 # 2. 輔助功能定義 (防呆與髒數據處理)
 # ==========================================
 def get_str_col(df, keywords):
-    """模糊比對欄位名稱，防禦老師上傳不同格式的表單"""
     if isinstance(keywords, str): keywords = [keywords]
     for kw in keywords:
         for i, col in enumerate(df.columns):
@@ -93,12 +92,15 @@ with tab1:
         default_title = "114學年度國立華南高商統測模擬考 報考類組調查表" if "技高" in school_type else "114學年度國立華南高商學測模擬考 報考考科調查表"
         template_name = st.text_input("🎯 擬定表單大標題", value=default_title)
         default_price = st.number_input("💰 預設單次費用 (無對照檔或查無資料時套用，可留 0)", min_value=0, max_value=2000, value=0, step=10)
+        # --- 新增動態截止日選擇 ---
+        deadline_date = st.date_input("📅 調查表繳回截止日", value=datetime.today())
+        deadline_str = f"{deadline_date.month}月{deadline_date.day}日"
         
     if st.button("🚀 生成一班一頁調查表", type="primary", use_container_width=True, key="btn_gen_template"):
         if not file_roster:
             st.error("🚨 請先上傳學生原始名條！")
         else:
-            with st.spinner("正在智能合成調查表與跨表自動套印中..."):
+            with st.spinner("正在智能合成調查表與自動套印中..."):
                 try:
                     # 讀取雙工作表預設檔
                     preset_mapping = {}
@@ -106,7 +108,6 @@ with tab1:
                         xls = pd.ExcelFile(file_preset)
                         df_preset_dept = pd.read_excel(xls, sheet_name=0).fillna("")
                         
-                        # 讀取工作表 2 (費用字典)
                         fee_map = {}
                         if len(xls.sheet_names) > 1:
                             df_preset_fee = pd.read_excel(xls, sheet_name=1).fillna("")
@@ -119,7 +120,6 @@ with tab1:
                                     fee_map[c_str] = f_str
                                     fee_map[str(c_val).strip()] = f_str
                         else:
-                            # 備用防禦：如果老師只傳單一工作表，嘗試在第一頁找費用
                             f_code = get_str_col(df_preset_dept, ['代碼', '類組', '類別'])
                             f_fee = get_str_col(df_preset_dept, ['費用', '金額', '單價'])
                             for c_val, f_val in zip(f_code, f_fee):
@@ -127,7 +127,6 @@ with tab1:
                                 f_str = str(f_val).strip()
                                 if c_str and f_str: fee_map[c_str] = f_str
 
-                        # 讀取工作表 1 (科別對應) 並整合費用
                         s_key = get_str_col(df_preset_dept, ['科別', '班級', '字首'])
                         s_code = get_str_col(df_preset_dept, ['代碼', '類組', '預設'])
                         
@@ -167,7 +166,6 @@ with tab1:
                         cls_name = str(row['班級'])
                         matched = preset_mapping.get(cls_name)
                         if not matched:
-                            # 支援模糊比對 (如科別寫「商」，可比對「商三1」)
                             for k, v in preset_mapping.items():
                                 if cls_name.startswith(k):
                                     matched = v
@@ -192,6 +190,8 @@ with tab1:
                         mapping_head_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFF2CC', 'align': 'center', 'valign': 'vcenter'})
                         mapping_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         signature_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
+                        # --- 新增警語專用排版 ---
+                        note_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True})
                         
                         headers = ['班級', '座號', '學號', '姓名', '單次費用', '報考類組', '簽名']
                         target_mapping = list((STANDARD_MAPPING_VOC if "技高" in school_type else STANDARD_MAPPING_GEN).items())
@@ -240,12 +240,26 @@ with tab1:
                                 
                             current_row = start_data_row + rows_needed
                             
+                            # 空白與導師簽名列
                             worksheet.set_row(current_row, 10) 
                             current_row += 1
                             worksheet.merge_range(current_row, 0, current_row, 6, "導師確認簽章：________________________", signature_format)
                             worksheet.set_row(current_row, 35) 
                             current_row += 1
                             
+                            # --- 寫入注意事項警語 (跨欄置底) ---
+                            memo_1 = f"1.請學藝股長協助調查考試類別，如有更正請同學用紅筆更正並簽名，調查期間未到校者，簽名欄請空著不須代簽，此調查表請於 {deadline_str} 前交回教務處試務組。"
+                            memo_2 = "2.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"
+                            
+                            worksheet.merge_range(current_row, 0, current_row, 9, memo_1, note_format)
+                            worksheet.set_row(current_row, 22)
+                            current_row += 1
+                            
+                            worksheet.merge_range(current_row, 0, current_row, 9, memo_2, note_format)
+                            worksheet.set_row(current_row, 18)
+                            current_row += 1
+                            
+                            # 設定分頁
                             page_breaks.append(current_row)
                             
                         worksheet.set_column('A:B', 8)
@@ -266,7 +280,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！自動套印功能已完美執行。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！底部警語與截止日已完美套印。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
