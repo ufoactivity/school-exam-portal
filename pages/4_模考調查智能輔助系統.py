@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：警語字體大小已統一優化以防止斷行，並針對外框加入了「頂部舒適留白排版」！")
+st.info("💡 試務組終極進化：警語排版已完成「印刷級留白與防斷行」優化，字體大小統一，距離邊框完美適中！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -216,7 +216,7 @@ with tab1:
                         worksheet.center_horizontally()
                         worksheet.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4)
                         
-                        # --- 樣式設定 ---
+                        # --- 基本樣式設定 ---
                         title_format = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'})
                         header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center', 'valign': 'vcenter'})
                         data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
@@ -224,12 +224,13 @@ with tab1:
                         mapping_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         signature_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
                         
-                        note_format_top = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
-                        note_format_middle = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
-                        note_format_bottom = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
-                        note_format_single = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
+                        # --- 警語無縫拼接方框引擎 (加入 indent 左縮排，留白防壓迫) ---
+                        note_format_top = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
+                        note_format_middle = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
+                        note_format_bottom = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
+                        note_format_single = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
                         
-                        # 修正：字體統一為 11 級，防斷行
+                        # --- 修正：強制所有顏色字體與黑字大小一致，鎖定 11 級 ---
                         red_alert_format = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 11})
                         blue_alert_format = workbook.add_format({'font_color': '#1976D2', 'bold': True, 'font_size': 11})
                         
@@ -320,7 +321,7 @@ with tab1:
                                 current_row += 1
                             
                             # ====================================================
-                            # 🚀 終極動態警語產生引擎 (支援報考類別填代碼紅字，首行頂部留白)
+                            # 🚀 終極動態警語產生引擎 (頭尾加入 \n 產生防迫距留白)
                             # ====================================================
                             if is_gen_hs and selected_preset_sheet:
                                 if "高一" in selected_preset_sheet or "仿真" in selected_preset_sheet:
@@ -328,43 +329,42 @@ with tab1:
                                         ["\n1.為讓同學了解學測考試時間及題型，將於二年級舉行第一次學測模擬考。"],
                                         ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
                                         ["3.", red_alert_format, "報考類別請填代碼"],
-                                        ["4.模擬考費用將於新學期時9月初進行收取。"]
+                                        ["4.模擬考費用將於新學期時9月初進行收取。\n"]
                                     ]
                                 elif "第一" in selected_preset_sheet:
                                     memo_lines = [
                                         ["\n1.未參加暑期輔導的同學，不能參加第一次模擬考，", red_alert_format, "『報考類別』欄位請填不參加", "。"],
                                         ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
                                         ["3.", red_alert_format, "報考類別請填代碼"],
-                                        ["4.模擬考費用將於調查表回收後，進行收取費用。"]
+                                        ["4.模擬考費用將於調查表回收後，進行收取費用。\n"]
                                     ]
                                 elif "第二" in selected_preset_sheet:
                                     memo_lines = [
                                         ["\n1.第二次模擬考，", blue_alert_format, "統一加考英聽", "。"],
                                         ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
                                         ["3.", red_alert_format, "報考類別請填代碼"],
-                                        ["4.模擬考費用將於新學期時9月初進行收取費用。"]
+                                        ["4.模擬考費用將於新學期時9月初進行收取費用。\n"]
                                     ]
                                 elif "第三" in selected_preset_sheet or "第四" in selected_preset_sheet:
                                     memo_lines = [
                                         ["\n1.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此張單子交回教務處『試務組』。"],
                                         ["2.", red_alert_format, "報考類別請填代碼"],
-                                        ["3.第三、四次費用將調查完畢後一起收取費用。"]
+                                        ["3.第三、四次費用將調查完畢後一起收取費用。\n"]
                                     ]
                                 else:
                                     memo_lines = [
                                         ["\n1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
                                         ["2.", red_alert_format, "報考類別請填代碼"],
-                                        ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"]
+                                        ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。\n"]
                                     ]
                             else:
-                                # 技高與其他預設情況
                                 memo_lines = [
                                     ["\n1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
                                     ["2.", red_alert_format, "報考類別請填代碼"],
-                                    ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"]
+                                    ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。\n"]
                                 ]
 
-                            # 智慧畫框與高度適配
+                            # 智慧畫框與高度適配 (頂部加高留白)
                             for line_idx, rich_parts in enumerate(memo_lines):
                                 if len(memo_lines) == 1:
                                     fmt = note_format_single
@@ -383,13 +383,15 @@ with tab1:
                                 else:
                                     worksheet.write(current_row, 0, rich_parts[0], fmt)
                                     
+                                # 依據字串長度與是否為頭尾行計算高度，防止斷行與擁擠
                                 text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
                                 
-                                # 針對第1行的留白加高，第2行的單行高度進行鎖定
                                 if line_idx == 0:
-                                    row_height = 42 if text_length > 45 else 36
+                                    row_height = 60 if text_length > 60 else 48  # 第一行有 \n 留白，需大幅加高
+                                elif line_idx == len(memo_lines) - 1:
+                                    row_height = 36  # 最後一行有 \n 留白，需中幅加高
                                 else:
-                                    row_height = 32 if text_length > 45 else 22
+                                    row_height = 24  # 中間行維持正常單行高度
                                     
                                 worksheet.set_row(current_row, row_height)
                                 current_row += 1
@@ -479,6 +481,7 @@ with tab2:
                         for r in range(len(df_data_preload)):
                             cv = str(df_data_preload.iloc[r, c_col]).strip().split('.')[0]
                             nv = str(df_data_preload.iloc[r, n_col]).strip()
+                            # 支援英文字母代碼
                             if cv and nv and cv != 'nan' and nv != 'nan' and cv != '代碼':
                                 preload_mapping[cv] = nv
                                 
