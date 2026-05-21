@@ -9,8 +9,8 @@ from datetime import datetime
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
-st.title("📊 教務處-模擬考調查智能輔助系統 (全流程預填套印版)")
-st.info("💡 試務組終極進化：調查表底部警語已實裝「紅/藍雙色醒目標示」與「紅色粗體大外框」，版面層次分明，確保學藝股長與同學一看就懂！")
+st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表支援版)")
+st.info("💡 試務組終極進化：支援匯出名條「多工作表 (Sheet) 切換」，一鍵選擇欲處理的年級與學制，免手動拆檔！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -79,13 +79,27 @@ tab1, tab2 = st.tabs(["📄 階段一：從名條產出【空白/預填意願調
 # ---------------------------------------------------------
 with tab1:
     st.subheader("🛠️ 製作公版模擬考意願調查表 (支援跨表自動套印)")
-    st.markdown("上傳學生名單與「預設對照表（工作表1=科別預設類組、工作表2=類組單次費用）」，系統將為您自動排版並預填好各班學生的類組與費用！")
+    st.markdown("上傳學生名單與「預設對照表」，系統將為您自動排版並預填好各班學生的類組與費用！")
     
     col1_t1, col2_t1 = st.columns([1, 1], gap="large")
     
     with col1_t1:
-        file_roster = st.file_uploader("📥 1. 上傳學生原始名條 (必填)", type=['xlsx', 'csv'], key="roster_uploader")
-        file_preset = st.file_uploader("📥 2. 上傳【雙工作表預設對照檔】 (選填)", type=['xlsx'], key="preset_uploader")
+        file_roster = st.file_uploader("📥 1. 上傳學生原始名條 (必填，支援多工作表)", type=['xlsx', 'xls', 'csv'], key="roster_uploader")
+        
+        # --- 動態偵測與選擇工作表 ---
+        selected_roster_sheet = 0
+        if file_roster and not file_roster.name.endswith('.csv'):
+            try:
+                xls_roster = pd.ExcelFile(file_roster)
+                sheet_names = xls_roster.sheet_names
+                if len(sheet_names) > 1:
+                    selected_roster_sheet = st.selectbox("📑 偵測到多個工作表，請選擇欲處理的名單：", sheet_names)
+                else:
+                    selected_roster_sheet = sheet_names[0]
+            except Exception as e:
+                st.warning("無法解析工作表，將預設讀取第一個。")
+
+        file_preset = st.file_uploader("📥 2. 上傳【雙工作表預設對照檔】 (選填)", type=['xlsx', 'xls'], key="preset_uploader")
         school_type = st.radio("🏫 選擇產出的學制類型：", ["技高 (統測群類)", "普高 (學測考科)"], horizontal=True)
         
     with col2_t1:
@@ -137,10 +151,11 @@ with tab1:
                                     'fee': fee_map.get(c_str, "")
                                 }
 
+                    # 讀取名條 (套用動態選擇的工作表)
                     if file_roster.name.endswith('.csv'):
                         df_roster = pd.read_csv(file_roster).fillna("")
                     else:
-                        df_roster = pd.read_excel(file_roster).fillna("")
+                        df_roster = pd.read_excel(file_roster, sheet_name=selected_roster_sheet).fillna("")
                         
                     df_temp = pd.DataFrame()
                     df_temp['班級'] = get_str_col(df_roster, ['班級', '科別'])
@@ -188,7 +203,6 @@ with tab1:
                         mapping_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         signature_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
                         
-                        # --- 警語專用排版：分離上下邊框，組合成一個無縫的大外框 ---
                         note_format_top = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
                         note_format_bottom = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F'})
                         red_alert_format = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 12})
@@ -250,7 +264,6 @@ with tab1:
                             worksheet.set_row(current_row, 15) 
                             current_row += 1
                             
-                            # --- 完美一體成型：紅字框列排版 ---
                             worksheet.merge_range(current_row, 0, current_row, 9, "", note_format_top)
                             worksheet.write_rich_string(current_row, 0,
                                 "1.請學藝股長協助調查考試類別，",
@@ -307,8 +320,8 @@ with tab2:
     with col1:
         st.subheader("📂 1. 上傳已填妥之調查表")
         file_survey = st.file_uploader(
-            "📥 上傳回收之學生意願調查表 (普高/技高表單皆可直接辨識)", 
-            type=['xlsx', 'csv'], 
+            "📥 上傳回收之學生意願調查表 (普高/技高皆可辨識，支援 xls/xlsx)", 
+            type=['xlsx', 'xls', 'csv'], 
             key=f"mock_f2_{st.session_state.mock_uploader_key}"
         )
         
@@ -692,7 +705,7 @@ with tab2:
     # ==========================================
     if st.session_state.mock_processed:
         st.balloons()
-        st.success("🎉 第二階段試務報表結算完成！")
+        st.success("🎉 第二階段試務報表結算完成！收費明細已新增學號，方便導師精準核對。")
         
         st.download_button(
             label="📥 點擊下載【模擬考收費與各班未報考人數交叉檢核總表】",
