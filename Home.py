@@ -118,7 +118,7 @@ with row1_col1:
         - 🏷️ **標籤全聯動**：交叉比對配課表，一鍵合成試卷袋列印貼紙。
         """)
         st.write("")
-        st.page_link("pages/1_監考作業智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
+        st.page_link("pages/1_段考監考智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
 
 with row1_col2:
     with st.container(border=True):
@@ -157,7 +157,7 @@ with row2_col1:
         - 🖨️ **一鍵直出報表**：自動生成大字體、紅字警語且已蓋妥官印之Word公告單.
         """)
         st.write("")
-        st.page_link("pages/3_教甄作業智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
+        st.page_link("pages/3_教師甄選智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
 
 with row2_col2:
     with st.container(border=True):
