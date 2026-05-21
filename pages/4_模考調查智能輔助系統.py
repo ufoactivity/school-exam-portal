@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：支援普高動態切換工作表！系統會根據您選擇的次數（第一次/第二次/仿真模考...）自動變換專屬警語與紅字提示！")
+st.info("💡 試務組終極進化：普高各次模考皆已強制寫入「報考類別請填代碼」之紅字防呆警語！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -201,7 +201,7 @@ with tab1:
                         matched = preset_mapping.get(cls_name)
                         if not matched:
                             for k, v in preset_mapping.items():
-                                if k in cls_name or cls_name.startswith(k):
+                                if cls_name.startswith(k):
                                     matched = v
                                     break
                         if matched:
@@ -295,48 +295,48 @@ with tab1:
                             current_row += 1
                             
                             # ====================================================
-                            # 🚀 終極動態警語產生引擎 (支援4種情境動態切換)
+                            # 🚀 終極動態警語產生引擎 (全境導入「報考類別請填代碼」紅字)
                             # ====================================================
                             if "普高" in school_type and selected_preset_sheet:
-                                # 優先判斷是否為高一仿真模考
                                 if "高一" in selected_preset_sheet or "仿真" in selected_preset_sheet:
                                     memo_lines = [
                                         ["1.為讓同學了解學測考試時間及題型，將於二年級舉行第一次學測模擬考。"],
                                         ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
-                                        ["3.模擬考費用將於新學期時9月初進行收取。"]
+                                        ["3.", red_alert_format, "報考類別請填代碼"],
+                                        ["4.模擬考費用將於新學期時9月初進行收取。"]
                                     ]
                                 elif "第一" in selected_preset_sheet:
                                     memo_lines = [
                                         ["1.未參加暑期輔導的同學，不能參加第一次模擬考，", red_alert_format, "『報考類別』欄位請填不參加", "。"],
                                         ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
-                                        [red_alert_format, "3.報考類別請填代碼"],
+                                        ["3.", red_alert_format, "報考類別請填代碼"],
                                         ["4.模擬考費用將於調查表回收後，進行收取費用。"]
                                     ]
                                 elif "第二" in selected_preset_sheet:
                                     memo_lines = [
                                         ["1.第二次模擬考，", blue_alert_format, "統一加考英聽", "。"],
                                         ["2.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此調查表交回教務處試務組。"],
-                                        [red_alert_format, "3.報考類別請填代碼"],
+                                        ["3.", red_alert_format, "報考類別請填代碼"],
                                         ["4.模擬考費用將於新學期時9月初進行收取費用。"]
                                     ]
                                 elif "第三" in selected_preset_sheet or "第四" in selected_preset_sheet:
                                     memo_lines = [
                                         ["1.請學藝股長於 ", red_alert_format, f"{deadline_str} 早上11點前", " 完成，此張單子交回教務處『試務組』。"],
-                                        [red_alert_format, "2.報考類別請填代碼"],
+                                        ["2.", red_alert_format, "報考類別請填代碼"],
                                         ["3.第三、四次費用將調查完畢後一起收取費用。"]
                                     ]
                                 else:
                                     # 防呆備用
                                     memo_lines = [
                                         ["1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
-                                        [red_alert_format, "2.報考類別請填代碼"],
+                                        ["2.", red_alert_format, "報考類別請填代碼"],
                                         ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"]
                                     ]
                             else:
                                 # 技高與其他預設情況
                                 memo_lines = [
                                     ["1.請學藝股長協助調查考試類別，", red_alert_format, "如有更正請同學用紅筆更正並簽名", "，", blue_alert_format, "調查期間未到校者，簽名欄請空著不須代簽", "，", red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。"],
-                                    [red_alert_format, "2.報考類別請填代碼"],
+                                    ["2.", red_alert_format, "報考類別請填代碼"],
                                     ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。"]
                                 ]
 
