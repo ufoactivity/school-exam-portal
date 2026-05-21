@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (全流程預填套印版)")
-st.info("💡 試務組終極進化：調查表底部警語已實裝「紅字醒目標示」與「抗截斷加高排版」，簽名欄距亦已拉開，確保列印零死角！")
+st.info("💡 試務組終極進化：調查表底部警語已實裝「紅字醒目標示」，且導師簽名欄位已完美貼齊右側邊界，確保列印零死角！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -79,7 +79,7 @@ tab1, tab2 = st.tabs(["📄 階段一：從名條產出【空白/預填意願調
 # ---------------------------------------------------------
 with tab1:
     st.subheader("🛠️ 製作公版模擬考意願調查表 (支援跨表自動套印)")
-    st.markdown("上傳學生名單與「預設對照表」，系統將為您自動排版並預填好各班學生的類組與費用！")
+    st.markdown("上傳學生名單與「預設對照表（工作表1=科別預設類組、工作表2=類組單次費用）」，系統將為您自動排版並預填好各班學生的類組與費用！")
     
     col1_t1, col2_t1 = st.columns([1, 1], gap="large")
     
@@ -192,7 +192,7 @@ with tab1:
                         mapping_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         signature_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
                         
-                        # --- 警語專用排版 (自動換行與富文本對應格式) ---
+                        # --- 警語專用排版 ---
                         note_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True})
                         red_alert_format = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 12})
                         
@@ -243,26 +243,25 @@ with tab1:
                                 
                             current_row = start_data_row + rows_needed
                             
-                            # --- 導師簽名列 ---
+                            # --- 導師簽名列 (修正：將合併範圍擴大到 J 欄，使其完美靠在紙張最右側) ---
                             worksheet.set_row(current_row, 10) 
                             current_row += 1
-                            worksheet.merge_range(current_row, 0, current_row, 6, "導師確認簽章：________________________", signature_format)
+                            worksheet.merge_range(current_row, 0, current_row, 9, "導師確認簽章：________________________", signature_format)
                             worksheet.set_row(current_row, 35) 
                             current_row += 1
                             
-                            # --- 修正 1：拉大簽名區與警語的間距 ---
+                            # --- 簽名區與警語的間距 ---
                             worksheet.set_row(current_row, 15) 
                             current_row += 1
                             
-                            # --- 修正 2 & 3：紅字放大標示與加高抗截斷 (富文本引擎) ---
-                            worksheet.merge_range(current_row, 0, current_row, 9, "", note_format) # 先畫出跨欄範圍
+                            # --- 紅字放大標示與加高抗截斷 ---
+                            worksheet.merge_range(current_row, 0, current_row, 9, "", note_format)
                             worksheet.write_rich_string(current_row, 0,
                                 "1.請學藝股長協助調查考試類別，",
                                 red_alert_format, "如有更正請同學用紅筆更正並簽名",
                                 "，調查期間未到校者，簽名欄請空著不須代簽，",
                                 red_alert_format, f"此調查表請於 {deadline_str} 前交回教務處試務組。",
                                 note_format)
-                            # 加高列高，確保 2 到 3 行的長文字不會被切掉
                             worksheet.set_row(current_row, 45) 
                             current_row += 1
                             
@@ -696,7 +695,7 @@ with tab2:
     # ==========================================
     if st.session_state.mock_processed:
         st.balloons()
-        st.success("🎉 第二階段試務報表結算完成！")
+        st.success("🎉 第二階段試務報表結算完成！收費明細已新增學號，方便導師精準核對。")
         
         st.download_button(
             label="📥 點擊下載【模擬考收費與各班未報考人數交叉檢核總表】",
