@@ -9,8 +9,8 @@ from datetime import datetime
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
-st.title("📊 教務處-模擬考調查智能輔助系統 (含學號與A4極致排版版)")
-st.info("💡 試務組終極進化：調查表與收費明細皆已新增「學號」欄位！調查表底部已新增「導師確認簽章」，系統並自動重新調配了 A4 列印黃金寬度，確保不會跑版！")
+st.title("📊 教務處-模擬考調查智能輔助系統 (全流程預填套印版)")
+st.info("💡 試務組終極進化：第一階段產出調查表時，已支援上傳「預設類組與費用」進行自動套印！代碼表亦已補齊 51~56 類。")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -49,13 +49,15 @@ def clean_class_name(c):
     s = s.translate(str.maketrans('１２３４５６７８９０', '1234567890'))
     return s
 
-# 統測標準20群類代碼表 (供階段一技高使用)
+# 統測標準20群類 + 51~56 代碼表 (供階段一技高使用)
 STANDARD_MAPPING_VOC = {
     '1': '機械群', '2': '動力機械群', '3': '電機與電子群(電機類)', '4': '電機與電子群(資電類)',
     '5': '化工群', '6': '土木與建築群', '7': '設計群', '8': '工程與管理類',
     '9': '商業與管理群', '10': '衛生與護理類', '11': '食品群', '12': '家政群幼保類',
     '13': '家政群生活應用類', '14': '農業群', '15': '外語群(英文類)', '16': '外語群(日文類)',
-    '17': '餐旅群', '18': '海事群', '19': '水產群', '20': '藝術群(影視類)'
+    '17': '餐旅群', '18': '海事群', '19': '水產群', '20': '藝術群(影視類)',
+    '51': '電機與電子群(03+04類)', '52': '家政群(12+13類)', '53': '商管外語群(1)-(9+15類)',
+    '54': '商管外語群(2)-(9+16類)', '55': '商管外語群(3)-(15+16類)', '56': '商管外語群(4)-(9+15+16類)'
 }
 
 # 學測常見考科組合代碼表 (供階段一普高使用)
@@ -70,32 +72,54 @@ STANDARD_MAPPING_GEN = {
 # ==========================================
 # 3. 雙階段頁籤設計
 # ==========================================
-tab1, tab2 = st.tabs(["📄 階段一：從名條產出【空白意願調查表】", "💰 階段二：從調查表產出【試務與收費報表】"])
+tab1, tab2 = st.tabs(["📄 階段一：從名條產出【空白/預填意願調查表】", "💰 階段二：從調查表產出【試務與收費報表】"])
 
 # ---------------------------------------------------------
-# 【階段一：產出空白調查表】
+# 【階段一：產出調查表】
 # ---------------------------------------------------------
 with tab1:
-    st.subheader("🛠️ 製作公版模擬考意願調查表")
-    st.markdown("上傳各年級的純淨學生名單（只需包含班級、座號、學號、姓名），系統將為您自動加上收費欄位與右側代碼對照表。")
+    st.subheader("🛠️ 製作公版模擬考意願調查表 (支援自動套印)")
+    st.markdown("上傳各年級學生名單，系統將為您自動排版為一班一頁的調查表。若上傳「預設對照檔」，系統還會自動幫同科別學生預填好代碼與費用！")
     
     col1_t1, col2_t1 = st.columns([1, 1], gap="large")
     
     with col1_t1:
-        file_roster = st.file_uploader("📥 上傳學生原始名條", type=['xlsx', 'csv'], key="roster_uploader")
+        file_roster = st.file_uploader("📥 1. 上傳學生原始名條 (必填)", type=['xlsx', 'csv'], key="roster_uploader")
+        file_preset = st.file_uploader("📥 2. 上傳【科別預設類組與費用】對照表 (選填)", type=['xlsx', 'csv'], key="preset_uploader")
         school_type = st.radio("🏫 選擇產出的學制類型：", ["技高 (統測群類)", "普高 (學測考科)"], horizontal=True)
         
     with col2_t1:
         default_title = "114學年度國立華南高商統測模擬考 報考類組調查表" if "技高" in school_type else "114學年度國立華南高商學測模擬考 報考考科調查表"
         template_name = st.text_input("🎯 擬定表單大標題", value=default_title)
-        default_price = st.number_input("💰 預填單次費用 (可留白讓導師填)", min_value=0, max_value=2000, value=0, step=10)
+        default_price = st.number_input("💰 預填單次費用 (無專屬預設檔時套用，可留 0)", min_value=0, max_value=2000, value=0, step=10)
         
-    if st.button("🚀 生成公版空白調查表", type="primary", use_container_width=True, key="btn_gen_template"):
+    if st.button("🚀 生成一班一頁調查表", type="primary", use_container_width=True, key="btn_gen_template"):
         if not file_roster:
             st.error("🚨 請先上傳學生原始名條！")
         else:
-            with st.spinner("正在合成公版調查表..."):
+            with st.spinner("正在智能合成調查表與自動套印中..."):
                 try:
+                    # 讀取預設設定檔
+                    preset_mapping = {}
+                    if file_preset:
+                        if file_preset.name.endswith('.csv'):
+                            df_preset = pd.read_csv(file_preset).fillna("")
+                        else:
+                            df_preset = pd.read_excel(file_preset).fillna("")
+                        
+                        s_key = get_str_col(df_preset, ['科別', '班級', '群別', '字首'])
+                        s_code = get_str_col(df_preset, ['代碼', '類組', '預設'])
+                        s_fee = get_str_col(df_preset, ['費用', '金額', '單價'])
+                        
+                        for k, c, f in zip(s_key, s_code, s_fee):
+                            k_str = str(k).strip()
+                            if k_str:
+                                preset_mapping[k_str] = {
+                                    'code': str(c).strip().split('.')[0], 
+                                    'fee': str(f).strip()
+                                }
+
+                    # 讀取名條
                     if file_roster.name.endswith('.csv'):
                         df_roster = pd.read_csv(file_roster).fillna("")
                     else:
@@ -113,6 +137,24 @@ with tab1:
                     df_temp['座號_Num'] = pd.to_numeric(df_temp['座號'], errors='coerce').fillna(999)
                     df_temp = df_temp.sort_values(by=['班級', '座號_Num']).drop(columns=['座號_Num'])
                     
+                    # 智慧自動套印 (類組代碼與費用)
+                    df_temp['單次費用'] = default_price if default_price > 0 else ""
+                    df_temp['報考類組'] = ""
+                    df_temp['簽名'] = ""
+
+                    for idx, row in df_temp.iterrows():
+                        cls_name = str(row['班級'])
+                        matched = preset_mapping.get(cls_name)
+                        if not matched:
+                            # 支援前綴比對 (如設定寫「商」，可配對「商三1」)
+                            for k, v in preset_mapping.items():
+                                if cls_name.startswith(k):
+                                    matched = v
+                                    break
+                        if matched:
+                            if matched['code']: df_temp.at[idx, '報考類組'] = matched['code']
+                            if matched['fee']: df_temp.at[idx, '單次費用'] = matched['fee']
+
                     output_template = io.BytesIO()
                     with pd.ExcelWriter(output_template, engine='xlsxwriter') as writer:
                         workbook = writer.book
@@ -161,9 +203,8 @@ with tab1:
                                     worksheet.write(start_data_row + i, 1, str(row_data['座號']), data_format)
                                     worksheet.write(start_data_row + i, 2, str(row_data['學號']), data_format)
                                     worksheet.write(start_data_row + i, 3, str(row_data['姓名']), data_format)
-                                    fee_val = default_price if default_price > 0 else ""
-                                    worksheet.write(start_data_row + i, 4, fee_val, data_format)
-                                    worksheet.write(start_data_row + i, 5, "", data_format)
+                                    worksheet.write(start_data_row + i, 4, str(row_data['單次費用']), data_format)
+                                    worksheet.write(start_data_row + i, 5, str(row_data['報考類組']), data_format)
                                     worksheet.write(start_data_row + i, 6, "", data_format)
                                 else:
                                     for c in range(7):
@@ -178,11 +219,10 @@ with tab1:
                                 
                             current_row = start_data_row + rows_needed
                             
-                            # --- 加入空白緩衝列與導師確認簽章 ---
                             worksheet.set_row(current_row, 10) 
                             current_row += 1
                             worksheet.merge_range(current_row, 0, current_row, 6, "導師確認簽章：________________________", signature_format)
-                            worksheet.set_row(current_row, 35) # 加高讓導師好簽名
+                            worksheet.set_row(current_row, 35) 
                             current_row += 1
                             
                             page_breaks.append(current_row)
@@ -191,8 +231,8 @@ with tab1:
                         worksheet.set_column('C:D', 10)
                         worksheet.set_column('E:G', 12)
                         worksheet.set_column('H:H', 3) 
-                        worksheet.set_column('I:I', 8)
-                        worksheet.set_column('J:J', 22)
+                        worksheet.set_column('I:I', 10) # 加寬給 51~56 代碼
+                        worksheet.set_column('J:J', 24) # 加寬類別名稱
                         
                         if page_breaks:
                             worksheet.set_h_pagebreaks(page_breaks)
@@ -200,16 +240,16 @@ with tab1:
                     st.session_state.template_excel_data = output_template.getvalue()
                     st.session_state.template_processed = True
                 except Exception as e:
-                    st.error("🚨 名條解析失敗，請確認檔案是否有班級、座號、姓名。")
+                    st.error("🚨 名條解析失敗，請檢查檔案格式。")
                     st.code(traceback.format_exc())
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！請下載並發放給導師填寫。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！自動套印功能已完美執行。")
         st.download_button(
-            label=f"📥 下載【{school_prefix} 公版空白意願調查表】",
+            label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
-            file_name=f"{template_name}_公版範本.xlsx",
+            file_name=f"{template_name}_套印版範本_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             type="primary"
@@ -459,7 +499,6 @@ with tab2:
                     df_clean['座號_Num'] = pd.to_numeric(df_clean['座號'], errors='coerce').fillna(999)
                     df_clean = df_clean.sort_values(by=['班級', '座號_Num']).drop(columns=['座號_Num'])
 
-                    # 取出含學號的明細
                     df_details_raw = df_clean[['班級', '座號', '學號', '姓名', '報考類群', '單次應繳費用', '五次總繳費金額']].copy()
                     df_details_raw = df_details_raw.rename(columns={'單次應繳費用': '單次費用(參考)', '五次總繳費金額': '應繳總金額(5次)'})
                     
@@ -488,7 +527,6 @@ with tab2:
                     output_excel = io.BytesIO()
                     with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
                         
-                        # --- 工作表 1 ---
                         df_class_summary.to_excel(writer, index=False, sheet_name='1_總務處班級5次收費總表')
                         workbook  = writer.book
                         worksheet1 = writer.sheets['1_總務處班級5次收費總表']
@@ -499,7 +537,6 @@ with tab2:
                         worksheet1.write(start_row - 2, 0, "🔍 各班級未報考原因/狀態交叉檢核表", bold_format)
                         df_reason_by_class.to_excel(writer, index=False, sheet_name='1_總務處班級5次收費總表', startrow=start_row)
                         
-                        # --- 工作表 2 ---
                         ws_details = workbook.add_worksheet('2_各班繳費明細(5次總額)')
                         writer.sheets['2_各班繳費明細(5次總額)'] = ws_details 
                         
@@ -508,15 +545,14 @@ with tab2:
                         ws_details.center_horizontally()
                         ws_details.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4) 
                         
-                        # 重新適配 8 欄的黃金比例
-                        ws_details.set_column('A:A', 9)  # 班級
-                        ws_details.set_column('B:B', 6)  # 座號
-                        ws_details.set_column('C:C', 10) # 學號
-                        ws_details.set_column('D:D', 10) # 姓名
-                        ws_details.set_column('E:E', 21) # 報考類群
-                        ws_details.set_column('F:F', 13) # 單次費用
-                        ws_details.set_column('G:G', 14) # 總金額
-                        ws_details.set_column('H:H', 15) # 學生簽名
+                        ws_details.set_column('A:A', 9)  
+                        ws_details.set_column('B:B', 6)  
+                        ws_details.set_column('C:C', 10) 
+                        ws_details.set_column('D:D', 10) 
+                        ws_details.set_column('E:E', 21) 
+                        ws_details.set_column('F:F', 13) 
+                        ws_details.set_column('G:G', 14) 
+                        ws_details.set_column('H:H', 15) 
                         
                         title_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#F2F2F2', 'border': 1})
                         header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center', 'valign': 'vcenter'})
@@ -525,7 +561,6 @@ with tab2:
                         memo_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'border': 1, 'bg_color': '#FDFAD9'}) 
                         grand_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFF2CC', 'align': 'center', 'valign': 'vcenter', 'font_size': 12})
                         
-                        # 新增學號至明細表表頭
                         headers = ['班級', '座號', '學號', '姓名', '報考類群', '單次費用(參考)', '應繳總金額(5次)', '學生簽名']
                         
                         current_row = 0
@@ -597,7 +632,6 @@ with tab2:
                         if page_breaks:
                             ws_details.set_h_pagebreaks(page_breaks)
                         
-                        # --- 工作表 3 ---
                         df_publisher.to_excel(writer, index=False, sheet_name='3_書商訂卷總表')
                         writer.sheets['3_書商訂卷總表'].set_column('A:B', 24)
                     
@@ -615,7 +649,7 @@ with tab2:
     # ==========================================
     if st.session_state.mock_processed:
         st.balloons()
-        st.success("🎉 第二階段試務報表結算完成！收費明細已新增學號，方便導師精準核對。")
+        st.success("🎉 第二階段試務報表結算完成！")
         
         st.download_button(
             label="📥 點擊下載【模擬考收費與各班未報考人數交叉檢核總表】",
