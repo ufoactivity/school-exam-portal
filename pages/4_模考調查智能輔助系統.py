@@ -9,8 +9,8 @@ from datetime import datetime
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
-st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表支援版)")
-st.info("💡 試務組終極進化：支援匯出名條「多工作表 (Sheet) 切換」，一鍵選擇欲處理的年級與學制，免手動拆檔！")
+st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
+st.info("💡 試務組終極進化：支援普高「單一檔案、多工作表」的考科設定！上傳設定檔後，可直接於選單切換【第一次/第二次...】，系統將自動動態套印對應的考科與費用！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -60,7 +60,7 @@ STANDARD_MAPPING_VOC = {
     '54': '商管外語群(2)-(9+16類)', '55': '商管外語群(3)-(15+16類)', '56': '商管外語群(4)-(9+15+16類)'
 }
 
-# 學測常見考科組合代碼表
+# 學測常見考科組合代碼表 (若無上傳設定檔時的備用)
 STANDARD_MAPPING_GEN = {
     '1': '社會組(國英數B社)',
     '2': '自然組(國英數A自)',
@@ -78,28 +78,45 @@ tab1, tab2 = st.tabs(["📄 階段一：從名條產出【空白/預填意願調
 # 【階段一：產出調查表】
 # ---------------------------------------------------------
 with tab1:
-    st.subheader("🛠️ 製作公版模擬考意願調查表 (支援跨表自動套印)")
-    st.markdown("上傳學生名單與「預設對照表」，系統將為您自動排版並預填好各班學生的類組與費用！")
+    st.subheader("🛠️ 製作公版模擬考意願調查表 (支援跨表自動套印與動態考科)")
+    st.markdown("上傳學生名單與「多工作表預設檔」，普高每次不同的考科組合，系統都能讓您下拉選擇並動態生成專屬調查表！")
     
     col1_t1, col2_t1 = st.columns([1, 1], gap="large")
     
     with col1_t1:
         file_roster = st.file_uploader("📥 1. 上傳學生原始名條 (必填，支援多工作表)", type=['xlsx', 'xls', 'csv'], key="roster_uploader")
         
-        # --- 動態偵測與選擇工作表 ---
+        # 動態偵測名單工作表
         selected_roster_sheet = 0
         if file_roster and not file_roster.name.endswith('.csv'):
             try:
                 xls_roster = pd.ExcelFile(file_roster)
                 sheet_names = xls_roster.sheet_names
                 if len(sheet_names) > 1:
-                    selected_roster_sheet = st.selectbox("📑 偵測到多個工作表，請選擇欲處理的名單：", sheet_names)
+                    selected_roster_sheet = st.selectbox("📑 偵測到名條有多個工作表，請選擇欲處理的名單：", sheet_names)
                 else:
                     selected_roster_sheet = sheet_names[0]
             except Exception as e:
-                st.warning("無法解析工作表，將預設讀取第一個。")
+                st.warning("無法解析名單工作表，將預設讀取第一個。")
 
-        file_preset = st.file_uploader("📥 2. 上傳【雙工作表預設對照檔】 (選填)", type=['xlsx', 'xls'], key="preset_uploader")
+        file_preset = st.file_uploader("📥 2. 上傳【多工作表預設考科檔】 (選填)", type=['xlsx', 'xls'], key="preset_uploader")
+        
+        # --- 動態偵測設定檔工作表 (普高 1, 2, 3, 4 次模考切換) ---
+        selected_preset_sheet = None
+        if file_preset:
+            try:
+                xls_preset = pd.ExcelFile(file_preset)
+                p_sheet_names = xls_preset.sheet_names
+                if len(p_sheet_names) > 1:
+                    # 排除第一個班級對照表，讓老師選擇費用表
+                    options = p_sheet_names[1:]
+                    st.success("✅ 已偵測到多個考科費用分頁！")
+                    selected_preset_sheet = st.selectbox("📝 請選擇本次對應的【模擬考考科費用表】：", options)
+                else:
+                    selected_preset_sheet = p_sheet_names[0]
+            except Exception as e:
+                st.warning("無法解析設定檔工作表。")
+
         school_type = st.radio("🏫 選擇產出的學制類型：", ["技高 (統測群類)", "普高 (學測考科)"], horizontal=True)
         
     with col2_t1:
@@ -113,25 +130,36 @@ with tab1:
         if not file_roster:
             st.error("🚨 請先上傳學生原始名條！")
         else:
-            with st.spinner("正在智能合成調查表與自動套印中..."):
+            with st.spinner("正在智能合成調查表與動態考科套印中..."):
                 try:
                     preset_mapping = {}
+                    dynamic_target_mapping = [] 
+                    
                     if file_preset:
                         xls = pd.ExcelFile(file_preset)
+                        # 永遠拿第一個分頁當作「班級預設代碼」
                         df_preset_dept = pd.read_excel(xls, sheet_name=0).fillna("")
                         
                         fee_map = {}
-                        if len(xls.sheet_names) > 1:
-                            df_preset_fee = pd.read_excel(xls, sheet_name=1).fillna("")
-                            f_code = get_str_col(df_preset_fee, ['代碼', '類組', '類別', '群別'])
+                        if selected_preset_sheet:
+                            # 讀取使用者選擇的該次模考分頁 (例如：第一次類組費用)
+                            df_preset_fee = pd.read_excel(xls, sheet_name=selected_preset_sheet).fillna("")
+                            
+                            f_code = get_str_col(df_preset_fee, ['代碼', '類別', '群別', '類組', '代號'])
+                            f_name = get_str_col(df_preset_fee, ['名稱', '考科', '組合', '類組名稱', '類別名稱'])
                             f_fee = get_str_col(df_preset_fee, ['費用', '金額', '單價', '單次費用'])
-                            for c_val, f_val in zip(f_code, f_fee):
+                            
+                            for c_val, n_val, f_val in zip(f_code, f_name, f_fee):
                                 c_str = str(c_val).strip().split('.')[0]
+                                n_str = str(n_val).strip()
                                 f_str = str(f_val).strip()
-                                if c_str and f_str:
+                                if c_str:
                                     fee_map[c_str] = f_str
-                                    fee_map[str(c_val).strip()] = f_str
+                                    final_name = n_str if n_str else c_str
+                                    if c_str not in [x[0] for x in dynamic_target_mapping]:
+                                        dynamic_target_mapping.append((c_str, final_name))
                         else:
+                            # 備用機制
                             f_code = get_str_col(df_preset_dept, ['代碼', '類組', '類別'])
                             f_fee = get_str_col(df_preset_dept, ['費用', '金額', '單價'])
                             for c_val, f_val in zip(f_code, f_fee):
@@ -139,6 +167,7 @@ with tab1:
                                 f_str = str(f_val).strip()
                                 if c_str and f_str: fee_map[c_str] = f_str
 
+                        # 合併兩者
                         s_key = get_str_col(df_preset_dept, ['科別', '班級', '字首'])
                         s_code = get_str_col(df_preset_dept, ['代碼', '類組', '預設'])
                         
@@ -151,7 +180,6 @@ with tab1:
                                     'fee': fee_map.get(c_str, "")
                                 }
 
-                    # 讀取名條 (套用動態選擇的工作表)
                     if file_roster.name.endswith('.csv'):
                         df_roster = pd.read_csv(file_roster).fillna("")
                     else:
@@ -177,8 +205,9 @@ with tab1:
                         cls_name = str(row['班級'])
                         matched = preset_mapping.get(cls_name)
                         if not matched:
+                            # 模糊匹配 (支援前綴、後綴或包含)
                             for k, v in preset_mapping.items():
-                                if cls_name.startswith(k):
+                                if k in cls_name or cls_name.startswith(k):
                                     matched = v
                                     break
                         if matched:
@@ -209,7 +238,12 @@ with tab1:
                         blue_alert_format = workbook.add_format({'font_color': '#1976D2', 'bold': True, 'font_size': 12})
                         
                         headers = ['班級', '座號', '學號', '姓名', '單次費用', '報考類組', '簽名']
-                        target_mapping = list((STANDARD_MAPPING_VOC if "技高" in school_type else STANDARD_MAPPING_GEN).items())
+                        
+                        # ✨ 動態對照表引擎
+                        if dynamic_target_mapping:
+                            target_mapping = dynamic_target_mapping
+                        else:
+                            target_mapping = list((STANDARD_MAPPING_VOC if "技高" in school_type else STANDARD_MAPPING_GEN).items())
                         
                         current_row = 0
                         page_breaks = []
@@ -225,7 +259,7 @@ with tab1:
                             for col_num, header in enumerate(headers):
                                 worksheet.write(current_row, col_num, header, header_format)
                             worksheet.write(current_row, 8, "代碼", mapping_head_format)
-                            worksheet.write(current_row, 9, "類別", mapping_head_format)
+                            worksheet.write(current_row, 9, "考科/類別", mapping_head_format)
                             worksheet.set_row(current_row, 20)
                             current_row += 1
                             
@@ -288,7 +322,7 @@ with tab1:
                         worksheet.set_column('E:G', 12)
                         worksheet.set_column('H:H', 3) 
                         worksheet.set_column('I:I', 10) 
-                        worksheet.set_column('J:J', 24) 
+                        worksheet.set_column('J:J', 32) # 極限加寬，容納普高複雜考科名稱
                         
                         if page_breaks:
                             worksheet.set_h_pagebreaks(page_breaks)
@@ -301,11 +335,11 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！底部紅字警語已被醒目紅框完美框列。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！已成功套用動態切換的考科費用表。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
-            file_name=f"{template_name}_跨表套印範本_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            file_name=f"{template_name}_動態考科套印版_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             type="primary"
@@ -320,7 +354,7 @@ with tab2:
     with col1:
         st.subheader("📂 1. 上傳已填妥之調查表")
         file_survey = st.file_uploader(
-            "📥 上傳回收之學生意願調查表 (普高/技高皆可辨識，支援 xls/xlsx)", 
+            "📥 上傳回收之學生意願調查表 (普高/技高表單皆可直接辨識)", 
             type=['xlsx', 'xls', 'csv'], 
             key=f"mock_f2_{st.session_state.mock_uploader_key}"
         )
@@ -353,19 +387,20 @@ with tab2:
                     for i, col in enumerate(df_data_preload.columns):
                         col_name = str(col).strip()
                         if col_name == '代碼' and i > 4: c_col = i
-                        if col_name in ['類別', '類群', '名稱', '科別', '群別', '報考類組'] and i > 4: n_col = i
+                        if col_name in ['類別', '類群', '名稱', '科別', '群別', '報考類組', '考科/類別'] and i > 4: n_col = i
                         
                     if c_col is None or n_col is None:
                         for i, col in enumerate(df_data_preload.columns):
                             col_str = str(col).strip()
                             if '代碼' in col_str and i > 4: c_col = i
-                            if any(k in col_str for k in ['類別', '類群', '群', '類']) and i > 4: n_col = i
+                            if any(k in col_str for k in ['類別', '類群', '群', '類', '考科']) and i > 4: n_col = i
                             
                     if c_col is not None and n_col is not None:
                         for r in range(len(df_data_preload)):
                             cv = str(df_data_preload.iloc[r, c_col]).strip().split('.')[0]
                             nv = str(df_data_preload.iloc[r, n_col]).strip()
-                            if cv and nv and cv != 'nan' and nv != 'nan' and cv.isdigit():
+                            # 支援英文字母代碼
+                            if cv and nv and cv != 'nan' and nv != 'nan' and cv != '代碼':
                                 preload_mapping[cv] = nv
                                 
                     raw_cat_series = get_str_col(df_data_preload, ['報考', '類群', '科目', '組別', '類組'])
@@ -705,7 +740,7 @@ with tab2:
     # ==========================================
     if st.session_state.mock_processed:
         st.balloons()
-        st.success("🎉 第二階段試務報表結算完成！收費明細已新增學號，方便導師精準核對。")
+        st.success("🎉 第二階段試務報表結算完成！")
         
         st.download_button(
             label="📥 點擊下載【模擬考收費與各班未報考人數交叉檢核總表】",
