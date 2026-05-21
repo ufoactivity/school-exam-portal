@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (含學號與A4極致排版版)")
-st.info("💡 試務組終極進化：調查表與收費明細皆已新增「學號」欄位！系統並自動重新調配了 A4 列印黃金寬度，確保不會跑版！")
+st.info("💡 試務組終極進化：調查表與收費明細皆已新增「學號」欄位！調查表底部已新增「導師確認簽章」，系統並自動重新調配了 A4 列印黃金寬度，確保不會跑版！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -107,52 +107,96 @@ with tab1:
                     df_temp['學號'] = get_str_col(df_roster, ['學號'])
                     df_temp['姓名'] = get_str_col(df_roster, ['姓名', '學生姓名'])
                     
+                    df_temp['班級'] = df_temp['班級'].apply(clean_class_name)
                     df_temp = df_temp[(df_temp['班級'] != "") & (df_temp['姓名'] != "")].copy()
-                    df_temp['單次費用'] = default_price if default_price > 0 else ""
-                    df_temp['報考類組'] = ""
-                    df_temp['簽名'] = ""
+                    
+                    df_temp['座號_Num'] = pd.to_numeric(df_temp['座號'], errors='coerce').fillna(999)
+                    df_temp = df_temp.sort_values(by=['班級', '座號_Num']).drop(columns=['座號_Num'])
                     
                     output_template = io.BytesIO()
                     with pd.ExcelWriter(output_template, engine='xlsxwriter') as writer:
-                        df_temp.to_excel(writer, index=False, sheet_name='調查表', startrow=1)
-                        
                         workbook = writer.book
-                        worksheet = writer.sheets['調查表']
+                        worksheet = workbook.add_worksheet('調查表')
+                        
+                        worksheet.set_paper(9) # A4
+                        worksheet.fit_to_pages(1, 0)
+                        worksheet.center_horizontally()
+                        worksheet.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4)
                         
                         title_format = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'})
-                        header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center'})
-                        data_format = workbook.add_format({'border': 1, 'align': 'center'})
-                        mapping_head_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFF2CC', 'align': 'center'})
-                        mapping_data_format = workbook.add_format({'border': 1, 'align': 'center'})
-                        
-                        worksheet.merge_range(0, 0, 0, 6, template_name, title_format)
-                        worksheet.set_row(0, 25)
+                        header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center', 'valign': 'vcenter'})
+                        data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                        mapping_head_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFF2CC', 'align': 'center', 'valign': 'vcenter'})
+                        mapping_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                        signature_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
                         
                         headers = ['班級', '座號', '學號', '姓名', '單次費用', '報考類組', '簽名']
-                        for col_num, header in enumerate(headers):
-                            worksheet.write(1, col_num, header, header_format)
-                            
-                        for row_num in range(len(df_temp)):
-                            for col_num in range(len(headers)):
-                                worksheet.write(row_num + 2, col_num, df_temp.iloc[row_num, col_num], data_format)
-                                
-                        worksheet.write(1, 8, "代碼", mapping_head_format)
-                        worksheet.write(1, 9, "類別", mapping_head_format)
+                        target_mapping = list((STANDARD_MAPPING_VOC if "技高" in school_type else STANDARD_MAPPING_GEN).items())
                         
-                        map_row = 2
-                        target_mapping = STANDARD_MAPPING_VOC if "技高" in school_type else STANDARD_MAPPING_GEN
-                        for code, name in target_mapping.items():
-                            worksheet.write(map_row, 8, code, mapping_data_format)
-                            worksheet.write(map_row, 9, name, mapping_data_format)
-                            map_row += 1
+                        current_row = 0
+                        page_breaks = []
+                        unique_classes = df_temp['班級'].unique()
+                        
+                        for cls in unique_classes:
+                            df_cls = df_temp[df_temp['班級'] == cls]
+                            
+                            worksheet.merge_range(current_row, 0, current_row, 6, template_name, title_format)
+                            worksheet.set_row(current_row, 25)
+                            current_row += 1
+                            
+                            for col_num, header in enumerate(headers):
+                                worksheet.write(current_row, col_num, header, header_format)
+                            worksheet.write(current_row, 8, "代碼", mapping_head_format)
+                            worksheet.write(current_row, 9, "類別", mapping_head_format)
+                            worksheet.set_row(current_row, 20)
+                            current_row += 1
+                            
+                            start_data_row = current_row
+                            rows_needed = max(len(df_cls), len(target_mapping))
+                            
+                            for i in range(rows_needed):
+                                if i < len(df_cls):
+                                    row_data = df_cls.iloc[i]
+                                    worksheet.write(start_data_row + i, 0, str(row_data['班級']), data_format)
+                                    worksheet.write(start_data_row + i, 1, str(row_data['座號']), data_format)
+                                    worksheet.write(start_data_row + i, 2, str(row_data['學號']), data_format)
+                                    worksheet.write(start_data_row + i, 3, str(row_data['姓名']), data_format)
+                                    fee_val = default_price if default_price > 0 else ""
+                                    worksheet.write(start_data_row + i, 4, fee_val, data_format)
+                                    worksheet.write(start_data_row + i, 5, "", data_format)
+                                    worksheet.write(start_data_row + i, 6, "", data_format)
+                                else:
+                                    for c in range(7):
+                                        worksheet.write(start_data_row + i, c, "", data_format)
+                                        
+                                if i < len(target_mapping):
+                                    code, name = target_mapping[i]
+                                    worksheet.write(start_data_row + i, 8, code, mapping_data_format)
+                                    worksheet.write(start_data_row + i, 9, name, mapping_data_format)
+                                
+                                worksheet.set_row(start_data_row + i, 18)
+                                
+                            current_row = start_data_row + rows_needed
+                            
+                            # --- 加入空白緩衝列與導師確認簽章 ---
+                            worksheet.set_row(current_row, 10) 
+                            current_row += 1
+                            worksheet.merge_range(current_row, 0, current_row, 6, "導師確認簽章：________________________", signature_format)
+                            worksheet.set_row(current_row, 35) # 加高讓導師好簽名
+                            current_row += 1
+                            
+                            page_breaks.append(current_row)
                             
                         worksheet.set_column('A:B', 8)
                         worksheet.set_column('C:D', 10)
                         worksheet.set_column('E:G', 12)
-                        worksheet.set_column('H:H', 3) # 間隔欄
+                        worksheet.set_column('H:H', 3) 
                         worksheet.set_column('I:I', 8)
                         worksheet.set_column('J:J', 22)
                         
+                        if page_breaks:
+                            worksheet.set_h_pagebreaks(page_breaks)
+                            
                     st.session_state.template_excel_data = output_template.getvalue()
                     st.session_state.template_processed = True
                 except Exception as e:
@@ -258,8 +302,8 @@ with tab2:
 
     with col2:
         st.subheader("⚙️ 2. 收費檢核與測驗設定")
-        mock_name = st.text_input("🎯 產出報表標題", value="114學年度高職模擬考(全學年共5次)")
-        base_fee = st.number_input("💰 預設單次報名費", min_value=0, max_value=5000, value=160, step=10)
+        mock_name_p2 = st.text_input("🎯 產出報表標題", value="114學年度高職模擬考(全學年共5次)")
+        base_fee_p2 = st.number_input("💰 預設單次報名費", min_value=0, max_value=5000, value=160, step=10)
         
         special_fee_dict = {}
         if file_survey and detected_categories:
@@ -268,7 +312,7 @@ with tab2:
             
             default_fees = []
             for cat in detected_categories:
-                default_fees.append(extracted_fees.get(cat, base_fee)) 
+                default_fees.append(extracted_fees.get(cat, base_fee_p2)) 
                 
             fee_df = pd.DataFrame({
                 '報考類群': detected_categories,
@@ -409,7 +453,7 @@ with tab2:
                         st.warning("⚠️ 攔截警告：經過分析後檔案內找不到有效報考資料。")
                         st.stop()
 
-                    df_clean['單次應繳費用'] = df_clean['報考類群'].apply(lambda x: special_fee_dict.get(x, base_fee))
+                    df_clean['單次應繳費用'] = df_clean['報考類群'].apply(lambda x: special_fee_dict.get(x, base_fee_p2))
                     df_clean['五次總繳費金額'] = df_clean['單次應繳費用'] * 5
                     
                     df_clean['座號_Num'] = pd.to_numeric(df_clean['座號'], errors='coerce').fillna(999)
@@ -491,7 +535,7 @@ with tab2:
                         for cls_name in unique_classes:
                             df_cls = df_details_raw[df_details_raw['班級'] == cls_name]
                             
-                            ws_details.merge_range(current_row, 0, current_row, len(headers)-1, f"🏫 國立華南高商 - {mock_name}", title_format)
+                            ws_details.merge_range(current_row, 0, current_row, len(headers)-1, f"🏫 國立華南高商 - {mock_name_p2}", title_format)
                             ws_details.set_row(current_row, 24) 
                             current_row += 1
                             
@@ -576,7 +620,7 @@ with tab2:
         st.download_button(
             label="📥 點擊下載【模擬考收費與各班未報考人數交叉檢核總表】",
             data=st.session_state.mock_excel_data,
-            file_name=f"{mock_name}_結算總表_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            file_name=f"{mock_name_p2}_結算總表_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             type="primary",
