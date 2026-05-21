@@ -161,7 +161,7 @@ with row2_col1:
 
 with row2_col2:
     with st.container(border=True):
-        st.markdown("### 📊 模擬考調查智能輔助系統")
+       st.markdown("### 📊 模考調查智能輔助系統")
         st.markdown("""
         <p class="module-desc">
         數位化統整各科別模擬考報名意願，自動精算測驗費用與收據報表。
@@ -174,8 +174,8 @@ with row2_col2:
         - 📈 **圖表化清單**：自動匯出清晰的總務處繳費單與書商訂卷清單。
         """)
         st.write("")
-        # 未來開發鎖定按鈕
-        st.button("🔒 模組開發中 (Coming Soon)", key="btn_mock", disabled=True, use_container_width=True)
+        # 🎉 正式解鎖模考系統！
+        st.page_link("pages/4_模考調查智能輔助系統.py", label="啟動模擬考調查作業 →", icon="📊")
 
 
 # ==========================================
