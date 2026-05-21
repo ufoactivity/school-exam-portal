@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：警語排版已完成「全 9 級字精緻化」，並補齊標點符號，兼具留白美學與防呆效力！")
+st.info("💡 試務組終極進化：技高右側對照表防呆鎖定！強制使用標準 20 群類名稱，防範自訂檔案格式干擾！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -131,13 +131,13 @@ with tab1:
                 try:
                     preset_mapping = {}
                     dynamic_target_mapping = [] 
+                    fee_map = {}
                     
                     # 1. 處理設定檔
                     if file_preset:
                         xls = pd.ExcelFile(file_preset)
                         df_preset_dept = pd.read_excel(xls, sheet_name=0).fillna("")
                         
-                        fee_map = {}
                         if selected_preset_sheet:
                             df_preset_fee = pd.read_excel(xls, sheet_name=selected_preset_sheet).fillna("")
                             
@@ -227,24 +227,25 @@ with tab1:
                         mapping_data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         signature_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
                         
-                        # --- 修正：全面 9 級字，讓版面精緻防斷行 ---
                         note_format_top = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
                         note_format_middle = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
                         note_format_bottom = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
                         note_format_single = workbook.add_format({'font_size': 9, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'top': 2, 'bottom': 2, 'left': 2, 'right': 2, 'border_color': '#D32F2F', 'indent': 1})
                         
-                        # 紅藍色重點文字保持粗體，但同步縮為 9 級
                         red_alert_format = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 9})
                         blue_alert_format = workbook.add_format({'font_color': '#1976D2', 'bold': True, 'font_size': 9})
                         
                         headers = ['班級', '座號', '學號', '姓名', '單次費用', '報考類組', '簽名']
                         
-                        # 整理最終的代碼對照表
-                        if dynamic_target_mapping:
-                            target_mapping = dynamic_target_mapping
+                        # 整理最終的代碼對照表 (技高防呆鎖定)
+                        if "技高" in school_type:
+                            # 技高強制使用預設名稱，不管上傳什麼設定檔都只抓費用
+                            target_mapping = [(k, v, fee_map.get(k, str(default_price)) if fee_map.get(k, "") != "" else str(default_price)) for k, v in STANDARD_MAPPING_VOC.items()]
                         else:
-                            base_map = STANDARD_MAPPING_VOC if "技高" in school_type else STANDARD_MAPPING_GEN
-                            target_mapping = [(k, v, str(default_price)) for k, v in base_map.items()]
+                            if dynamic_target_mapping:
+                                target_mapping = dynamic_target_mapping
+                            else:
+                                target_mapping = [(k, v, fee_map.get(k, str(default_price)) if fee_map.get(k, "") != "" else str(default_price)) for k, v in STANDARD_MAPPING_GEN.items()]
                         
                         current_row = 0
                         page_breaks = []
@@ -266,7 +267,7 @@ with tab1:
                                 
                             if not is_gen_hs:
                                 worksheet.write(current_row, 8, "代碼", mapping_head_format)
-                                worksheet.write(current_row, 9, "考科/類別", mapping_head_format)
+                                worksheet.write(current_row, 9, "類別", mapping_head_format) # 改回類別
                                 
                             worksheet.set_row(current_row, 20)
                             current_row += 1
@@ -487,6 +488,7 @@ with tab2:
                         for r in range(len(df_data_preload)):
                             cv = str(df_data_preload.iloc[r, c_col]).strip().split('.')[0]
                             nv = str(df_data_preload.iloc[r, n_col]).strip()
+                            # 支援英文字母代碼
                             if cv and nv and cv != 'nan' and nv != 'nan' and cv != '代碼':
                                 preload_mapping[cv] = nv
                                 
@@ -716,128 +718,4 @@ with tab2:
                         df_reason_by_class.to_excel(writer, index=False, sheet_name='1_總務處班級5次收費總表', startrow=start_row)
                         
                         ws_details = workbook.add_worksheet('2_各班繳費明細(5次總額)')
-                        writer.sheets['2_各班繳費明細(5次總額)'] = ws_details 
-                        
-                        ws_details.set_paper(9)
-                        ws_details.fit_to_pages(1, 0)
-                        ws_details.center_horizontally()
-                        ws_details.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4) 
-                        
-                        ws_details.set_column('A:A', 9)  
-                        ws_details.set_column('B:B', 6)  
-                        ws_details.set_column('C:C', 10) 
-                        ws_details.set_column('D:D', 10) 
-                        ws_details.set_column('E:E', 21) 
-                        ws_details.set_column('F:F', 13) 
-                        ws_details.set_column('G:G', 14) 
-                        ws_details.set_column('H:H', 15) 
-                        
-                        title_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#F2F2F2', 'border': 1})
-                        header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center', 'valign': 'vcenter'})
-                        data_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 11}) 
-                        total_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#E2EFDA', 'align': 'center', 'valign': 'vcenter', 'font_size': 11})
-                        memo_format = workbook.add_format({'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'border': 1, 'bg_color': '#FDFAD9'}) 
-                        grand_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFF2CC', 'align': 'center', 'valign': 'vcenter', 'font_size': 12})
-                        
-                        headers = ['班級', '座號', '學號', '姓名', '報考類群', '單次費用(參考)', '應繳總金額(5次)', '學生簽名']
-                        
-                        current_row = 0
-                        page_breaks = []
-                        unique_classes = df_details_raw['班級'].unique()
-                        
-                        for cls_name in unique_classes:
-                            df_cls = df_details_raw[df_details_raw['班級'] == cls_name]
-                            
-                            ws_details.merge_range(current_row, 0, current_row, len(headers)-1, f"🏫 國立華南高商 - {mock_name_p2}", title_format)
-                            ws_details.set_row(current_row, 24) 
-                            current_row += 1
-                            
-                            for col_num, header in enumerate(headers):
-                                ws_details.write(current_row, col_num, header, header_format)
-                            ws_details.set_row(current_row, 18)
-                            current_row += 1
-                            
-                            for _, row in df_cls.iterrows():
-                                ws_details.write(current_row, 0, str(row['班級']), data_format)
-                                ws_details.write(current_row, 1, str(row['座號']), data_format)
-                                ws_details.write(current_row, 2, str(row['學號']), data_format)
-                                ws_details.write(current_row, 3, str(row['姓名']), data_format)
-                                ws_details.write(current_row, 4, str(row['報考類群']), data_format)
-                                ws_details.write(current_row, 5, row['單次費用(參考)'], data_format)
-                                ws_details.write(current_row, 6, row['應繳總金額(5次)'], data_format)
-                                ws_details.write(current_row, 7, '', data_format) 
-                                ws_details.set_row(current_row, 16)
-                                current_row += 1
-                                
-                            cls_total_amt = df_cls['應繳總金額(5次)'].sum()
-                            cls_count = len(df_cls)
-                            
-                            ws_details.write(current_row, 0, f'{cls_name} 小計', total_format)
-                            ws_details.write(current_row, 1, f'共 {cls_count} 人', total_format)
-                            ws_details.write(current_row, 2, '', total_format)
-                            ws_details.write(current_row, 3, '', total_format)
-                            ws_details.write(current_row, 4, '', total_format)
-                            ws_details.write(current_row, 5, '', total_format)
-                            ws_details.write(current_row, 6, cls_total_amt, total_format)
-                            ws_details.write(current_row, 7, '導師簽章：', total_format) 
-                            ws_details.set_row(current_row, 26) 
-                            current_row += 1
-                            
-                            cls_fee_info = df_cls[['報考類群', '單次費用(參考)']].drop_duplicates().sort_values('報考類群')
-                            memo_title = "💡 【本班單次報名費參考】 (※ 應繳總額 = 單次費用 × 5次)："
-                            ws_details.merge_range(current_row, 0, current_row, len(headers)-1, memo_title, memo_format)
-                            ws_details.set_row(current_row, 18)
-                            current_row += 1
-                            
-                            for _, r in cls_fee_info.iterrows():
-                                bullet_text = f"      ▪ {r['報考類群']}：單次 {r['單次費用(參考)']} 元"
-                                ws_details.merge_range(current_row, 0, current_row, len(headers)-1, bullet_text, memo_format)
-                                ws_details.set_row(current_row, 16)
-                                current_row += 1
-                            
-                            page_breaks.append(current_row) 
-                        
-                        ws_details.write(current_row, 0, '全校總計 (Grand Total)', grand_format)
-                        ws_details.write(current_row, 1, '', grand_format)
-                        ws_details.write(current_row, 2, '', grand_format)
-                        ws_details.write(current_row, 3, '', grand_format)
-                        ws_details.write(current_row, 4, '', grand_format)
-                        ws_details.write(current_row, 5, '', grand_format)
-                        ws_details.write(current_row, 6, df_details_raw['應繳總金額(5次)'].sum(), grand_format)
-                        ws_details.write(current_row, 7, '', grand_format)
-                        ws_details.set_row(current_row, 24)
-                        
-                        if page_breaks:
-                            ws_details.set_h_pagebreaks(page_breaks)
-                        
-                        df_publisher.to_excel(writer, index=False, sheet_name='3_書商訂卷總表')
-                        writer.sheets['3_書商訂卷總表'].set_column('A:B', 24)
-                    
-                    st.session_state.mock_excel_data = output_excel.getvalue()
-                    st.session_state.mock_preview_df = df_class_summary
-                    st.session_state.mock_processed = True
-
-                except Exception as e:
-                    st.error("🚨 發生未預期錯誤，請檢查檔案格式。")
-                    with st.expander("點此查看詳細工程錯誤碼"):
-                        st.code(traceback.format_exc())
-
-    # ==========================================
-    # 結果顯示與下載區
-    # ==========================================
-    if st.session_state.mock_processed:
-        st.balloons()
-        st.success("🎉 第二階段試務報表結算完成！")
-        
-        st.download_button(
-            label="📥 點擊下載【模擬考收費與各班未報考人數交叉檢核總表】",
-            data=st.session_state.mock_excel_data,
-            file_name=f"{mock_name_p2}_結算總表_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-            type="primary",
-            key="btn_download_phase2"
-        )
-
-        st.write("👀 **第一個工作表 (包含班級收費) 預覽：**")
-        st.dataframe(st.session_state.mock_preview_df, use_container_width=True)
+                        writer
