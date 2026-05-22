@@ -13,8 +13,8 @@ from datetime import datetime
 # 1. 網頁頁面配置
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
-st.title("🏫 試務組-段考監考智能輔助系統")
-st.info("💡 終極升級：實裝「動態日期追蹤引擎」！手排日可任意出現在第一天、中間或最後一天，AI 都能精準鎖定保護，並完美接合標籤列印。115.05.17增修")
+st.title("🏫 試務組-監考作業智能輔助系統")
+st.info("💡 終極升級：實裝「動態日期追蹤引擎」！手排日可任意出現在第一天、中間或最後一天，AI 都能精準鎖定保護，並完美接合標籤列印。115.05.17增修 + 新增特定老師班級綁定功能！")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -127,6 +127,17 @@ with col2:
             
     with c_d1: d1_date = st.date_input("📅 AI Day1", datetime.now())
     with c_d2: d2_date = st.date_input("📅 AI Day2", datetime.now())
+    
+    # ======== 👇 新增：特定老師綁定特定班級 UI ========
+    st.write("---")
+    st.markdown("#### 🎯 特定班級與老師綁定")
+    st.info("💡 若指定的老師在該節次有被排到監考，系統將優先分配至您指定的班級。")
+    if 'bind_rules' not in st.session_state:
+        # 預設產生 3 個空列供填寫，老師在網頁上可隨時按「+」新增列
+        st.session_state.bind_rules = pd.DataFrame([{"老師": "", "班級": ""}] * 3)
+    
+    edited_bind_df = st.data_editor(st.session_state.bind_rules, num_rows="dynamic", use_container_width=True)
+    # ======== 👆 新增結束 ========
     
     force_run = st.checkbox("⚠️ 忽略健檢警告，強制執行")
     if st.button("🗑️ 清除所有設定", use_container_width=True):
@@ -316,41 +327,93 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 raw_list = df_assign_calc.iloc[:, 0].astype(str).str.strip().tolist()
                 class_names_raw = [x for x in raw_list if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考"])]
                 
+                # 【新增】：解析老師在網頁上設定的綁定名單
+                norm_class_names = [normalize_cls(c) for c in class_names_raw]
+                assign_map = {name: idx for idx, name in enumerate(norm_class_names)}
+                
+                t2c_map = {}
+                for _, row in edited_bind_df.iterrows():
+                    t_name = str(row['老師']).strip()
+                    c_name = normalize_cls(row['班級']) # 進行班級正規化防呆
+                    if t_name and c_name in assign_map:
+                        t2c_map[t_name] = assign_map[c_name]
+                
                 assigned_matrix = np.empty((len(class_names_raw), ai_periods), dtype=object)
                 
                 for i_day, day_start in enumerate(day_starts):
                     day_end = day_starts[i_day+1] if i_day+1 < len(day_starts) else ai_periods
                     day_length = day_end - day_start
                     
+                    # ==== 第 1 節 ====
                     j1 = day_start
                     proctors_j1 = [t for t in teachers if schedule_dict[t][j1] in ["△", "※"]]
                     random.shuffle(proctors_j1)
-                    for idx, p in enumerate(proctors_j1): 
-                        if idx < len(class_names_raw): assigned_matrix[idx, j1] = p
+                    
+                    # 1. 優先處理自訂綁定
+                    rem_j1 = []
+                    for p in proctors_j1:
+                        if p in t2c_map and assigned_matrix[t2c_map[p], j1] is None:
+                            assigned_matrix[t2c_map[p], j1] = p
+                        else:
+                            rem_j1.append(p)
+                            
+                    # 2. 處理剩餘隨機分配
+                    r_ptr = 0
+                    for idx in range(len(class_names_raw)):
+                        if assigned_matrix[idx, j1] is None and r_ptr < len(rem_j1):
+                            assigned_matrix[idx, j1] = rem_j1[r_ptr]
+                            r_ptr += 1
                     
                     if day_length > 1:
+                        # ==== 第 2 節 ====
                         j2 = day_start + 1
                         proctors_j2 = [t for t in teachers if schedule_dict[t][j2] in ["△", "※"]]
                         bound = {}
+                        
+                        # 1. 絕對連堂規則 (※ 必須接 △)
                         for idx in range(len(class_names_raw)):
                             p_prev = assigned_matrix[idx, j1]
                             if p_prev is not None and p_prev in schedule_dict:
                                 if schedule_dict[p_prev][j1] == "※" and schedule_dict[p_prev][j2] == "△":
                                     assigned_matrix[idx, j2] = p_prev
                                     bound[p_prev] = True
+                        
                         rem = [p for p in proctors_j2 if p not in bound]
                         random.shuffle(rem)
+                        
+                        # 2. 優先處理自訂綁定
+                        rem_after_bind = []
+                        for p in rem:
+                            if p in t2c_map and assigned_matrix[t2c_map[p], j2] is None:
+                                assigned_matrix[t2c_map[p], j2] = p
+                            else:
+                                rem_after_bind.append(p)
+                                
+                        # 3. 處理剩餘隨機分配
                         r_idx = 0
                         for idx in range(len(class_names_raw)):
-                            if assigned_matrix[idx, j2] is None and r_idx < len(rem):
-                                assigned_matrix[idx, j2] = rem[r_idx]; r_idx += 1
+                            if assigned_matrix[idx, j2] is None and r_idx < len(rem_after_bind):
+                                assigned_matrix[idx, j2] = rem_after_bind[r_idx]; r_idx += 1
 
+                        # ==== 第 3 節以後 ====
                         for offset in range(2, day_length):
                             curr_j = day_start + offset
                             proctors = [t for t in teachers if schedule_dict[t][curr_j] in ["△", "※"]]
                             random.shuffle(proctors)
-                            for idx, p in enumerate(proctors): 
-                                if idx < len(class_names_raw): assigned_matrix[idx, curr_j] = p
+                            
+                            # 1. 優先處理自訂綁定
+                            rem_curr = []
+                            for p in proctors:
+                                if p in t2c_map and assigned_matrix[t2c_map[p], curr_j] is None:
+                                    assigned_matrix[t2c_map[p], curr_j] = p
+                                else:
+                                    rem_curr.append(p)
+                                    
+                            # 2. 處理剩餘隨機分配
+                            r_ptr = 0
+                            for idx in range(len(class_names_raw)):
+                                if assigned_matrix[idx, curr_j] is None and r_ptr < len(rem_curr):
+                                    assigned_matrix[idx, curr_j] = rem_curr[r_ptr]; r_ptr += 1
 
                 class_proctor_schedule = {} 
                 for r_idx, c_name in enumerate(class_names_raw):
