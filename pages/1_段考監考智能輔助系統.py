@@ -14,7 +14,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-監考作業智能輔助系統")
-st.info("💡 終極升級：實裝「動態日期追蹤引擎」！手排日可任意出現在第一天、中間或最後一天，AI 都能精準鎖定保護，並完美接合標籤列印。115.05.17增修 + 新增特定老師班級綁定功能！")
+st.info("💡 終極升級：實裝「動態日期追蹤引擎」！手排日可任意出現在第一天、中間或最後一天，AI 都能精準鎖定保護，並完美接合標籤列印。115.05.17增修 + 下拉選單特定綁定！")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -39,6 +39,7 @@ def to_excel_bytes(df, header_df=None):
     return output.getvalue()
 
 def normalize_cls(c):
+    if pd.isna(c) or c is None: return ""
     s = str(c).strip().replace('ㄧ', '一').replace(' ', '').replace('　', '')
     s = s.translate(str.maketrans('１２３４５６７８９０', '1234567890'))
     return s
@@ -105,10 +106,11 @@ with col2:
         xls = pd.ExcelFile(file_quota)
         selected_sheet = st.selectbox("👇 選擇考試項目：", xls.sheet_names)
     
+    # 提前萃取教師名單供下拉選單使用
     flex_names = []
+    teacher_list = []
     if file_list:
         temp_df = pd.read_excel(file_list, header=None).fillna("")
-        teacher_list = []
         for c in range(5):
             try:
                 lst = temp_df.iloc[2:, c].astype(str).str.strip().tolist()
@@ -117,6 +119,14 @@ with col2:
                     teacher_list = lst; break
             except: pass
         flex_names = st.multiselect("🛡️ 優先時數不大於名單：", options=teacher_list)
+
+    # 提前萃取班級名單供下拉選單使用
+    class_list = []
+    if file_assign:
+        df_assign_temp = pd.read_excel(file_assign, header=None).fillna("")
+        raw_list = df_assign_temp.iloc[:, 0].astype(str).str.strip().tolist()
+        class_names_raw = [x for x in raw_list if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考", "註"])]
+        class_list = [normalize_cls(c) for c in class_names_raw]
 
     st.write("")
     c_d0, c_d1, c_d2 = st.columns(3)
@@ -128,15 +138,32 @@ with col2:
     with c_d1: d1_date = st.date_input("📅 AI Day1", datetime.now())
     with c_d2: d2_date = st.date_input("📅 AI Day2", datetime.now())
     
-    # ======== 👇 新增：特定老師綁定特定班級 UI ========
+    # ======== 👇 新增：特定老師綁定特定班級 UI (動態下拉選單版) ========
     st.write("---")
     st.markdown("#### 🎯 特定班級與老師綁定")
-    st.info("💡 若指定的老師在該節次有被排到監考，系統將優先分配至您指定的班級。")
+    st.info("💡 點擊儲存格即可從您上傳的檔案中選擇「老師」與「班級」。若指定的老師在該節次有排到監考，系統將優先分配。")
     if 'bind_rules' not in st.session_state:
-        # 預設產生 3 個空列供填寫，老師在網頁上可隨時按「+」新增列
-        st.session_state.bind_rules = pd.DataFrame([{"老師": "", "班級": ""}] * 3)
+        st.session_state.bind_rules = pd.DataFrame([{"老師": None, "班級": None}] * 3)
     
-    edited_bind_df = st.data_editor(st.session_state.bind_rules, num_rows="dynamic", use_container_width=True)
+    edited_bind_df = st.data_editor(
+        st.session_state.bind_rules, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        column_config={
+            "老師": st.column_config.SelectboxColumn(
+                "👨‍🏫 指定老師",
+                help="請選擇監考老師",
+                options=teacher_list if teacher_list else [""],
+                required=False
+            ),
+            "班級": st.column_config.SelectboxColumn(
+                "🏫 指定班級",
+                help="請選擇監考班級",
+                options=class_list if class_list else [""],
+                required=False
+            )
+        }
+    )
     # ======== 👆 新增結束 ========
     
     force_run = st.checkbox("⚠️ 忽略健檢警告，強制執行")
@@ -325,7 +352,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             with st.spinner("🎯 執行班級自動分配..."):
                 df_assign_calc = pd.read_excel(file_assign, header=None).fillna("")
                 raw_list = df_assign_calc.iloc[:, 0].astype(str).str.strip().tolist()
-                class_names_raw = [x for x in raw_list if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考"])]
+                class_names_raw = [x for x in raw_list if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考", "註"])]
                 
                 # 【新增】：解析老師在網頁上設定的綁定名單
                 norm_class_names = [normalize_cls(c) for c in class_names_raw]
@@ -335,7 +362,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 for _, row in edited_bind_df.iterrows():
                     t_name = str(row['老師']).strip()
                     c_name = normalize_cls(row['班級']) # 進行班級正規化防呆
-                    if t_name and c_name in assign_map:
+                    if t_name and t_name != 'None' and c_name in assign_map:
                         t2c_map[t_name] = assign_map[c_name]
                 
                 assigned_matrix = np.empty((len(class_names_raw), ai_periods), dtype=object)
