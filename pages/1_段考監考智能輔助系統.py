@@ -14,7 +14,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-監考作業智能輔助系統")
-st.info("💡 終極升級：實裝「動態日期追蹤引擎」！手排日可任意出現在第一天、中間或最後一天，AI 都能精準鎖定保護，並完美接合標籤列印。115.05.17增修 + 下拉選單特定綁定！")
+st.info("💡 終極升級：實裝「動態日期追蹤引擎」！手排日可任意出現在第一天、中間或最後一天，AI 都能精準鎖定保護。新增下拉選單特定綁定，並支援「名單匯出/匯入」重複使用！")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -40,12 +40,12 @@ def to_excel_bytes(df, header_df=None):
 
 def normalize_cls(c):
     if pd.isna(c) or c is None: return ""
-    s = str(c).strip().replace('ㄧ', '一').replace(' ', '').replace('　', '')
+    s = str(c).strip().replace('ㄧ', '一').replace(' ', '').replace(' ', '')
     s = s.translate(str.maketrans('１２３４５６７８９０', '1234567890'))
     return s
 
 def normalize_subject(s):
-    s = str(s).strip().replace(' ', '').replace('　', '')
+    s = str(s).strip().replace(' ', '').replace(' ', '')
     s = s.replace('國文', '國語文').replace('英文', '英語文')
     return s
 
@@ -138,13 +138,30 @@ with col2:
     with c_d1: d1_date = st.date_input("📅 AI Day1", datetime.now())
     with c_d2: d2_date = st.date_input("📅 AI Day2", datetime.now())
     
-    # ======== 👇 新增：特定老師綁定特定班級 UI (動態下拉選單版) ========
+    # ======== 👇 新增：特定老師綁定特定班級 UI (支援匯入/匯出) ========
     st.write("---")
     st.markdown("#### 🎯 特定班級與老師綁定")
-    st.info("💡 點擊儲存格即可從您上傳的檔案中選擇「老師」與「班級」。若指定的老師在該節次有排到監考，系統將優先分配。")
+    st.info("💡 您可以手動新增綁定，或直接上傳先前儲存的綁定名單(.xlsx)。")
+
+    # 初始化綁定清單的 Session State
     if 'bind_rules' not in st.session_state:
         st.session_state.bind_rules = pd.DataFrame([{"老師": None, "班級": None}] * 3)
-    
+    if 'last_bind_file' not in st.session_state:
+        st.session_state.last_bind_file = None
+
+    # 1. 上傳綁定名單
+    file_bind = st.file_uploader("📥 [選填] 匯入既有綁定名單 (.xlsx)", type=['xlsx'], key=f"f_bind_{st.session_state['uploader_key']}")
+    if file_bind and st.session_state.last_bind_file != file_bind.name:
+        try:
+            df_bind_up = pd.read_excel(file_bind)
+            if "老師" in df_bind_up.columns and "班級" in df_bind_up.columns:
+                st.session_state.bind_rules = df_bind_up[["老師", "班級"]]
+                st.session_state.last_bind_file = file_bind.name
+                st.rerun() # 重新載入以更新下方的表格
+        except Exception as e:
+            st.error("讀取失敗，請確認檔案是否為之前下載的格式。")
+
+    # 2. 編輯綁定名單 (支援下拉選單)
     edited_bind_df = st.data_editor(
         st.session_state.bind_rules, 
         num_rows="dynamic", 
@@ -164,12 +181,32 @@ with col2:
             )
         }
     )
+    
+    # 3. 下載目前綁定名單
+    # 這裡建立專屬的匯出邏輯，確保匯出時保留表頭 (header=True)，供下次完美匯入
+    bind_output = io.BytesIO()
+    with pd.ExcelWriter(bind_output, engine='xlsxwriter') as writer:
+        edited_bind_df.to_excel(writer, index=False, header=True)
+    bind_excel_bytes = bind_output.getvalue()
+    
+    st.download_button(
+        label="💾 儲存目前的綁定名單 (下載 .xlsx)",
+        data=bind_excel_bytes,
+        file_name="特定老師班級綁定名單.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
     # ======== 👆 新增結束 ========
     
+    st.write("---")
     force_run = st.checkbox("⚠️ 忽略健檢警告，強制執行")
+    
+    # 強化清除設定按鈕，連同暫存的綁定狀態也一併刪除
     if st.button("🗑️ 清除所有設定", use_container_width=True):
         st.session_state['results'] = None
         st.session_state['uploader_key'] += 1
+        if 'bind_rules' in st.session_state: del st.session_state['bind_rules']
+        if 'last_bind_file' in st.session_state: del st.session_state['last_bind_file']
         st.rerun()
 
 # ==========================================
@@ -354,7 +391,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 raw_list = df_assign_calc.iloc[:, 0].astype(str).str.strip().tolist()
                 class_names_raw = [x for x in raw_list if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考", "註"])]
                 
-                # 【新增】：解析老師在網頁上設定的綁定名單
+                # 【綁定解析】：解析老師在網頁上或匯入的綁定名單
                 norm_class_names = [normalize_cls(c) for c in class_names_raw]
                 assign_map = {name: idx for idx, name in enumerate(norm_class_names)}
                 
