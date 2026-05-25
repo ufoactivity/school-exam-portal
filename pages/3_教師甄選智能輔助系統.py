@@ -321,4 +321,138 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 # -------------------------------------------------------------
                 # 【優化更新區塊】分段文字顏色與大小設定
                 # -------------------------------------------------------------
-                # 第一段：黑色
+                # 第一段：黑色，14pt
+                run_1 = p_footer_text.add_run("※試教及口試時間")
+                run_1.font.name = '標楷體'
+                run_1._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                run_1.font.size = Pt(14)
+                run_1.font.color.rgb = RGBColor(0, 0, 0)
+                
+                # 第二段：紅色，16pt
+                run_2 = p_footer_text.add_run("將依現場實際報到人數及試場情形作調整，")
+                run_2.font.name = '標楷體'
+                run_2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                run_2.font.size = Pt(16)
+                run_2.font.color.rgb = RGBColor(255, 0, 0)
+                
+                # 第三段：黑色，14pt
+                run_3 = p_footer_text.add_run("請考生於各科指定之休息室等候叫號")
+                run_3.font.name = '標楷體'
+                run_3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                run_3.font.size = Pt(14)
+                run_3.font.color.rgb = RGBColor(0, 0, 0)
+                # -------------------------------------------------------------
+                
+                if file_stamp:
+                    p_stamp = cell_right.paragraphs[0]
+                    p_stamp.alignment = WD_ALIGN_PARAGRAPH.RIGHT 
+                    run_stamp = p_stamp.add_run()
+                    stamp_bytes = io.BytesIO(file_stamp.getvalue())
+                    run_stamp.add_picture(stamp_bytes, width=Cm(4.0)) 
+                
+                # 內容生成
+                for subject in all_subjs:
+                    df_sub_sched = df_master[df_master['報考科目'] == subject]
+                    if df_sub_sched.empty: continue
+                    
+                    p_title = doc.add_paragraph()
+                    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run_title = p_title.add_run(dynamic_title)
+                    run_title.font.size = Pt(18)
+                    run_title.bold = True
+                    
+                    p_sub = doc.add_paragraph()
+                    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run_sub = p_sub.add_run(f"【{subject}】")
+                    run_sub.font.size = Pt(16)
+                    run_sub.bold = True
+                    
+                    v = venue_dict.get(subject, {})
+                    doc.add_paragraph(f"考生休息室：{v.get('休息室', '未設定')}")
+                    doc.add_paragraph(f"試教準備室：{v.get('準備室', '未設定')}")
+                    doc.add_paragraph(f"試教場地：{v.get('試教', '未設定')}")
+                    doc.add_paragraph(f"口試場地：{v.get('口試', '未設定')}")
+                    
+                    # 【核心修正】：強制置中與欄寬微調
+                    table = doc.add_table(rows=1, cols=5)
+                    table.style = 'Table Grid'
+                    table.autofit = False 
+                    
+                    # 將編號加寬至 2.0cm 確保 16pt 不會換行，其餘平均分配 (總計約 16cm)
+                    col_widths = [Cm(3.5), Cm(2.0), Cm(3.5), Cm(3.5), Cm(3.5)]
+                    
+                    table.style.font.name = '標楷體'
+                    table.style._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                    table.style.font.size = Pt(16)
+                    
+                    # 設定表頭與置中
+                    hdr_cells = table.rows[0].cells
+                    hdr_headers = ['甄選證號', '編號', '試教準備室', '試教', '口試']
+                    for col_idx in range(5):
+                        hdr_cells[col_idx].text = hdr_headers[col_idx]
+                        hdr_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # 標題置中
+                        hdr_cells[col_idx].width = col_widths[col_idx]
+                        table.columns[col_idx].width = col_widths[col_idx]
+                    
+                    # 填入考生資料並全部置中
+                    for _, cand in df_sub_sched.iterrows():
+                        row_cells = table.add_row().cells
+                        
+                        row_data = [
+                            str(cand['准考證號']),
+                            str(cand['排序']),
+                            str(cand['準備時間']),
+                            str(cand['試教(實作)時間']),
+                            str(cand['口試時間'])
+                        ]
+                        
+                        for col_idx in range(5):
+                            row_cells[col_idx].text = row_data[col_idx]
+                            row_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # 內容也全面置中
+                            row_cells[col_idx].width = col_widths[col_idx]
+                    
+                    doc.add_page_break()
+                    
+                output_word = io.BytesIO()
+                doc.save(output_word)
+                st.session_state.word_data = output_word.getvalue()
+                
+            st.session_state.df_preview = df_merge_final.head(15)
+            st.session_state.excel_filename = f"{academic_year}學年度第{session_num}次_排程與場地整合表.xlsx"
+            st.session_state.word_filename = f"{academic_year}學年度第{session_num}次_各科蓋章公告表.docx"
+            st.session_state.processed = True
+
+        except Exception as e:
+            st.error(f"發生錯誤: {e}")
+            st.code(traceback.format_exc())
+
+# ==========================================
+# 5. 結果顯示區
+# ==========================================
+if st.session_state.processed:
+    st.balloons()
+    st.success("🎉 排版完美達成！頁尾警語已實裝分色字體強化，表格標題與內容皆已置中。")
+    
+    c_d1, c_d2 = st.columns(2)
+    with c_d1:
+        st.download_button(
+            label="📥 1. 下載 Excel 總表 (含合併列印專用)",
+            data=st.session_state.excel_data,
+            file_name=st.session_state.excel_filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            type="primary"
+        )
+    with c_d2:
+        if HAS_DOCX and st.session_state.word_data:
+            st.download_button(
+                label="📥 2. 下載 Word 各科公告時間表 (置中排版蓋章版)",
+                data=st.session_state.word_data,
+                file_name=st.session_state.word_filename,
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True,
+                type="primary"
+            )
+
+    st.write("👀 **專屬 Word 對接資料預覽：**")
+    st.dataframe(st.session_state.df_preview)
