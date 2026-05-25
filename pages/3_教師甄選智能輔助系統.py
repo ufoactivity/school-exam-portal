@@ -18,7 +18,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系統", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系統 (排版置中旗艦版)")
-st.info("💡 終極優化：Excel 總表已新增「考試流程」檢核欄位！頁尾警語也實裝「分段多色雙字體」強調設計，且支援「自動偵測預設印章」。")
+st.info("💡 終極優化：Excel 總表已新增「考試流程」與「衝突檢核」雙重防呆！頁尾警語也實裝「分段多色雙字體」強調設計，且支援「自動偵測預設印章」。")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -194,7 +194,7 @@ with col2:
     本系統現已成為**全自動試務產出中心**：
     
     1. **排版優化**：表格標題與內容皆已「全面置中」，「編號」欄寬微調加寬防換行。
-    2. **流程檢核**：Excel總表已新增「考試流程」動態檢核，自動排序先後順序。
+    2. **流程檢核**：Excel總表已新增「考試流程」與「時間衝突」雙重動態檢核，自動排序先後順序與揪出時間重疊。
     3. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，且警語已實裝重點放大標紅功能。
     4. **雙軌下載**：提供手動 Excel 套印與 Word 一鍵直出雙功能。
     """)
@@ -277,7 +277,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 
             df_master = pd.DataFrame(all_schedules)
             
-            # --- 【全新功能】：自動計算並寫入「考試流程」順序 ---
+            # --- 【全新功能】：自動計算並寫入「考試流程」順序與「時間衝突檢核」 ---
             def get_flow(row):
                 p_time = str(row.get('準備時間', '')).split('-')[0].strip()
                 t_time = str(row.get('試教(實作)時間', '')).split('-')[0].strip()
@@ -298,8 +298,44 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 
                 # 串接成流程文字
                 return " → ".join([item[1] for item in flow_list])
+
+            def check_time_conflict(row):
+                # 輔助函數：將 "09:40-09:55" 轉換成 (開始分鐘數, 結束分鐘數, 關卡名稱)
+                def parse_time(time_str, name):
+                    try:
+                        if not time_str or "手動" in time_str: return None
+                        s, e = str(time_str).strip().split('-')
+                        s_min = int(s.split(':')[0]) * 60 + int(s.split(':')[1])
+                        e_min = int(e.split(':')[0]) * 60 + int(e.split(':')[1])
+                        return (s_min, e_min, name)
+                    except:
+                        return None
+                        
+                times = []
+                p = parse_time(row.get('準備時間', ''), '準備')
+                t = parse_time(row.get('試教(實作)時間', ''), '試教')
+                o = parse_time(row.get('口試時間', ''), '口試')
+                
+                for item in [p, t, o]:
+                    if item: times.append(item)
+                    
+                # 依據開始時間排序
+                times.sort(key=lambda x: x[0])
+                
+                # 檢查是否有時間重疊 (前一關的結束時間 > 下一關的開始時間)
+                conflicts = []
+                for i in range(len(times) - 1):
+                    if times[i][1] > times[i+1][0]:
+                        conflicts.append(f"{times[i][2]}與{times[i+1][2]}")
+                        
+                if not times or len(times) < 3:
+                    return "⚠️ 待確認"
+                if conflicts:
+                    return "🚨 衝突: " + "、".join(conflicts)
+                return "✅ 無衝突"
                 
             df_master['考試流程'] = df_master.apply(get_flow, axis=1)
+            df_master['衝突檢核'] = df_master.apply(check_time_conflict, axis=1)
             # -------------------------------------------------------------
             
             # --- Excel 產出 ---
@@ -326,7 +362,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             
             output_excel = io.BytesIO()
             with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
-                # 第一個工作表：寫入含有「考試流程」的總表
+                # 第一個工作表：寫入含有「考試流程」與「衝突檢核」的總表
                 df_master.to_excel(writer, index=False, sheet_name='試務中心總表')
                 
                 df_merge_final.to_excel(writer, index=False, sheet_name='合併列印專用')
@@ -484,12 +520,12 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 # ==========================================
 if st.session_state.processed:
     st.balloons()
-    st.success("🎉 排版完美達成！「考試流程」檢核欄位已加入，頁尾警語與自動印章功能皆已順利就位。")
+    st.success("🎉 旗艦完全體達成！「考試流程」與「時間衝突檢核」已啟動，頁尾警語與印章自動掛載功能皆順暢運行。")
     
     c_d1, c_d2 = st.columns(2)
     with c_d1:
         st.download_button(
-            label="📥 1. 下載 Excel 總表 (含考試流程與合併列印)",
+            label="📥 1. 下載 Excel 總表 (含考試流程與檢核)",
             data=st.session_state.excel_data,
             file_name=st.session_state.excel_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
