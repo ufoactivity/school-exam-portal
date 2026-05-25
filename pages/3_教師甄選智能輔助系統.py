@@ -18,7 +18,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系統", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系統 (排版置中旗艦版)")
-st.info("💡 終極優化：Word 公告單的表格標題與內容已「全面置中對齊」，且頁尾警語已實裝「分段多色雙字體」強調設計！")
+st.info("💡 終極優化：頁尾警語已實裝「分段多色雙字體」強調設計，且已恢復「自動偵測預設印章」功能，免重複上傳！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -60,8 +60,29 @@ else:
 st.sidebar.divider()
 
 st.sidebar.title("🔴 自動蓋章設定 (Word專用)")
-st.sidebar.markdown("上傳您的「試務組印章.png」，系統將自動印在每頁右下角。")
-file_stamp = st.sidebar.file_uploader("上傳印章圖檔 (.png, .jpg)", type=['png', 'jpg', 'jpeg'])
+
+# 【恢復功能】：自動偵測預設印章邏輯
+default_stamp_name = "試務組印章.png"
+stamp_path = default_stamp_name
+has_default_stamp = False
+file_stamp = None
+
+if os.path.exists(stamp_path):
+    has_default_stamp = True
+elif os.path.exists(f"../{default_stamp_name}"):
+    stamp_path = f"../{default_stamp_name}"
+    has_default_stamp = True
+elif os.path.exists(f"pages/{default_stamp_name}"):
+    stamp_path = f"pages/{default_stamp_name}"
+    has_default_stamp = True
+
+if has_default_stamp:
+    st.sidebar.success(f"✅ 系統已自動載入預設印章：\n`{default_stamp_name}`")
+    with st.sidebar.expander("🔄 想要臨時更換印章？點此手動上傳"):
+        file_stamp = st.file_uploader("上傳新印章圖檔 (.png, .jpg)", type=['png', 'jpg', 'jpeg'])
+else:
+    st.sidebar.markdown("上傳您的「試務組印章.png」，系統將自動印在每頁右下角。")
+    file_stamp = st.sidebar.file_uploader("上傳印章圖檔 (.png, .jpg)", type=['png', 'jpg', 'jpeg'])
 
 # ==========================================
 # 2. 華南教甄官方硬性時間矩陣資料庫
@@ -318,9 +339,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 p_footer_text = cell_left.paragraphs[0]
                 p_footer_text.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 
-                # -------------------------------------------------------------
-                # 【優化更新區塊】分段文字顏色與大小設定
-                # -------------------------------------------------------------
                 # 第一段：黑色，14pt
                 run_1 = p_footer_text.add_run("※試教及口試時間")
                 run_1.font.name = '標楷體'
@@ -341,14 +359,19 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 run_3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
                 run_3.font.size = Pt(14)
                 run_3.font.color.rgb = RGBColor(0, 0, 0)
-                # -------------------------------------------------------------
                 
+                # 【恢復功能】：決定印章來源並套印
+                stamp_source = None
                 if file_stamp:
+                    stamp_source = io.BytesIO(file_stamp.getvalue())
+                elif has_default_stamp:
+                    stamp_source = stamp_path
+                
+                if stamp_source:
                     p_stamp = cell_right.paragraphs[0]
                     p_stamp.alignment = WD_ALIGN_PARAGRAPH.RIGHT 
                     run_stamp = p_stamp.add_run()
-                    stamp_bytes = io.BytesIO(file_stamp.getvalue())
-                    run_stamp.add_picture(stamp_bytes, width=Cm(4.0)) 
+                    run_stamp.add_picture(stamp_source, width=Cm(4.0)) 
                 
                 # 內容生成
                 for subject in all_subjs:
@@ -373,7 +396,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                     doc.add_paragraph(f"試教場地：{v.get('試教', '未設定')}")
                     doc.add_paragraph(f"口試場地：{v.get('口試', '未設定')}")
                     
-                    # 【核心修正】：強制置中與欄寬微調
+                    # 強制置中與欄寬微調
                     table = doc.add_table(rows=1, cols=5)
                     table.style = 'Table Grid'
                     table.autofit = False 
@@ -390,7 +413,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                     hdr_headers = ['甄選證號', '編號', '試教準備室', '試教', '口試']
                     for col_idx in range(5):
                         hdr_cells[col_idx].text = hdr_headers[col_idx]
-                        hdr_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # 標題置中
+                        hdr_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER 
                         hdr_cells[col_idx].width = col_widths[col_idx]
                         table.columns[col_idx].width = col_widths[col_idx]
                     
@@ -408,7 +431,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                         
                         for col_idx in range(5):
                             row_cells[col_idx].text = row_data[col_idx]
-                            row_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # 內容也全面置中
+                            row_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                             row_cells[col_idx].width = col_widths[col_idx]
                     
                     doc.add_page_break()
