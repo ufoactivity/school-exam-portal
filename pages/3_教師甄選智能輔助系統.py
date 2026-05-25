@@ -18,7 +18,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系統", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系統 (排版置中旗艦版)")
-st.info("💡 終極優化：Excel 總表已新增「考試流程」與「衝突檢核」雙重防呆！頁尾警語也實裝「分段多色雙字體」強調設計，且支援「自動偵測預設印章」。")
+st.info("💡 終極優化：已完美對齊「官方30分鐘獨立口試表」，精準從 10:25 起跑交錯排程，徹底消滅評委空檔！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -130,7 +130,27 @@ TEACH_30_MATRIX = {
     13: ("17:10-17:25", "17:25-17:55"), 14: ("17:40-17:55", "17:55-18:25"), 15: ("18:10-18:25", "18:25-18:55"),
 }
 
-ORAL_30_MATRIX = {
+# 【終極修正】獨立科目的 30 分鐘實作口試時間表 (完整對齊第三個工作表邏輯，10:25起跑交錯！)
+ORAL_30_MATRIX_INDEPENDENT = {
+    1: {1: "10:40-10:50"},
+    2: {1: "10:40-10:50", 2: "11:10-11:20"},
+    3: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35"},
+    4: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05"},
+    5: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35"},
+    6: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35", 6: "11:40-11:50"},
+    7: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35", 6: "11:40-11:50", 7: "13:10-13:20"},
+    8: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35", 6: "11:40-11:50", 7: "13:10-13:20", 8: "13:25-13:35"},
+    9: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35", 6: "11:40-11:50", 7: "13:10-13:20", 8: "13:25-13:35", 9: "13:40-13:50"},
+    10: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35", 6: "11:40-11:50", 7: "13:10-13:20", 8: "13:25-13:35", 9: "13:40-13:50", 10: "13:55-14:05"},
+    11: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35", 6: "11:40-11:50", 7: "13:10-13:20", 8: "13:25-13:35", 9: "13:40-13:50", 10: "13:55-14:05", 11: "14:10-14:20"},
+    12: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35", 6: "11:40-11:50", 7: "13:10-13:20", 8: "13:25-13:35", 9: "13:40-13:50", 10: "13:55-14:05", 11: "14:10-14:20", 12: "14:25-14:35"},
+    13: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35", 6: "11:40-11:50", 7: "13:10-13:20", 8: "13:25-13:35", 9: "13:40-13:50", 10: "13:55-14:05", 11: "14:10-14:20", 12: "14:25-14:35", 13: "14:40-14:50"},
+    14: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35", 6: "11:40-11:50", 7: "13:10-13:20", 8: "13:25-13:35", 9: "13:40-13:50", 10: "13:55-14:05", 11: "14:10-14:20", 12: "14:25-14:35", 13: "14:40-14:50", 14: "14:55-15:05"},
+    15: {1: "10:40-10:50", 2: "11:10-11:20", 3: "10:25-10:35", 4: "10:55-11:05", 5: "11:25-11:35", 6: "11:40-11:50", 7: "13:10-13:20", 8: "13:25-13:35", 9: "13:40-13:50", 10: "13:55-14:05", 11: "14:10-14:20", 12: "14:25-14:35", 13: "14:40-14:50", 14: "14:55-15:05", 15: "15:10-15:20"}
+}
+
+# 【合併專用】合併科目的 30 分鐘實作接力口試時間表 (等第一組考完往後平移)
+ORAL_30_MATRIX_MERGED = {
     1: "13:40-13:50", 2: "13:55-14:05", 3: "14:10-14:20", 4: "14:21-14:31",
     5: "14:40-14:50", 6: "14:55-15:05", 7: "15:10-15:20", 8: "15:25-15:35",
     9: "15:40-15:50", 10: "15:55-16:05", 11: "16:10-16:20", 12: "16:25-16:35",
@@ -194,9 +214,9 @@ with col2:
     本系統現已成為**全自動試務產出中心**：
     
     1. **排版優化**：表格標題與內容皆已「全面置中」，「編號」欄寬微調加寬防換行。
-    2. **流程檢核**：Excel總表已新增「考試流程」與「時間衝突」雙重動態檢核，自動排序先後順序與揪出時間重疊。
-    3. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，且警語已實裝重點放大標紅功能。
-    4. **雙軌下載**：提供手動 Excel 套印與 Word 一鍵直出雙功能。
+    2. **雙軌矩陣**：系統能自動偵測 30 分鐘實作科目是否獨立應考，並自動啟動交錯排程，評委零空檔。
+    3. **流程檢核**：Excel總表已新增「考試流程」與「時間衝突」雙重動態檢核，自動揪出時間重疊。
+    4. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，且警語已實裝重點放大標紅功能。
     """)
 
 st.divider()
@@ -244,6 +264,9 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             
             for group in final_processing_groups:
                 group_total_candidates = sum(len(df_candidates[df_candidates['報考科目'] == sub]) for sub in group['subjects'])
+                
+                # 判斷是否為「合併口試群組」
+                is_merged_group = len(group['subjects']) > 1 
                 global_idx = 1
                 
                 for s_idx, subject in enumerate(group['subjects']):
@@ -259,7 +282,14 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                         
                         if is_practical:
                             times_tuple = TEACH_30_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
-                            oral_range = ORAL_30_MATRIX.get(global_idx, "請手動調整")
+                            
+                            # 依據獨立或合併，選用不同的 30 分鐘口試矩陣
+                            if is_merged_group:
+                                oral_range = ORAL_30_MATRIX_MERGED.get(global_idx, "請手動調整")
+                            else:
+                                # 【終極修正】：獨立科目採用「依照總人數查表」的緊密邏輯，最大支援到 15 人
+                                lookup_n = group_total_candidates if group_total_candidates <= 15 else 15
+                                oral_range = ORAL_30_MATRIX_INDEPENDENT.get(lookup_n, {}).get(global_idx, "請手動調整")
                         else:
                             times_tuple = TEACH_15_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
                             lookup_n = group_total_candidates if group_total_candidates <= 9 else 10
@@ -277,30 +307,20 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 
             df_master = pd.DataFrame(all_schedules)
             
-            # --- 【全新功能】：自動計算並寫入「考試流程」順序與「時間衝突檢核」 ---
+            # --- 【防呆檢核】：自動計算並寫入「考試流程」順序與「時間衝突檢核」 ---
             def get_flow(row):
                 p_time = str(row.get('準備時間', '')).split('-')[0].strip()
                 t_time = str(row.get('試教(實作)時間', '')).split('-')[0].strip()
                 o_time = str(row.get('口試時間', '')).split('-')[0].strip()
                 
-                # 如果遇到需要手動調整的字眼，直接顯示待確認
                 if "手動" in p_time or "手動" in o_time or not p_time or not o_time:
                     return "待手動確認"
                     
-                flow_list = [
-                    (p_time, "準備"),
-                    (t_time, "試教"),
-                    (o_time, "口試")
-                ]
-                
-                # 依據時間字串的開頭自動排序
+                flow_list = [(p_time, "準備"), (t_time, "試教"), (o_time, "口試")]
                 flow_list.sort(key=lambda x: x[0])
-                
-                # 串接成流程文字
                 return " → ".join([item[1] for item in flow_list])
 
             def check_time_conflict(row):
-                # 輔助函數：將 "09:40-09:55" 轉換成 (開始分鐘數, 結束分鐘數, 關卡名稱)
                 def parse_time(time_str, name):
                     try:
                         if not time_str or "手動" in time_str: return None
@@ -312,17 +332,14 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                         return None
                         
                 times = []
-                p = parse_time(row.get('準備時間', ''), '準備')
-                t = parse_time(row.get('試教(實作)時間', ''), '試教')
-                o = parse_time(row.get('口試時間', ''), '口試')
-                
-                for item in [p, t, o]:
+                for val, label in [(row.get('準備時間', ''), '準備'), 
+                                   (row.get('試教(實作)時間', ''), '試教'), 
+                                   (row.get('口試時間', ''), '口試')]:
+                    item = parse_time(val, label)
                     if item: times.append(item)
                     
-                # 依據開始時間排序
                 times.sort(key=lambda x: x[0])
                 
-                # 檢查是否有時間重疊 (前一關的結束時間 > 下一關的開始時間)
                 conflicts = []
                 for i in range(len(times) - 1):
                     if times[i][1] > times[i+1][0]:
@@ -347,7 +364,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             df_merge.insert(3, '試教', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('試教', '未設定')))
             df_merge.insert(4, '口試', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('口試', '未設定')))
             
-            # 合併列印專用表不需要流程，維持原本格式
             df_merge = df_merge[['科目', '休息室', '準備室', '試教', '口試', '准考證', '排序', '準備時間', '試教時間', '口試時間']]
             
             merge_with_blanks = []
@@ -362,7 +378,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             
             output_excel = io.BytesIO()
             with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
-                # 第一個工作表：寫入含有「考試流程」與「衝突檢核」的總表
                 df_master.to_excel(writer, index=False, sheet_name='試務中心總表')
                 
                 df_merge_final.to_excel(writer, index=False, sheet_name='合併列印專用')
@@ -405,28 +420,24 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 p_footer_text = cell_left.paragraphs[0]
                 p_footer_text.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 
-                # 第一段：黑色，14pt
                 run_1 = p_footer_text.add_run("※試教及口試時間")
                 run_1.font.name = '標楷體'
                 run_1._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
                 run_1.font.size = Pt(14)
                 run_1.font.color.rgb = RGBColor(0, 0, 0)
                 
-                # 第二段：紅色，16pt
                 run_2 = p_footer_text.add_run("將依現場實際報到人數及試場情形作調整，")
                 run_2.font.name = '標楷體'
                 run_2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
                 run_2.font.size = Pt(16)
                 run_2.font.color.rgb = RGBColor(255, 0, 0)
                 
-                # 第三段：黑色，14pt
                 run_3 = p_footer_text.add_run("請考生於各科指定之休息室等候叫號")
                 run_3.font.name = '標楷體'
                 run_3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
                 run_3.font.size = Pt(14)
                 run_3.font.color.rgb = RGBColor(0, 0, 0)
                 
-                # 決定印章來源並套印
                 stamp_source = None
                 if file_stamp:
                     stamp_source = io.BytesIO(file_stamp.getvalue())
@@ -462,19 +473,16 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                     doc.add_paragraph(f"試教場地：{v.get('試教', '未設定')}")
                     doc.add_paragraph(f"口試場地：{v.get('口試', '未設定')}")
                     
-                    # 強制置中與欄寬微調
                     table = doc.add_table(rows=1, cols=5)
                     table.style = 'Table Grid'
                     table.autofit = False 
                     
-                    # 將編號加寬至 2.0cm 確保 16pt 不會換行，其餘平均分配 (總計約 16cm)
                     col_widths = [Cm(3.5), Cm(2.0), Cm(3.5), Cm(3.5), Cm(3.5)]
                     
                     table.style.font.name = '標楷體'
                     table.style._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
                     table.style.font.size = Pt(16)
                     
-                    # 設定表頭與置中
                     hdr_cells = table.rows[0].cells
                     hdr_headers = ['甄選證號', '編號', '試教準備室', '試教', '口試']
                     for col_idx in range(5):
@@ -483,7 +491,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                         hdr_cells[col_idx].width = col_widths[col_idx]
                         table.columns[col_idx].width = col_widths[col_idx]
                     
-                    # 填入考生資料並全部置中
                     for _, cand in df_sub_sched.iterrows():
                         row_cells = table.add_row().cells
                         
@@ -520,7 +527,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 # ==========================================
 if st.session_state.processed:
     st.balloons()
-    st.success("🎉 旗艦完全體達成！「考試流程」與「時間衝突檢核」已啟動，頁尾警語與印章自動掛載功能皆順暢運行。")
+    st.success("🎉 排版與邏輯皆完美達成！「獨立科目的30分鐘口試表」已精準從 10:25 起跑，系統也將即時為您把關所有時間衝突。")
     
     c_d1, c_d2 = st.columns(2)
     with c_d1:
