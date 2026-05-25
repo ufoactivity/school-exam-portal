@@ -18,7 +18,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系統", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系統 (排版置中旗艦版)")
-st.info("💡 終極優化：頁尾警語已實裝「分段多色雙字體」強調設計，且已恢復「自動偵測預設印章」功能，免重複上傳！")
+st.info("💡 終極優化：Excel 總表已新增「考試流程」檢核欄位！頁尾警語也實裝「分段多色雙字體」強調設計，且支援「自動偵測預設印章」。")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -37,7 +37,7 @@ if 'df_preview' not in st.session_state:
 # 0. 側邊欄：試務資源與印章設定
 # ==========================================
 st.sidebar.title("📥 試務資源下載")
-template_filename = "OOO學年第O次代理教師甄選各科預定流程時間表[公版]1140606.doc"
+template_filename = "114第1次代理教師甄選各科預定流程時間表[最新版]1140606.doc"
 file_path = template_filename
 if not os.path.exists(file_path):
     if os.path.exists(f"../{template_filename}"):
@@ -61,7 +61,7 @@ st.sidebar.divider()
 
 st.sidebar.title("🔴 自動蓋章設定 (Word專用)")
 
-# 【恢復功能】：自動偵測預設印章邏輯
+# 自動偵測預設印章邏輯
 default_stamp_name = "試務組印章.png"
 stamp_path = default_stamp_name
 has_default_stamp = False
@@ -194,8 +194,9 @@ with col2:
     本系統現已成為**全自動試務產出中心**：
     
     1. **排版優化**：表格標題與內容皆已「全面置中」，「編號」欄寬微調加寬防換行。
-    2. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，且警語已實裝重點放大標紅功能。
-    3. **雙軌下載**：提供手動 Excel 套印與 Word 一鍵直出雙功能。
+    2. **流程檢核**：Excel總表已新增「考試流程」動態檢核，自動排序先後順序。
+    3. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，且警語已實裝重點放大標紅功能。
+    4. **雙軌下載**：提供手動 Excel 套印與 Word 一鍵直出雙功能。
     """)
 
 st.divider()
@@ -276,6 +277,31 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 
             df_master = pd.DataFrame(all_schedules)
             
+            # --- 【全新功能】：自動計算並寫入「考試流程」順序 ---
+            def get_flow(row):
+                p_time = str(row.get('準備時間', '')).split('-')[0].strip()
+                t_time = str(row.get('試教(實作)時間', '')).split('-')[0].strip()
+                o_time = str(row.get('口試時間', '')).split('-')[0].strip()
+                
+                # 如果遇到需要手動調整的字眼，直接顯示待確認
+                if "手動" in p_time or "手動" in o_time or not p_time or not o_time:
+                    return "待手動確認"
+                    
+                flow_list = [
+                    (p_time, "準備"),
+                    (t_time, "試教"),
+                    (o_time, "口試")
+                ]
+                
+                # 依據時間字串的開頭自動排序
+                flow_list.sort(key=lambda x: x[0])
+                
+                # 串接成流程文字
+                return " → ".join([item[1] for item in flow_list])
+                
+            df_master['考試流程'] = df_master.apply(get_flow, axis=1)
+            # -------------------------------------------------------------
+            
             # --- Excel 產出 ---
             df_merge = df_master.copy()
             df_merge = df_merge.rename(columns={'報考科目': '科目', '准考證號': '准考證', '試教(實作)時間': '試教時間'})
@@ -284,6 +310,8 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             df_merge.insert(2, '準備室', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('準備室', '未設定')))
             df_merge.insert(3, '試教', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('試教', '未設定')))
             df_merge.insert(4, '口試', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('口試', '未設定')))
+            
+            # 合併列印專用表不需要流程，維持原本格式
             df_merge = df_merge[['科目', '休息室', '準備室', '試教', '口試', '准考證', '排序', '準備時間', '試教時間', '口試時間']]
             
             merge_with_blanks = []
@@ -298,7 +326,9 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             
             output_excel = io.BytesIO()
             with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
+                # 第一個工作表：寫入含有「考試流程」的總表
                 df_master.to_excel(writer, index=False, sheet_name='試務中心總表')
+                
                 df_merge_final.to_excel(writer, index=False, sheet_name='合併列印專用')
                 df_teach = df_master[['報考科目', '排序', '試教(實作)時間', '准考證號']].copy()
                 df_teach.to_excel(writer, index=False, sheet_name='門口_試教實作表')
@@ -360,7 +390,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 run_3.font.size = Pt(14)
                 run_3.font.color.rgb = RGBColor(0, 0, 0)
                 
-                # 【恢復功能】：決定印章來源並套印
+                # 決定印章來源並套印
                 stamp_source = None
                 if file_stamp:
                     stamp_source = io.BytesIO(file_stamp.getvalue())
@@ -454,12 +484,12 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 # ==========================================
 if st.session_state.processed:
     st.balloons()
-    st.success("🎉 排版完美達成！頁尾警語已實裝分色字體強化，表格標題與內容皆已置中。")
+    st.success("🎉 排版完美達成！「考試流程」檢核欄位已加入，頁尾警語與自動印章功能皆已順利就位。")
     
     c_d1, c_d2 = st.columns(2)
     with c_d1:
         st.download_button(
-            label="📥 1. 下載 Excel 總表 (含合併列印專用)",
+            label="📥 1. 下載 Excel 總表 (含考試流程與合併列印)",
             data=st.session_state.excel_data,
             file_name=st.session_state.excel_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
