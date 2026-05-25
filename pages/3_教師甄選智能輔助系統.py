@@ -17,8 +17,8 @@ except ImportError:
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系統", page_icon="🏫", layout="wide")
-st.title("🏫 試務組-教師甄選智能輔助系統")
-st.info("💡 終極優化：Word 公告單的表格標題與內容已「全面置中對齊」，且已微調欄寬解決「編號」換行問題，排版更加專業美觀！印章現已全自動載入，免除重複上傳。115.05.21增修")
+st.title("🏫 教務處-教師甄選智能排程系統 (排版置中旗艦版)")
+st.info("💡 終極優化：Word 公告單的表格標題與內容已「全面置中對齊」，且頁尾警語已實裝「分段多色雙字體」強調設計！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -37,7 +37,7 @@ if 'df_preview' not in st.session_state:
 # 0. 側邊欄：試務資源與印章設定
 # ==========================================
 st.sidebar.title("📥 試務資源下載")
-template_filename = "OOO學年第O次代理教師甄選各科預定流程時間表[公版]1140606.doc"
+template_filename = "114第1次代理教師甄選各科預定流程時間表[最新版]1140606.doc"
 file_path = template_filename
 if not os.path.exists(file_path):
     if os.path.exists(f"../{template_filename}"):
@@ -59,20 +59,9 @@ else:
 
 st.sidebar.divider()
 
-# 【重點修改處 1】自動抓取印章，移除上傳元件
 st.sidebar.title("🔴 自動蓋章設定 (Word專用)")
-stamp_filename = "試務組印章.png" # 預設印章檔名，若有修改可在此變更
-stamp_path = stamp_filename
-if not os.path.exists(stamp_path):
-    if os.path.exists(f"../{stamp_filename}"):
-        stamp_path = f"../{stamp_filename}"
-    elif os.path.exists(f"pages/{stamp_filename}"):
-        stamp_path = f"pages/{stamp_filename}"
-
-if os.path.exists(stamp_path):
-    st.sidebar.success(f"✅ 已成功綁定內建印章！系統將自動在每頁右下角蓋章。")
-else:
-    st.sidebar.warning(f"⚠️ 找不到印章檔案 `{stamp_filename}`。請確認已放置於專案或 pages 目錄中，否則產出的 Word 將不會有印章。")
+st.sidebar.markdown("上傳您的「試務組印章.png」，系統將自動印在每頁右下角。")
+file_stamp = st.sidebar.file_uploader("上傳印章圖檔 (.png, .jpg)", type=['png', 'jpg', 'jpeg'])
 
 # ==========================================
 # 2. 華南教甄官方硬性時間矩陣資料庫
@@ -184,9 +173,8 @@ with col2:
     本系統現已成為**全自動試務產出中心**：
     
     1. **排版優化**：表格標題與內容皆已「全面置中」，「編號」欄寬微調加寬防換行。
-    2. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，隱形排版技術讓兩者完美並排。
+    2. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，且警語已實裝重點放大標紅功能。
     3. **雙軌下載**：提供手動 Excel 套印與 Word 一鍵直出雙功能。
-    4. **印章全自動化**：系統已綁定專案目錄中的 `試務組印章.png`，自動加蓋，無須每次上傳！
     """)
 
 st.divider()
@@ -329,122 +317,8 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 
                 p_footer_text = cell_left.paragraphs[0]
                 p_footer_text.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                run_footer_text = p_footer_text.add_run("※試教及口試時間將依現場實際報到人數及試場情形作調整，請考生於各科指定之休息室等候叫號")
-                run_footer_text.font.name = '標楷體'
-                run_footer_text._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                run_footer_text.font.size = Pt(16)
-                run_footer_text.font.color.rgb = RGBColor(255, 0, 0)
                 
-                # 【重點修改處 2】如果系統找到印章檔案，直接進行蓋印！
-                if os.path.exists(stamp_path):
-                    p_stamp = cell_right.paragraphs[0]
-                    p_stamp.alignment = WD_ALIGN_PARAGRAPH.RIGHT 
-                    run_stamp = p_stamp.add_run()
-                    run_stamp.add_picture(stamp_path, width=Cm(4.0)) 
-                
-                # 內容生成
-                for subject in all_subjs:
-                    df_sub_sched = df_master[df_master['報考科目'] == subject]
-                    if df_sub_sched.empty: continue
-                    
-                    p_title = doc.add_paragraph()
-                    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run_title = p_title.add_run(dynamic_title)
-                    run_title.font.size = Pt(18)
-                    run_title.bold = True
-                    
-                    p_sub = doc.add_paragraph()
-                    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run_sub = p_sub.add_run(f"【{subject}】")
-                    run_sub.font.size = Pt(16)
-                    run_sub.bold = True
-                    
-                    v = venue_dict.get(subject, {})
-                    doc.add_paragraph(f"考生休息室：{v.get('休息室', '未設定')}")
-                    doc.add_paragraph(f"試教準備室：{v.get('準備室', '未設定')}")
-                    doc.add_paragraph(f"試教場地：{v.get('試教', '未設定')}")
-                    doc.add_paragraph(f"口試場地：{v.get('口試', '未設定')}")
-                    
-                    # 【核心修正】：強制置中與欄寬微調
-                    table = doc.add_table(rows=1, cols=5)
-                    table.style = 'Table Grid'
-                    table.autofit = False 
-                    
-                    # 將編號加寬至 2.0cm 確保 16pt 不會換行，其餘平均分配 (總計約 16cm)
-                    col_widths = [Cm(3.5), Cm(2.0), Cm(3.5), Cm(3.5), Cm(3.5)]
-                    
-                    table.style.font.name = '標楷體'
-                    table.style._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                    table.style.font.size = Pt(16)
-                    
-                    # 設定表頭與置中
-                    hdr_cells = table.rows[0].cells
-                    hdr_headers = ['甄選證號', '編號', '試教準備室', '試教', '口試']
-                    for col_idx in range(5):
-                        hdr_cells[col_idx].text = hdr_headers[col_idx]
-                        hdr_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # 標題置中
-                        hdr_cells[col_idx].width = col_widths[col_idx]
-                        table.columns[col_idx].width = col_widths[col_idx]
-                    
-                    # 填入考生資料並全部置中
-                    for _, cand in df_sub_sched.iterrows():
-                        row_cells = table.add_row().cells
-                        
-                        row_data = [
-                            str(cand['准考證號']),
-                            str(cand['排序']),
-                            str(cand['準備時間']),
-                            str(cand['試教(實作)時間']),
-                            str(cand['口試時間'])
-                        ]
-                        
-                        for col_idx in range(5):
-                            row_cells[col_idx].text = row_data[col_idx]
-                            row_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER # 內容也全面置中
-                            row_cells[col_idx].width = col_widths[col_idx]
-                    
-                    doc.add_page_break()
-                    
-                output_word = io.BytesIO()
-                doc.save(output_word)
-                st.session_state.word_data = output_word.getvalue()
-                
-            st.session_state.df_preview = df_merge_final.head(15)
-            st.session_state.excel_filename = f"{academic_year}學年度第{session_num}次_排程與場地整合表.xlsx"
-            st.session_state.word_filename = f"{academic_year}學年度第{session_num}次_各科公告表(附印章).docx"
-            st.session_state.processed = True
-
-        except Exception as e:
-            st.error(f"發生錯誤: {e}")
-            st.code(traceback.format_exc())
-
-# ==========================================
-# 5. 結果顯示區
-# ==========================================
-if st.session_state.processed:
-    st.balloons()
-    st.success("🎉 排版完美達成！表格標題與內容皆已置中，且系統已自動為您蓋上專屬印章！")
-    
-    c_d1, c_d2 = st.columns(2)
-    with c_d1:
-        st.download_button(
-            label="📥 1. 下載 Excel 總表 (含合併列印專用)",
-            data=st.session_state.excel_data,
-            file_name=st.session_state.excel_filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-            type="primary"
-        )
-    with c_d2:
-        if HAS_DOCX and st.session_state.word_data:
-            st.download_button(
-                label="📥 2. 下載 Word 各科公告時間表 (置中排版全自動蓋章版)",
-                data=st.session_state.word_data,
-                file_name=st.session_state.word_filename,
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True,
-                type="primary"
-            )
-
-    st.write("👀 **專屬 Word 對接資料預覽：**")
-    st.dataframe(st.session_state.df_preview)
+                # -------------------------------------------------------------
+                # 【優化更新區塊】分段文字顏色與大小設定
+                # -------------------------------------------------------------
+                # 第一段：黑色
