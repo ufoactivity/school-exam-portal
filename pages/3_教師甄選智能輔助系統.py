@@ -18,7 +18,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系统 (排版置中旗艦版)")
-st.info("💡 終極優化：已實裝「學年度自動校正」，系統自動偵測並帶入當前年份（如115），免除手動修改煩惱！")
+st.info("💡 終極優化：已實裝「學年度自動校正」，系統自動偵測並帶入當前年份（如115），免除手動修改煩惱！115.05.26增修")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
