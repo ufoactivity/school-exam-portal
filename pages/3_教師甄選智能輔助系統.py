@@ -17,8 +17,8 @@ except ImportError:
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
-st.title("🏫 教務處-教師甄選智能排程系统 (排版置中旗艦版)")
-st.info("💡 終極優化：已實裝「絕對時間軸貪婪演算法」，合併口試時不跳號，完美按時間順序填補空檔！")
+st.title("🏫 教務處-教師甄選智能輔助系統 (排版置中旗艦版)")
+st.info("💡 終極優化：已實裝「絕對時間軸貪婪演算法」，合併口試時不跳號，完美按時間順序填補空檔！115.05.26增修")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
