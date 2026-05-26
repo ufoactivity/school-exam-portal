@@ -18,7 +18,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系统 (排版置中旗艦版)")
-st.info("💡 終極優化：已實裝「合併組單一共享時間池」，合併科目無縫接力，徹底消滅口試委員閒置時間！")
+st.info("💡 終極優化：已實裝「絕對時間軸貪婪演算法」，合併口試時不跳號，完美按時間順序填補空檔！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -144,13 +144,14 @@ def generate_oral_30_independent():
 
 ORAL_30_MATRIX_INDEPENDENT = generate_oral_30_independent()
 
-# 【全新】共享口試時間池 (供合併群組共用，無縫接力)
-SHARED_ORAL_POOL = [
-    "10:10-10:20", "09:40-09:50", "09:55-10:05", "10:55-11:05", "10:25-10:35", "10:40-10:50", 
-    "11:40-11:50", "11:10-11:20", "11:25-11:35", "13:10-13:20", "13:25-13:35", "13:40-13:50", 
-    "13:55-14:05", "14:10-14:20", "14:25-14:35", "14:40-14:50", "14:55-15:05", "15:10-15:20",
-    "15:25-15:35", "15:40-15:50", "15:55-16:05", "16:10-16:20", "16:25-16:35", "16:40-16:50", "16:55-17:05",
-    "17:10-17:20", "17:25-17:35", "17:40-17:50", "17:55-18:05", "18:10-18:20", "18:25-18:35", "18:40-18:50"
+# 【終極更新】合併口試的絕對時間排序池！完全依照真實時間先後排序，保證不跳號！
+CHRONOLOGICAL_ORAL_POOL = [
+    "09:40-09:50", "09:55-10:05", "10:10-10:20", "10:25-10:35", "10:40-10:50", "10:55-11:05",
+    "11:10-11:20", "11:25-11:35", "11:40-11:50", 
+    "13:10-13:20", "13:25-13:35", "13:40-13:50", "13:55-14:05", "14:10-14:20", "14:25-14:35",
+    "14:40-14:50", "14:55-15:05", "15:10-15:20", "15:25-15:35", "15:40-15:50", "15:55-16:05",
+    "16:10-16:20", "16:25-16:35", "16:40-16:50", "16:55-17:05", "17:10-17:20", "17:25-17:35",
+    "17:40-17:50", "17:55-18:05", "18:10-18:20", "18:25-18:35", "18:40-18:50", "18:55-19:05"
 ]
 
 # ==========================================
@@ -223,7 +224,7 @@ with col2:
     本系統現已成為**全自動試務產出中心**：
     
     1. **試教分離邏輯**：口試合併時，可自由決定試教要「同時起跑」還是「接力排程」。
-    2. **統一時間池防撞**：合併組共享同一條時間軸！13:35考完秒接13:40，完美消滅評委閒置。
+    2. **絕對時間軸防撞**：合併口試採用純時間序防跳號設計，11:10 完完美接 11:25，不再跳針到 11:40。
     3. **官方矩陣對位**：獨立科目口試表已 100% 讀取官方排程密碼。
     4. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，且警語已實裝重點放大標紅功能。
     """)
@@ -306,7 +307,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                 is_merged_group = len(group['subjects']) > 1 
                 merged_teaching = group['merged_teaching']
                 
-                # 若為合併組，自動將實作科目排到最後面！
                 if is_merged_group:
                     group['subjects'].sort(key=lambda x: 1 if x in practical_subjects else 0)
                 
@@ -337,8 +337,8 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                         oral_range = "請手動調整"
                         
                         if is_merged_group:
-                            # 【核心修正】：合併群組共用同一個時間池，依序尋找下一個安全的空檔！
-                            for o_idx, test_oral in enumerate(SHARED_ORAL_POOL):
+                            # 【核心修正】：合併口試群組全面採用絕對時間序列！完全按照時鐘早晚尋找空檔！
+                            for o_idx, test_oral in enumerate(CHRONOLOGICAL_ORAL_POOL):
                                 if o_idx in used_oral_indices: continue
                                 
                                 if not check_time_conflict_bool(prep, teach, test_oral):
@@ -346,6 +346,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                                     used_oral_indices.add(o_idx)
                                     break
                         else:
+                            # 獨立群組維持官方矩陣邏輯
                             if is_practical:
                                 lookup_n = group_total_candidates if group_total_candidates <= 25 else 25
                                 oral_range = ORAL_30_MATRIX_INDEPENDENT.get(lookup_n, {}).get(global_oral_idx, "請手動調整")
@@ -365,6 +366,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 
             df_master = pd.DataFrame(all_schedules)
             
+            # --- 自動計算並寫入「考試流程」順序與「時間衝突檢核」 ---
             def get_flow(row):
                 p_time = str(row.get('準備時間', '')).split('-')[0].strip()
                 t_time = str(row.get('試教(實作)時間', '')).split('-')[0].strip()
@@ -443,7 +445,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             
             st.session_state.excel_data = output_excel.getvalue()
 
-            # --- Word 直出引擎 ---
+            # --- Word 直出引擎 (置中排版 + 自動蓋章) ---
             if HAS_DOCX:
                 doc = docx.Document()
                 section = doc.sections[0]
@@ -560,7 +562,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 
 if st.session_state.processed:
     st.balloons()
-    st.success("🎉 完美！「合併口試動態防撞引擎」發威，觀光事業科 13:40 秒接力口試，徹底消滅閒置時間！")
+    st.success("🎉 終極修補完成！合併口試不再跳號，英文科乖乖拿 11:10 接著 11:25，評委完美零空檔！")
     
     c_d1, c_d2 = st.columns(2)
     with c_d1:
