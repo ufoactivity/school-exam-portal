@@ -17,8 +17,8 @@ except ImportError:
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
-st.title("🏫 教務處-教師甄選智能輔助系統 (排版置中旗艦版)")
-st.info("💡 終極優化：已實裝「絕對時間軸貪婪演算法」，合併口試時不跳號，完美按時間順序填補空檔！115.05.26增修")
+st.title("🏫 教務處-教師甄選智能排程系统 (排版置中旗艦版)")
+st.info("💡 終極優化：已實裝「學年度自動校正」，系統自動偵測並帶入當前年份（如115），免除手動修改煩惱！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -130,7 +130,6 @@ TEACH_30_MATRIX = {
     22: ("21:40-21:55", "21:55-22:25"), 23: ("22:10-22:25", "22:25-22:55"), 24: ("22:40-22:55", "22:55-23:25"), 25: ("23:10-23:25", "23:25-23:55")
 }
 
-# 獨立科目的 30 分鐘實作口試時間表
 def generate_oral_30_independent():
     matrix = {}
     base_schedule = [
@@ -144,7 +143,7 @@ def generate_oral_30_independent():
 
 ORAL_30_MATRIX_INDEPENDENT = generate_oral_30_independent()
 
-# 【終極更新】合併口試的絕對時間排序池！完全依照真實時間先後排序，保證不跳號！
+# 合併口試的絕對時間排序池
 CHRONOLOGICAL_ORAL_POOL = [
     "09:40-09:50", "09:55-10:05", "10:10-10:20", "10:25-10:35", "10:40-10:50", "10:55-11:05",
     "11:10-11:20", "11:25-11:35", "11:40-11:50", 
@@ -213,8 +212,12 @@ with col1:
 with col2:
     st.subheader("📝 4. 甄選標題設定")
     c_year, c_session = st.columns(2)
+    
+    # 【新增功能】：自動抓取當前年份計算學年度 (當年西元年 - 1911)
+    current_roc_year = datetime.datetime.now().year - 1911
+    
     with c_year:
-        academic_year = st.number_input("學年度 (如: 114)", min_value=100, max_value=200, value=114, step=1)
+        academic_year = st.number_input("學年度", min_value=100, max_value=200, value=current_roc_year, step=1)
     with c_session:
         session_num = st.number_input("第幾次甄選 (如: 1)", min_value=1, max_value=50, value=1, step=1)
     
@@ -223,9 +226,9 @@ with col2:
     st.markdown("""
     本系統現已成為**全自動試務產出中心**：
     
-    1. **試教分離邏輯**：口試合併時，可自由決定試教要「同時起跑」還是「接力排程」。
-    2. **絕對時間軸防撞**：合併口試採用純時間序防跳號設計，11:10 完完美接 11:25，不再跳針到 11:40。
-    3. **官方矩陣對位**：獨立科目口試表已 100% 讀取官方排程密碼。
+    1. **年度自動校正**：系統自動偵測並帶入當前年份作為學年度，免除手動修改煩惱。
+    2. **試教分離邏輯**：口試合併時，可自由決定試教要「同時起跑」還是「接力排程」。
+    3. **絕對時間軸防撞**：合併口試採用純時間序防跳號設計，完美按時間順序填補空檔。
     4. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，且警語已實裝重點放大標紅功能。
     """)
 
@@ -235,7 +238,6 @@ st.divider()
 # 4. 核心排程與生成演算法
 # ==========================================
 def check_time_conflict_bool(prep_str, teach_str, oral_str):
-    """回傳 True 代表有衝突，False 代表無衝突"""
     if not prep_str or not teach_str or not oral_str or "手動" in oral_str: return False
     def parse_m(s):
         try:
@@ -337,7 +339,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                         oral_range = "請手動調整"
                         
                         if is_merged_group:
-                            # 【核心修正】：合併口試群組全面採用絕對時間序列！完全按照時鐘早晚尋找空檔！
                             for o_idx, test_oral in enumerate(CHRONOLOGICAL_ORAL_POOL):
                                 if o_idx in used_oral_indices: continue
                                 
@@ -346,7 +347,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                                     used_oral_indices.add(o_idx)
                                     break
                         else:
-                            # 獨立群組維持官方矩陣邏輯
                             if is_practical:
                                 lookup_n = group_total_candidates if group_total_candidates <= 25 else 25
                                 oral_range = ORAL_30_MATRIX_INDEPENDENT.get(lookup_n, {}).get(global_oral_idx, "請手動調整")
@@ -366,7 +366,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 
             df_master = pd.DataFrame(all_schedules)
             
-            # --- 自動計算並寫入「考試流程」順序與「時間衝突檢核」 ---
             def get_flow(row):
                 p_time = str(row.get('準備時間', '')).split('-')[0].strip()
                 t_time = str(row.get('試教(實作)時間', '')).split('-')[0].strip()
@@ -410,7 +409,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             df_master['考試流程'] = df_master.apply(get_flow, axis=1)
             df_master['衝突檢核'] = df_master.apply(check_time_conflict_text, axis=1)
             
-            # --- Excel 產出 ---
             df_merge = df_master.copy()
             df_merge = df_merge.rename(columns={'報考科目': '科目', '准考證號': '准考證', '試教(實作)時間': '試教時間'})
             
@@ -445,7 +443,6 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
             
             st.session_state.excel_data = output_excel.getvalue()
 
-            # --- Word 直出引擎 (置中排版 + 自動蓋章) ---
             if HAS_DOCX:
                 doc = docx.Document()
                 section = doc.sections[0]
@@ -562,7 +559,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 
 if st.session_state.processed:
     st.balloons()
-    st.success("🎉 終極修補完成！合併口試不再跳號，英文科乖乖拿 11:10 接著 11:25，評委完美零空檔！")
+    st.success("🎉 學年度自動校正升級完成！系統已全副武裝，準備好迎接每年的試務挑戰！")
     
     c_d1, c_d2 = st.columns(2)
     with c_d1:
