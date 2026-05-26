@@ -18,7 +18,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系统 (排版置中旗艦版)")
-st.info("💡 終極優化：已實裝「合併組動態防撞引擎」，自動將實作科押後，並靈活套用標準時段，徹底消滅重疊與空檔！")
+st.info("💡 終極優化：已新增「試教是否合併」的自訂勾選項！支援試教分開同時考，口試完美錯開交錯的複雜情境！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -144,6 +144,16 @@ def generate_oral_30_independent():
 
 ORAL_30_MATRIX_INDEPENDENT = generate_oral_30_independent()
 
+# 合併科目的 30 分鐘實作接力口試時間表
+ORAL_30_MATRIX_MERGED = {
+    1: "13:40-13:50", 2: "13:55-14:05", 3: "14:10-14:20", 4: "14:21-14:31",
+    5: "14:40-14:50", 6: "14:55-15:05", 7: "15:10-15:20", 8: "15:25-15:35",
+    9: "15:40-15:50", 10: "15:55-16:05", 11: "16:10-16:20", 12: "16:25-16:35",
+    13: "16:40-16:50", 14: "16:55-17:05", 15: "17:10-17:20",
+    16: "17:25-17:35", 17: "17:40-17:50", 18: "17:55-18:05", 19: "18:10-18:20", 20: "18:25-18:35",
+    21: "18:40-18:50", 22: "18:55-19:05", 23: "19:10-19:20", 24: "19:25-19:35", 25: "19:40-19:50"
+}
+
 # ==========================================
 # 3. 介面佈局與參數設定
 # ==========================================
@@ -169,15 +179,29 @@ with col1:
                 st.markdown("### 🤝 2. 設定合併口試群組")
                 num_groups = st.number_input("欲建立的「合併口試組」數量：", min_value=0, max_value=5, value=0, step=1)
                 already_assigned = set()
+                
                 for g_i in range(int(num_groups)):
+                    st.markdown(f"**【口試合併群組 {g_i + 1}】**")
                     available_options = [s for s in all_subjs if s not in already_assigned]
                     selected_for_g = st.multiselect(
-                        f"選擇【合併口試群組 {g_i + 1}】的成員科目：",
+                        f"選擇成員科目：",
                         options=available_options,
                         key=f"group_select_{g_i}"
                     )
+                    
+                    # 【全新功能】：讓老師自訂試教是否也合併！
+                    merged_teaching = st.checkbox(
+                        "✅ 此群組『試教』也共用同一組委員 (試教時間接力排下去)", 
+                        value=False, 
+                        key=f"merged_teach_{g_i}"
+                    )
+                    st.write("")
+                    
                     if selected_for_g:
-                        group_settings.append(selected_for_g)
+                        group_settings.append({
+                            'subjects': selected_for_g,
+                            'merged_teaching': merged_teaching
+                        })
                         already_assigned.update(selected_for_g)
                 
                 st.write("---")
@@ -200,9 +224,10 @@ with col2:
     st.markdown("""
     本系統現已成為**全自動試務產出中心**：
     
-    1. **合併動態防撞**：若設定合併群組，實作科目將自動排後，口試時間直接套用原時段並動態避開衝堂！
-    2. **官方矩陣對位**：獨立科目的口試表也已精準對齊，徹底消滅評委空檔。
-    3. **流程檢核**：Excel總表已新增「考試流程」與「時間衝突」雙重動態檢核。
+    1. **試教分離邏輯**：口試合併時，可自由決定試教要「同時起跑」還是「接力排程」。
+    2. **合併動態防撞**：系統會自動把實作科目排到最後，並動態捕捉最完美的空檔配給口試。
+    3. **官方矩陣對位**：獨立科目口試表已 100% 讀取官方排程密碼。
+    4. **完美頁尾設計**：頁尾紅字與印章距離底端 1cm，且警語已實裝重點放大標紅功能。
     """)
 
 st.divider()
@@ -260,26 +285,35 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 
             final_processing_groups = []
             assigned_set = set()
-            for g_subs in group_settings:
-                if g_subs:
-                    final_processing_groups.append({'type': 'merged', 'subjects': g_subs})
-                    assigned_set.update(g_subs)
+            for g_dict in group_settings:
+                if g_dict['subjects']:
+                    final_processing_groups.append({
+                        'type': 'merged', 
+                        'subjects': g_dict['subjects'],
+                        'merged_teaching': g_dict['merged_teaching']
+                    })
+                    assigned_set.update(g_dict['subjects'])
             for sub in all_subjs:
                 if sub not in assigned_set:
-                    final_processing_groups.append({'type': 'independent', 'subjects': [sub]})
+                    final_processing_groups.append({
+                        'type': 'independent', 
+                        'subjects': [sub],
+                        'merged_teaching': False
+                    })
 
             all_schedules = []
             
             for group in final_processing_groups:
                 group_total_candidates = sum(len(df_candidates[df_candidates['報考科目'] == sub]) for sub in group['subjects'])
                 is_merged_group = len(group['subjects']) > 1 
+                merged_teaching = group['merged_teaching']
                 
-                # 【防撞優化】：如果是合併組，自動將實作科目排到最後面！
                 if is_merged_group:
                     group['subjects'].sort(key=lambda x: 1 if x in practical_subjects else 0)
                 
-                global_idx = 1
-                used_oral_indices = set() # 記錄合併組已經被抽走的口試時段
+                global_oral_idx = 1
+                global_teach_idx = 1
+                used_oral_indices = set() 
                 
                 for s_idx, subject in enumerate(group['subjects']):
                     is_practical = subject in practical_subjects
@@ -290,37 +324,43 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                     
                     for i in range(n_candidates):
                         cand = candidates[i]
-                        sort_num = i + 1 
                         
-                        # 取得對應的準備與試教時間
+                        # 試教合併時，時間接續排；未合併時，從第一順位起跑
+                        sort_num = global_teach_idx if merged_teaching else (i + 1)
+                        
                         if is_practical:
                             prep, teach = TEACH_30_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
                         else:
                             prep, teach = TEACH_15_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
                         
+                        if merged_teaching:
+                            global_teach_idx += 1
+                            
                         oral_range = "請手動調整"
                         
-                        # 【防撞優化】：合併組的口試時間發配
                         if is_merged_group:
-                            # 跑迴圈從 1 號時段開始找，找到第一個沒被用過，且不會衝堂的時間！
+                            # 合併群組找空檔防撞
                             for o_idx in range(1, 26):
                                 if o_idx in used_oral_indices: continue
-                                test_oral = ORAL_15_MATRIX[10].get(o_idx, "")
+                                
+                                if is_practical:
+                                    test_oral = ORAL_30_MATRIX_MERGED.get(o_idx, "")
+                                else:
+                                    test_oral = ORAL_15_MATRIX[10].get(o_idx, "")
+                                    
                                 if not test_oral: continue
                                 
-                                # 檢查是否與試教時間相撞
                                 if not check_time_conflict_bool(prep, teach, test_oral):
                                     oral_range = test_oral
                                     used_oral_indices.add(o_idx)
                                     break
                         else:
-                            # 獨立群組維持原本邏輯
                             if is_practical:
                                 lookup_n = group_total_candidates if group_total_candidates <= 25 else 25
-                                oral_range = ORAL_30_MATRIX_INDEPENDENT.get(lookup_n, {}).get(global_idx, "請手動調整")
+                                oral_range = ORAL_30_MATRIX_INDEPENDENT.get(lookup_n, {}).get(global_oral_idx, "請手動調整")
                             else:
                                 lookup_n = group_total_candidates if group_total_candidates <= 9 else 10
-                                oral_range = ORAL_15_MATRIX.get(lookup_n, {}).get(global_idx, "請手動調整")
+                                oral_range = ORAL_15_MATRIX.get(lookup_n, {}).get(global_oral_idx, "請手動調整")
                             
                         all_schedules.append({
                             '報考科目': subject,
@@ -330,7 +370,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
                             '試教(實作)時間': teach,
                             '口試時間': oral_range
                         })
-                        global_idx += 1
+                        global_oral_idx += 1
 
             df_master = pd.DataFrame(all_schedules)
             
@@ -530,7 +570,7 @@ if st.button("🚀 啟動排程與場地整合", type="primary", use_container_w
 
 if st.session_state.processed:
     st.balloons()
-    st.success("🎉 終極優化完成！「合併組」已自動套用標準時段並完美避開衝堂，評委零空檔任務達成！")
+    st.success("🎉 終極雙軌並行版完成！現在您可以靈活選擇試教是否合併，系統將自動處理防撞與零空檔口試排程！")
     
     c_d1, c_d2 = st.columns(2)
     with c_d1:
