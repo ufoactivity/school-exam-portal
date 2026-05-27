@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import base64
 
 # ==========================================
 # 1. 網頁頁面配置 (極簡現代風科技感)
@@ -10,6 +11,14 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# --- 新增：將圖片轉為 Base64 格式，這是讓圖片強制滿版的核心技術 ---
+@st.cache_data
+def get_image_base64(image_path):
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode()
+    return None
 
 # 使用內嵌 CSS 打造現代科技感漸層、極簡字體體系與放大字體
 st.markdown("""
@@ -48,13 +57,15 @@ st.markdown("""
         margin-bottom: 1.0rem !important; 
     }
     
-    /* --- 關鍵修正：將圖片調教為「頂級滿版橫幅」，寬度100%對齊下方模組，高度扁平不變形 --- */
-    [data-testid="stImage"] img {
-        width: 100% !important;
-        height: 220px !important;        /* 固定橫幅高度，老師可依喜好微調 (如200px~250px) */
-        object-fit: cover !important;    /* 核心技術：智慧全景裁剪，確保校園圖片不扁塌、不變形 */
-        border-radius: 15px !important;  /* 完美圓角 */
+    /* --- 🌟 關鍵修正：透過純 HTML Class 設定終極滿版橫幅 --- */
+    .hero-banner {
+        width: 100% !important;          /* 寬度 100% 強制填滿螢幕 */
+        height: 250px !important;        /* 固定高度為 250px 的扁平橫幅比例 (可自由修改) */
+        object-fit: cover !important;    /* 智慧全景裁剪，絕對不會拉伸變形 */
+        border-radius: 15px !important;  /* 圓角設計 */
         box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important; /* 沉穩陰影 */
+        margin-bottom: 1.5rem !important;/* 與下方區塊保持適當距離 */
+        display: block;                  /* 確保不會有奇怪的行內元素空白 */
     }
     
     /* --- 模組區塊樣式 --- */
@@ -84,18 +95,16 @@ st.markdown('<h1 class="main-title">⚡試務組 AI 智能輔助平台⚡</h1>',
 st.markdown('<p class="sub-title">Intelligent Examination Administration Ecosystem</p>', unsafe_allow_html=True)
 
 # ==========================================
-# 3. 吉卜力風校園建築物 Banner
+# 3. 吉卜力風校園建築物 Banner (純 HTML 渲染技術)
 # ==========================================
-# 關鍵修正：直接在主畫面上投放滿版圖片，使其左右兩端與下方排版 100% 齊平
 image_path = os.path.join("assets", "school_ghibli.png")
-if os.path.exists(image_path):
-    # 啟用 use_container_width 讓寬度撐滿，配合上方的 CSS 限制高度，即可化身完美的橫幅
-    st.image(image_path, use_container_width=True)
+img_base64 = get_image_base64(image_path)
+
+if img_base64:
+    # 🌟 突破 Streamlit 框架限制，直接寫入 HTML，保證完美佔滿版面寬度！
+    st.markdown(f'<img src="data:image/png;base64,{img_base64}" class="hero-banner">', unsafe_allow_html=True)
 else:
     st.warning(f"⚠️ 找不到吉卜力風 Banner 圖片。請確認檔案放置於 `assets/school_ghibli.png`。")
-
-# 統一分割線，讓橫幅與下方功能區有專業的層次感
-st.divider()
 
 # ==========================================
 # 4. 核心工具矩陣入口 (2x2 模組排列)
