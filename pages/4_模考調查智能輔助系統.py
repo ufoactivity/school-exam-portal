@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：兩階段表單的「學生簽名列高」已全面增加 50%！並搭配智能防溢頁引擎，確保寬敞又絕不跑版！")
+st.info("💡 試務組終極進化：已導入「AI彈性列高演算引擎」，無論班級人數多寡，系統將自動撐滿版面並保證絕對【一班一頁】不溢出！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -253,84 +253,7 @@ with tab1:
                             merge_end_col = 6 if is_gen_hs else 9
                             rows_needed = len(df_cls) if is_gen_hs else max(len(df_cls), len(target_mapping))
                             
-                            # 🚀 智能防溢頁列高計算 (Phase 1) - 高度增加 50%
-                            if rows_needed >= 38:
-                                scale = 0.75
-                                data_h = 20.25  # (18 * 1.5) * 0.75
-                            elif rows_needed >= 32:
-                                scale = 0.85
-                                data_h = 22.95  # (18 * 1.5) * 0.85
-                            else:
-                                scale = 1.0
-                                data_h = 27     # 18 * 1.5 = 27
-                                
-                            worksheet.merge_range(current_row, 0, current_row, merge_end_col, template_name, title_format)
-                            worksheet.set_row(current_row, int(25 * scale))
-                            current_row += 1
-                            
-                            for col_num, header in enumerate(headers):
-                                worksheet.write(current_row, col_num, header, header_format)
-                                
-                            if not is_gen_hs:
-                                worksheet.write(current_row, 8, "代碼", mapping_head_format)
-                                worksheet.write(current_row, 9, "類別", mapping_head_format)
-                                
-                            worksheet.set_row(current_row, int(20 * scale))
-                            current_row += 1
-                            
-                            start_data_row = current_row
-                            
-                            for i in range(rows_needed):
-                                if i < len(df_cls):
-                                    row_data = df_cls.iloc[i]
-                                    worksheet.write(start_data_row + i, 0, str(row_data['班級']), data_format)
-                                    worksheet.write(start_data_row + i, 1, str(row_data['座號']), data_format)
-                                    worksheet.write(start_data_row + i, 2, str(row_data['學號']), data_format)
-                                    worksheet.write(start_data_row + i, 3, str(row_data['姓名']), data_format)
-                                    worksheet.write(start_data_row + i, 4, str(row_data['單次費用']), data_format)
-                                    worksheet.write(start_data_row + i, 5, str(row_data['報考類組']), data_format)
-                                    worksheet.write(start_data_row + i, 6, "", data_format)
-                                else:
-                                    for c in range(7):
-                                        worksheet.write(start_data_row + i, c, "", data_format)
-                                        
-                                if not is_gen_hs:
-                                    if i < len(target_mapping):
-                                        code, name, _ = target_mapping[i]
-                                        worksheet.write(start_data_row + i, 8, code, mapping_data_format)
-                                        worksheet.write(start_data_row + i, 9, name, mapping_data_format)
-                                
-                                # 🚀 套用增加 50% 後的列高
-                                worksheet.set_row(start_data_row + i, data_h)
-                                
-                            current_row = start_data_row + rows_needed
-                            
-                            worksheet.set_row(current_row, int(10 * scale)) 
-                            current_row += 1
-                            worksheet.merge_range(current_row, 0, current_row, merge_end_col, "導師確認簽章：________________________", signature_format)
-                            worksheet.set_row(current_row, int(35 * scale)) 
-                            current_row += 1
-                            
-                            worksheet.set_row(current_row, int(15 * scale)) 
-                            current_row += 1
-                            
-                            if is_gen_hs:
-                                worksheet.write(current_row, 0, "代碼", mapping_head_format)
-                                worksheet.merge_range(current_row, 1, current_row, 4, "考科組合", mapping_head_format)
-                                worksheet.merge_range(current_row, 5, current_row, 6, "單次費用", mapping_head_format)
-                                worksheet.set_row(current_row, int(20 * scale))
-                                current_row += 1
-                                
-                                for code, name, fee in target_mapping:
-                                    worksheet.write(current_row, 0, code, mapping_data_format)
-                                    worksheet.merge_range(current_row, 1, current_row, 4, name, mapping_data_format)
-                                    worksheet.merge_range(current_row, 5, current_row, 6, fee, mapping_data_format)
-                                    worksheet.set_row(current_row, int(18 * scale))
-                                    current_row += 1
-                                
-                                worksheet.set_row(current_row, int(10 * scale)) 
-                                current_row += 1
-                            
+                            # 🚀 準備警語內容
                             if is_gen_hs and selected_preset_sheet:
                                 if "高一" in selected_preset_sheet or "仿真" in selected_preset_sheet:
                                     memo_lines = [
@@ -372,6 +295,99 @@ with tab1:
                                     ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。\n"]
                                 ]
 
+                            # 🚀 智能空間演算：預先計算警語高度
+                            memo_heights = []
+                            memo_h_sum = 0
+                            for line_idx, rich_parts in enumerate(memo_lines):
+                                text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
+                                if line_idx == 0:
+                                    h = 38 if text_length > 60 else 30
+                                elif line_idx == len(memo_lines) - 1:
+                                    h = 28
+                                else:
+                                    h = 18
+                                memo_heights.append(h)
+                                memo_h_sum += h
+                            
+                            # 🚀 智能空間演算：加總固定高度，剩餘空間完美均分給學生資料
+                            fixed_h = 25 + 20 + 10 + 35 + 15 + memo_h_sum
+                            if is_gen_hs:
+                                fixed_h += 20 + (len(target_mapping) * 18) + 10
+                            
+                            # A4 一頁可容納的安全總高度約 930 points
+                            target_page_h = 930
+                            calculated_data_h = (target_page_h - fixed_h) / max(1, rows_needed)
+                            # 設定最大最小保護值 (下限16保證能看見，上限32避免太粗)
+                            data_h = max(16, min(calculated_data_h, 32))
+                            
+                            # 開始寫入排版
+                            worksheet.merge_range(current_row, 0, current_row, merge_end_col, template_name, title_format)
+                            worksheet.set_row(current_row, 25)
+                            current_row += 1
+                            
+                            for col_num, header in enumerate(headers):
+                                worksheet.write(current_row, col_num, header, header_format)
+                                
+                            if not is_gen_hs:
+                                worksheet.write(current_row, 8, "代碼", mapping_head_format)
+                                worksheet.write(current_row, 9, "類別", mapping_head_format)
+                                
+                            worksheet.set_row(current_row, 20)
+                            current_row += 1
+                            
+                            start_data_row = current_row
+                            
+                            for i in range(rows_needed):
+                                if i < len(df_cls):
+                                    row_data = df_cls.iloc[i]
+                                    worksheet.write(start_data_row + i, 0, str(row_data['班級']), data_format)
+                                    worksheet.write(start_data_row + i, 1, str(row_data['座號']), data_format)
+                                    worksheet.write(start_data_row + i, 2, str(row_data['學號']), data_format)
+                                    worksheet.write(start_data_row + i, 3, str(row_data['姓名']), data_format)
+                                    worksheet.write(start_data_row + i, 4, str(row_data['單次費用']), data_format)
+                                    worksheet.write(start_data_row + i, 5, str(row_data['報考類組']), data_format)
+                                    worksheet.write(start_data_row + i, 6, "", data_format)
+                                else:
+                                    for c in range(7):
+                                        worksheet.write(start_data_row + i, c, "", data_format)
+                                        
+                                if not is_gen_hs:
+                                    if i < len(target_mapping):
+                                        code, name, _ = target_mapping[i]
+                                        worksheet.write(start_data_row + i, 8, code, mapping_data_format)
+                                        worksheet.write(start_data_row + i, 9, name, mapping_data_format)
+                                
+                                # 套用彈性高度
+                                worksheet.set_row(start_data_row + i, data_h)
+                                
+                            current_row = start_data_row + rows_needed
+                            
+                            worksheet.set_row(current_row, 10) 
+                            current_row += 1
+                            worksheet.merge_range(current_row, 0, current_row, merge_end_col, "導師確認簽章：________________________", signature_format)
+                            worksheet.set_row(current_row, 35) 
+                            current_row += 1
+                            
+                            worksheet.set_row(current_row, 15) 
+                            current_row += 1
+                            
+                            if is_gen_hs:
+                                worksheet.write(current_row, 0, "代碼", mapping_head_format)
+                                worksheet.merge_range(current_row, 1, current_row, 4, "考科組合", mapping_head_format)
+                                worksheet.merge_range(current_row, 5, current_row, 6, "單次費用", mapping_head_format)
+                                worksheet.set_row(current_row, 20)
+                                current_row += 1
+                                
+                                for code, name, fee in target_mapping:
+                                    worksheet.write(current_row, 0, code, mapping_data_format)
+                                    worksheet.merge_range(current_row, 1, current_row, 4, name, mapping_data_format)
+                                    worksheet.merge_range(current_row, 5, current_row, 6, fee, mapping_data_format)
+                                    worksheet.set_row(current_row, 18)
+                                    current_row += 1
+                                
+                                worksheet.set_row(current_row, 10) 
+                                current_row += 1
+
                             for line_idx, rich_parts in enumerate(memo_lines):
                                 if len(memo_lines) == 1:
                                     fmt = note_format_single
@@ -390,21 +406,12 @@ with tab1:
                                 else:
                                     worksheet.write(current_row, 0, rich_parts[0], fmt)
                                     
-                                text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
-                                
-                                if line_idx == 0:
-                                    row_height = 38 if text_length > 60 else 30  
-                                elif line_idx == len(memo_lines) - 1:
-                                    row_height = 28  
-                                else:
-                                    row_height = 18  
-                                    
-                                worksheet.set_row(current_row, int(row_height * scale))
+                                worksheet.set_row(current_row, memo_heights[line_idx])
                                 current_row += 1
 
                             page_breaks.append(current_row)
                             
-                        # 🚀 第一階段重新分配欄寬，大幅加大簽名欄 (G欄)
+                        # 整體欄寬配置，G欄加寬
                         worksheet.set_column('A:B', 8)
                         worksheet.set_column('C:D', 10)
                         worksheet.set_column('E:F', 11) 
@@ -424,7 +431,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！簽名欄列高已增高 50%。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！彈性撐滿排版已完美運作。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
@@ -539,7 +546,7 @@ with tab2:
                 st.error(f"預讀取檔案進行群別與費用分析時發生錯誤: {e}")
 
         st.markdown("📝 **列印優化說明**：")
-        st.success("已擴充「學號」欄位！啟動 A4 極限微調排版，確保大班級依然能完美塞進一頁 A4 之中！")
+        st.success("已擴充「學號」與「簽名」欄位！啟動 A4 彈性空間演算引擎，完美塞進一頁 A4 之中！")
 
     with col2:
         st.subheader("⚙️ 2. 收費檢核與測驗設定")
@@ -789,24 +796,49 @@ with tab2:
                             df_cls = df_details_raw[df_details_raw['班級'] == cls_name]
                             cls_count = len(df_cls)
                             
-                            # 🚀 智能防溢頁列高計算 (Phase 2) - 基礎高度增加 50% (從 16 提升至 24)
-                            if cls_count >= 38:
-                                scale = 0.70  
-                                data_h = 20.25 # (13.5 * 1.5)
-                            elif cls_count >= 32:
-                                scale = 0.80  
-                                data_h = 21.75 # (14.5 * 1.5)
+                            if "普高" in school_type_p2:
+                                memo_lines_p2 = [
+                                    ["\n1.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至教務處試務組。\n"]
+                                ]
                             else:
-                                scale = 1.0
-                                data_h = 24    # (16 * 1.5)
+                                memo_lines_p2 = [
+                                    ["\n1.上下學期總共參加5次模擬考。"],
+                                    ["2.開學初進行收費相關事宜。"],
+                                    ["3.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至總務處出納組，此張單子請繳回到教務處試務組。\n"]
+                                ]
+
+                            # 🚀 智能空間演算：預先計算警語高度
+                            memo_heights_p2 = []
+                            memo_h_sum_p2 = 0
+                            for line_idx, rich_parts in enumerate(memo_lines_p2):
+                                text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
+                                if line_idx == 0:
+                                    h = 36 if text_length > 60 else 30
+                                elif line_idx == len(memo_lines_p2) - 1:
+                                    h = 28
+                                else:
+                                    h = 18
+                                memo_heights_p2.append(h)
+                                memo_h_sum_p2 += h
                             
+                            cls_fee_info = df_cls[['報考類群', '單次費用']].drop_duplicates().sort_values('報考類群')
+                            
+                            # 🚀 智能空間演算：計算階段二的固定高度 (不包含學生列表)
+                            fixed_h_p2 = 24 + 18 + 26 + 18 + (len(cls_fee_info) * 16) + 15 + 35 + 15 + memo_h_sum_p2
+                            
+                            # 🚀 動態求出能最大化塞滿版面的學生列高 (總容忍高 930pt)
+                            target_page_h_p2 = 930
+                            calculated_data_h_p2 = (target_page_h_p2 - fixed_h_p2) / max(1, cls_count)
+                            # 限制：最小 16 (大班微縮)，最大 32 (小班不至於太突兀)
+                            data_h_p2 = max(16, min(calculated_data_h_p2, 32))
+
                             ws_details.merge_range(current_row, 0, current_row, len(headers)-1, f"🏫 國立華南高商 - {mock_name_p2}", title_format)
-                            ws_details.set_row(current_row, int(24 * scale)) 
+                            ws_details.set_row(current_row, 24) 
                             current_row += 1
                             
                             for col_num, header in enumerate(headers):
                                 ws_details.write(current_row, col_num, header, header_format)
-                            ws_details.set_row(current_row, int(18 * scale))
+                            ws_details.set_row(current_row, 18)
                             current_row += 1
                             
                             for _, row in df_cls.iterrows():
@@ -818,8 +850,8 @@ with tab2:
                                 ws_details.write(current_row, 5, row['單次費用'], data_format)
                                 ws_details.write(current_row, 6, row[f'應繳費用({fee_multiplier}次)'], data_format)
                                 ws_details.write(current_row, 7, '', data_format) 
-                                # 🚀 套用增加 50% 後的列高
-                                ws_details.set_row(current_row, data_h)
+                                # 套用動態撐滿的彈性高度
+                                ws_details.set_row(current_row, data_h_p2)
                                 current_row += 1
                                 
                             cls_total_amt = df_cls[f'應繳費用({fee_multiplier}次)'].sum()
@@ -832,42 +864,30 @@ with tab2:
                             ws_details.write(current_row, 5, '', total_format)
                             ws_details.write(current_row, 6, cls_total_amt, total_format)
                             ws_details.write(current_row, 7, '', total_format) 
-                            ws_details.set_row(current_row, int(26 * scale)) 
+                            ws_details.set_row(current_row, 26) 
                             current_row += 1
                             
-                            cls_fee_info = df_cls[['報考類群', '單次費用']].drop_duplicates().sort_values('報考類群')
                             memo_title = f"💡 【本班單次報名費參考】 (※ 應繳總額 = 單次費用 × {fee_multiplier}次)："
                             ws_details.merge_range(current_row, 0, current_row, len(headers)-1, memo_title, memo_format)
-                            ws_details.set_row(current_row, int(18 * scale))
+                            ws_details.set_row(current_row, 18)
                             current_row += 1
                             
                             for _, r in cls_fee_info.iterrows():
                                 bullet_text = f"      ▪ {r['報考類群']}：單次 {r['單次費用']} 元"
                                 ws_details.merge_range(current_row, 0, current_row, len(headers)-1, bullet_text, memo_format)
-                                ws_details.set_row(current_row, int(16 * scale))
+                                ws_details.set_row(current_row, 16)
                                 current_row += 1
                                 
-                            ws_details.set_row(current_row, int(15 * scale)) 
+                            ws_details.set_row(current_row, 15) 
                             current_row += 1
                             
                             signature_format_p2 = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
                             ws_details.merge_range(current_row, 0, current_row, len(headers)-1, "導師確認簽章：________________________", signature_format_p2)
-                            ws_details.set_row(current_row, int(35 * scale)) 
+                            ws_details.set_row(current_row, 35) 
                             current_row += 1
 
-                            ws_details.set_row(current_row, int(15 * scale)) 
+                            ws_details.set_row(current_row, 15) 
                             current_row += 1
-
-                            if "普高" in school_type_p2:
-                                memo_lines_p2 = [
-                                    ["\n1.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至教務處試務組。\n"]
-                                ]
-                            else:
-                                memo_lines_p2 = [
-                                    ["\n1.上下學期總共參加5次模擬考。"],
-                                    ["2.開學初進行收費相關事宜。"],
-                                    ["3.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至總務處出納組，此張單子請繳回到教務處試務組。\n"]
-                                ]
 
                             for line_idx, rich_parts in enumerate(memo_lines_p2):
                                 if len(memo_lines_p2) == 1:
@@ -887,21 +907,11 @@ with tab2:
                                 else:
                                     ws_details.write(current_row, 0, rich_parts[0], fmt)
                                     
-                                text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
-                                
-                                if line_idx == 0:
-                                    row_height = 36 if text_length > 60 else 30  
-                                elif line_idx == len(memo_lines_p2) - 1:
-                                    row_height = 28  
-                                else:
-                                    row_height = 18  
-                                    
-                                ws_details.set_row(current_row, int(row_height * scale))
+                                worksheet.set_row(current_row, memo_heights_p2[line_idx])
                                 current_row += 1
                             
                             page_breaks.append(current_row) 
                             
-                        # 🚀 第二階段重新分配欄寬，大幅加大學生簽名欄 (H欄)
                         ws_details.set_column('A:A', 8)  
                         ws_details.set_column('B:B', 6)  
                         ws_details.set_column('C:C', 10) 
@@ -909,7 +919,7 @@ with tab2:
                         ws_details.set_column('E:E', 22) 
                         ws_details.set_column('F:F', 10) 
                         ws_details.set_column('G:G', 12) 
-                        ws_details.set_column('H:H', 24) 
+                        ws_details.set_column('H:H', 24) # 大幅加寬「學生簽名」欄
                         
                         ws_details.write(current_row, 0, '全校總計 (Grand Total)', grand_format)
                         ws_details.write(current_row, 1, '', grand_format)
