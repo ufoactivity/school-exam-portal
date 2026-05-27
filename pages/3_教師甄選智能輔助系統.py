@@ -8,6 +8,7 @@ import traceback
 try:
     import docx
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ROW_HEIGHT_RULE
     from docx.shared import Pt, Cm, RGBColor
     HAS_DOCX = True
 except ImportError:
@@ -86,12 +87,17 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
     section.top_margin, section.bottom_margin = Cm(1.5), Cm(2.0)
     section.left_margin, section.right_margin = Cm(2.0), Cm(2.0)
     
-    # 建立頁尾：承辦人簽章與印章
+    # 建立頁尾：承辦人簽章與印章 (強制靠右定位)
     footer = section.footer
     for p in footer.paragraphs: p._element.getparent().remove(p._element)
     footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
     footer_table.autofit = False
+    
+    # 隱形表格寬度分配：左邊撐開，右邊留給簽名跟印章
+    cell_left = footer_table.rows[0].cells[0]
+    cell_left.width = Cm(10.0)
     cell_right = footer_table.rows[0].cells[1]
+    cell_right.width = Cm(6.0)
     
     p_right = cell_right.paragraphs[0]
     p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -138,6 +144,10 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
                     
         for _, cand in df_sub.iterrows():
             row_cells = table.add_row().cells
+            # 把每一列的高度加高，讓考生簽名比較好簽
+            table.rows[-1].height = Cm(1.2)
+            table.rows[-1].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+            
             name_str = cand.get('姓名', '') if has_name else ''
             base_data = [str(cand['排序']), str(cand['准考證號'])]
             if has_name: base_data.append(name_str)
@@ -187,6 +197,10 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
         table = doc.add_table(rows=len(row_items)+1, cols=len(cands)+1)
         table.style = 'Table Grid'
         
+        # 表頭第一列加高
+        table.rows[0].height = Cm(1.2)
+        table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        
         # 標題列：第一欄為評分項目，後面皆為准考證號 (無姓名)
         table.cell(0, 0).text = "評分項目"
         for i, cand in enumerate(cands):
@@ -201,8 +215,19 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
                     r.font.size = Pt(14)
                     r.bold = True
         
-        # 填寫左側評分項目
+        # 填寫左側評分項目與控制列高
         for r_i, item in enumerate(row_items):
+            row = table.rows[r_i+1]
+            
+            # 【核心修正】：實作評分表的「評分內容」給予超級大的空間 (10公分高)
+            if form_name == "實作評分表" and item == "評分內容":
+                row.height = Cm(10.0)
+                row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+            else:
+                # 其餘格子也設定至少 2 公分高，方便委員書寫數字
+                row.height = Cm(2.0)
+                row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+                
             cell = table.cell(r_i+1, 0)
             cell.text = item
             for p in cell.paragraphs:
@@ -281,9 +306,6 @@ TEACH_30_MATRIX = {
     9: ("15:10-15:25", "15:25-15:55"), 10: ("15:40-15:55", "15:55-16:25"),
     11: ("16:10-16:25", "16:25-16:55"), 12: ("16:40-16:55", "16:55-17:25"),
     13: ("17:10-17:25", "17:25-17:55"), 14: ("17:40-17:55", "17:55-18:25"), 15: ("18:10-18:25", "18:25-18:55"),
-    16: ("18:40-18:55", "18:55-19:25"), 17: ("19:10-19:25", "19:25-19:55"), 18: ("19:40-19:55", "19:55-20:25"), 
-    19: ("20:10-20:25", "20:25-20:55"), 20: ("20:40-20:55", "20:55-21:25"), 21: ("21:10-21:25", "21:25-21:55"),
-    22: ("21:40-21:55", "21:55-22:25"), 23: ("22:10-22:25", "22:25-22:55"), 24: ("22:40-22:55", "22:55-23:25"), 25: ("23:10-23:25", "23:25-23:55")
 }
 
 def generate_oral_30_independent():
@@ -326,7 +348,6 @@ def check_time_conflict_bool(prep_str, teach_str, oral_str):
         return False
     except: return False
 
-
 # ==========================================
 # 3. 介面分頁 (雙階段架構)
 # ==========================================
@@ -363,15 +384,18 @@ with tab1:
                         
                 df_master_t1 = pd.DataFrame(all_cands_t1)
                 
-                # 自動生成 4 種試務評分與簽到表單
+                # 產出簽到表 (含右側定位的承辦人與印章)
                 st.session_state.sign_data = generate_signin_sheet(academic_year, session_num, df_master_t1, all_subjs_t1)
                 
+                # 產出試教評分表 (橫式 + 高度優化)
                 teach_items = ["教學技巧(30%)", "語言表達(30%)", "儀態(20%)", "教室管理(10%)", "時間管理(10%)", "合計總分", "備註"]
                 st.session_state.teach_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "試教評分表", teach_items, all_subjs_t1)
                 
+                # 產出口試評分表 (橫式 + 高度優化)
                 oral_items = ["自述(20%)", "教學理念(20%)", "班級經營(20%)", "表達溝通(20%)", "舉止儀態(20%)", "合計總分", "備註"]
                 st.session_state.oral_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "口試評分表", oral_items, all_subjs_t1)
                     
+                # 產出實作評分表 (橫式 + 評分內容欄位巨大化)
                 if prac_subjs_t1:
                     prac_items = ["評分內容", "評分總分", "備註"]
                     st.session_state.prac_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "實作評分表", prac_items, prac_subjs_t1)
@@ -396,7 +420,6 @@ with tab1:
         with c_d6:
             if st.session_state.prac_data:
                 st.download_button("🛠️ 4. 下載 實作評分表", data=st.session_state.prac_data, file_name=f"{academic_year}學年度_實作評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
-
 
 # -------------------------------------------------------------
 # TAB 2: 第二階段 (當天精準排程與公告)
@@ -606,7 +629,6 @@ with tab2:
                 df_master['考試流程'] = df_master.apply(get_flow, axis=1)
                 df_master['衝突檢核'] = df_master.apply(check_time_conflict_text, axis=1)
                 
-                # --- Excel 產出 ---
                 df_merge = df_master.copy()
                 df_merge = df_merge.rename(columns={'報考科目': '科目', '准考證號': '准考證', '試教(實作)時間': '試教時間'})
                 df_merge.insert(1, '休息室', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('休息室', '未設定')))
@@ -639,7 +661,6 @@ with tab2:
                 
                 st.session_state.excel_data = output_excel.getvalue()
 
-                # --- Word 直出引擎 (公告表) ---
                 if HAS_DOCX:
                     doc = docx.Document()
                     section = doc.sections[0]
