@@ -23,8 +23,8 @@ def get_image_base64(image_path):
 # 使用內嵌 CSS 打造現代科技感漸層、極簡字體體系與放大字體
 st.markdown("""
     <style>
-    /* 🌟 額外載入繁體中文輕鬆黑體字型 (Noto Sans TC)  🌟 */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Noto+Sans+TC:wght@300;400&display=swap');
+    /* 🌟 關鍵修正：載入繁體中文與「極具活潑趣味感」的快樂體字型 (ZCOOL KuaiLe) 🌟 */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=ZCOOL+KuaiLe&display=swap');
     
     /* --- 減少 Streamlit 預設頂部邊距，讓標題大幅上移 --- */
     .block-container {
@@ -58,9 +58,9 @@ st.markdown("""
         margin-bottom: 1.0rem !important; 
     }
     
-    /* --- 🌟 關鍵修正：橫幅容器設定 (用於包裹文字註記)  🌟 --- */
+    /* --- 橫幅容器設定 (用於包裹文字註記) --- */
     .hero-banner-container {
-        position: relative;              /* 文字錨點：設定為相對定位  */
+        position: relative;              /* 文字錨點：設定為相對定位 */
         width: 100% !important;
         border-radius: 15px;
         overflow: hidden;                /* 確保圓角與超出內容裁剪 */
@@ -71,27 +71,30 @@ st.markdown("""
     /* 通過純 HTML Class 設定終極滿版橫幅 */
     .hero-banner {
         width: 100% !important;          /* 寬度 100% 強制填滿螢幕 */
-        height: 250px !important;        /* 固定高度為 250px 的扁平橫幅比例 (可自由修改) */
+        height: 250px !important;        /* 固定高度為 250px 的扁平橫幅比例 */
         object-fit: cover !important;    /* 智慧全景裁剪，絕對不會拉伸變形 */
-        object-position: 50% 85% !important; /* 對焦中心下移至底部的 85% 處，顯示階梯 */
+        
+        /* 🌟 關鍵修正：畫面再次往下一點（移至95%處），讓階梯展現得更完整生動！ 🌟 */
+        object-position: 50% 95% !important; 
+        
         display: block;                  /* 確保不會有奇怪的行內元素空白 */
     }
     
-    /* --- 🌟 關鍵修正：圖片右下角「輕鬆字體」文字層  🌟 --- */
+    /* --- 🌟 關鍵修正：圖片右下角「活潑加粗字體」文字層 🌟 --- */
     .banner-overlay-text {
-        position: absolute;              /* 絕對定位  */
-        bottom: 15px;                    /* 距離底部 15px  */
-        right: 20px;                     /* 距離右側 20px  */
-        color: white;                    /* 文字顏色：白色  */
+        position: absolute;              /* 絕對定位 */
+        bottom: 18px;                    /* 距離底部 18px */
+        right: 25px;                     /* 距離右側 25px */
+        color: white;                    /* 文字顏色：白色 */
         
-        /* 使用 Noto Sans TC 的輕字重 (300) 來表達「輕鬆」感  */
-        font-family: 'Noto Sans TC', sans-serif !important;
-        font-weight: 300 !important;
-        font-size: 1.0rem !important;
-        letter-spacing: 0.05rem;         /* 微調字距增加輕鬆感  */
+        /* 載入活潑字體，並搭配微軟正黑體防呆，強烈加粗 */
+        font-family: 'ZCOOL KuaiLe', 'Microsoft JhengHei', sans-serif !important;
+        font-weight: 700 !important;     /* 100% 強制字體加粗 */
+        font-size: 1.25rem !important;   /* 微調放大字體，讓加粗更有圖標感 */
+        letter-spacing: 0.08rem;         /* 稍微拉開字距，顯得更為大氣活潑 */
         
-        /* 增加輕微陰影，保證文字在淡色天空下依然可讀  */
-        text-shadow: 1px 1px 3px rgba(0,0,0,0.5); 
+        /* 增強立體陰影，配合活潑粗體，在任何背景下都清晰無比 */
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.6); 
     }
     
     /* --- 模組區塊樣式 --- */
@@ -127,14 +130,12 @@ image_path = os.path.join("assets", "school_ghibli.png")
 img_base64 = get_image_base64(image_path)
 
 if img_base64:
-    # 🌟 使用容器包裹<img>與註記文字，達成精準定位與滿版效果！ 🌟
     banner_html = f'''
         <div class="hero-banner-container">
             <img src="data:image/png;base64,{img_base64}" class="hero-banner">
             <div class="banner-overlay-text">攝於115年夏</div>
         </div>
     '''
-    # 🌟 將新的 HTML 渲染至網頁  🌟
     st.markdown(banner_html, unsafe_allow_html=True)
 else:
     st.warning(f"⚠️ 找不到吉卜力風 Banner 圖片。請確認檔案放置於 `assets/school_ghibli.png`。")
@@ -197,7 +198,7 @@ with row2_col1:
         """, unsafe_allow_html=True)
         
         st.markdown("""
-        - 🎙️ **時程自動排定**：無縫接軌口試與試教，智慧避開衝堂與重疊。
+        - 🎙️ **時程自動排定**：無縫接軌口試與試教，智慧避開衝堂與重疊.
         - 📋 **場地動態對位**：自動分配各科休息室與試場，資料無縫串接。
         - 🖨️ **一鍵直出報表**：自動生成大字體、紅字警語且已蓋妥官印之Word公告單.
         """)
