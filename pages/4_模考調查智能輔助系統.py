@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：已導入「A4精準高度校準」與「強制單頁鎖定」，無論普高或技高，保證絕對【一班一頁】不溢出！")
+st.info("💡 試務組終極進化：已恢復【一班一頁】正常分頁功能，並結合「AI彈性列高引擎」，大班級自動微縮保證單頁不溢出！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -212,8 +212,8 @@ with tab1:
                         worksheet = workbook.add_worksheet('調查表')
                         
                         worksheet.set_paper(9) # A4
-                        # 🚀 終極防溢頁鎖定：強制縮放至 1頁寬 x 1頁高
-                        worksheet.fit_to_pages(1, 1)
+                        # 🚀 恢復 1 頁寬，讓水平分頁符號 (一班一頁) 正常運作！
+                        worksheet.fit_to_pages(1, 0)
                         worksheet.center_horizontally()
                         worksheet.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4)
                         
@@ -254,7 +254,6 @@ with tab1:
                             merge_end_col = 6 if is_gen_hs else 9
                             rows_needed = len(df_cls) if is_gen_hs else max(len(df_cls), len(target_mapping))
                             
-                            # 🚀 準備警語內容以計算高度
                             if is_gen_hs and selected_preset_sheet:
                                 if "高一" in selected_preset_sheet or "仿真" in selected_preset_sheet:
                                     memo_lines = [
@@ -410,6 +409,7 @@ with tab1:
                                 worksheet.set_row(current_row, memo_heights[line_idx])
                                 current_row += 1
 
+                            # 🚀 加入分頁符號，保證下一個班級從新的一頁開始
                             page_breaks.append(current_row)
                             
                         # 整體欄寬配置，確保簽名空間大
@@ -421,6 +421,7 @@ with tab1:
                         worksheet.set_column('I:I', 8) 
                         worksheet.set_column('J:J', 28) 
                         
+                        # 🚀 將分頁符號寫入 Excel
                         if page_breaks:
                             worksheet.set_h_pagebreaks(page_breaks)
                             
@@ -432,7 +433,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！彈性撐滿排版與單頁鎖定已完美運作。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！彈性撐滿排版與一班一頁已完美運作。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
@@ -547,7 +548,7 @@ with tab2:
                 st.error(f"預讀取檔案進行群別與費用分析時發生錯誤: {e}")
 
         st.markdown("📝 **列印優化說明**：")
-        st.success("已擴充「學號」與「簽名」欄位！啟動 A4 彈性空間演算引擎與實體鎖定，完美塞進一頁 A4 之中！")
+        st.success("已擴充「學號」與「簽名」欄位！啟動 A4 彈性空間演算引擎，完美塞進一頁 A4 之中！")
 
     with col2:
         st.subheader("⚙️ 2. 收費檢核與測驗設定")
@@ -769,8 +770,8 @@ with tab2:
                         writer.sheets[sheet2_name] = ws_details 
                         
                         ws_details.set_paper(9)
-                        # 🚀 終極防溢頁鎖定：強制縮放至 1頁寬 x 1頁高
-                        ws_details.fit_to_pages(1, 1)
+                        # 🚀 恢復 1 頁寬，讓水平分頁符號 (一班一頁) 正常運作！
+                        ws_details.fit_to_pages(1, 0)
                         ws_details.center_horizontally()
                         ws_details.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4) 
                         
@@ -912,6 +913,7 @@ with tab2:
                                 ws_details.set_row(current_row, memo_heights_p2[line_idx])
                                 current_row += 1
                             
+                            # 🚀 寫入分頁符號
                             page_breaks.append(current_row) 
                             
                         ws_details.set_column('A:A', 8)  
@@ -933,6 +935,7 @@ with tab2:
                         ws_details.write(current_row, 7, '', grand_format)
                         ws_details.set_row(current_row, 24)
                         
+                        # 🚀 設定水平分頁符號 (恢復一班一頁)
                         if page_breaks:
                             ws_details.set_h_pagebreaks(page_breaks)
                         
