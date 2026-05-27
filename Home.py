@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 新增：將圖片轉為 Base64 格式，這是讓圖片強制滿版的核心技術 ---
+# --- 將圖片轉為 Base64 格式，這是讓圖片強制滿版的核心技術 ---
 @st.cache_data
 def get_image_base64(image_path):
     if os.path.exists(image_path):
@@ -57,11 +57,16 @@ st.markdown("""
         margin-bottom: 1.0rem !important; 
     }
     
-    /* --- 🌟 關鍵修正：透過純 HTML Class 設定終極滿版橫幅 --- */
+    /* --- 通過純 HTML Class 設定終極滿版橫幅 --- */
     .hero-banner {
         width: 100% !important;          /* 寬度 100% 強制填滿螢幕 */
         height: 250px !important;        /* 固定高度為 250px 的扁平橫幅比例 (可自由修改) */
         object-fit: cover !important;    /* 智慧全景裁剪，絕對不會拉伸變形 */
+        
+        /* 🌟 關鍵修正：智慧對焦下移 (顯示下半部階梯)! 🌟 */
+        /* 將原本預設的 object-position: 50% 50% 修改為下移 35%! */
+        object-position: 50% 85% !important; /* 對焦中心下移至底部的 85% 處! */
+        
         border-radius: 15px !important;  /* 圓角設計 */
         box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important; /* 沉穩陰影 */
         margin-bottom: 1.5rem !important;/* 與下方區塊保持適當距離 */
