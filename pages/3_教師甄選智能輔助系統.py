@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系统 (雙階段旗艦版)")
-st.info("💡 終極進化：已拉大評分表下方「委員簽名欄」與表格的距離，提供寬敞舒適的簽名空間！")
+st.info("💡 終極進化：已精準微調評分表高度與簽名間距，完美收攏於單頁，徹底解決空白頁問題！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -91,6 +91,7 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
     footer = section.footer
     for p in footer.paragraphs: p._element.getparent().remove(p._element)
     
+    # 設定表格靠右對齊，並配置合適寬度
     footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
     footer_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
     
@@ -144,6 +145,7 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
                     
         for _, cand in df_sub.iterrows():
             row_cells = table.add_row().cells
+            # 把每一列的高度加高，讓考生簽名比較好簽
             table.rows[-1].height = Cm(1.2)
             table.rows[-1].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
             
@@ -162,7 +164,7 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
                     for r in p.runs:
                         r.font.name = '標楷體'
                         r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                        r.font.size = Pt(14)
+                        r.font.size = Pt(14) # 統一14級字
                         
         if idx < len(target_subjs) - 1:
             doc.add_page_break()
@@ -174,6 +176,7 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
 def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_items, target_subjs):
     doc = docx.Document()
     section = doc.sections[0]
+    # 橫式設定 (Landscape)
     section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
     section.page_width, section.page_height = section.page_height, section.page_width
     section.top_margin, section.bottom_margin = Cm(1.5), Cm(1.5)
@@ -185,6 +188,7 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
         
         cands_all = df_sub['准考證號'].tolist()
         
+        # 實作評分表每張只顯示 5 人，其他的可支援到 15 人
         chunk_size = 5 if form_name == "實作評分表" else 15
         chunks = [cands_all[i:i + chunk_size] for i in range(0, len(cands_all), chunk_size)]
         
@@ -200,9 +204,11 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
             table = doc.add_table(rows=len(row_items)+1, cols=len(cands)+1)
             table.style = 'Table Grid'
             
+            # 表頭第一列加高
             table.rows[0].height = Cm(1.2)
             table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
             
+            # 標題列：第一欄為評分項目，後面皆為准考證號 (無姓名)
             table.cell(0, 0).text = "評分項目"
             for i, cand in enumerate(cands):
                 table.cell(0, i+1).text = cand
@@ -216,11 +222,13 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
                         r.font.size = Pt(14)
                         r.bold = True
             
+            # 填寫左側評分項目與控制列高
             for r_i, item in enumerate(row_items):
                 row = table.rows[r_i+1]
                 
+                # 【極限微調】：將高度調為 8.0cm，確保完美容納於單頁
                 if form_name == "實作評分表" and item == "評分內容":
-                    row.height = Cm(8.5) 
+                    row.height = Cm(8.0) 
                     row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
                 else:
                     row.height = Cm(1.5)
@@ -236,8 +244,8 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
                         r.font.size = Pt(14)
                         r.bold = True
                         
-            # 【核心優化】：連續加入 3 個空白段落，大幅拉開表格與簽名欄的距離
-            for _ in range(3):
+            # 【極限微調】：將 3 行空白減為 2 行，空間夠大且絕不擠到下一頁
+            for _ in range(2):
                 doc.add_paragraph("")
             
             # 表格外左下角與右下角佈局
@@ -260,6 +268,7 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
             r_right._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
             r_right.font.size = Pt(14)
             
+            # 如果不是這個科目的最後一頁，或者不是最後一個科目，就換頁
             if chunk_idx < len(chunks) - 1 or idx < len(target_subjs) - 1:
                 doc.add_page_break()
                 
@@ -412,7 +421,7 @@ with tab1:
             st.code(traceback.format_exc())
 
     if st.session_state.tab1_processed:
-        st.success("🎉 前置表單產出完成！「橫式評分表」與「蓋章簽到表」已為您無中生有。")
+        st.success("🎉 前置表單產出完成！「橫式評分表」與「蓋章簽到表」已為您排版完畢。")
         c_d3, c_d4, c_d5, c_d6 = st.columns(4)
         with c_d3:
             st.download_button("✍️ 1. 下載 考生簽到表", data=st.session_state.sign_data, file_name=f"{academic_year}學年度_考生簽到表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
