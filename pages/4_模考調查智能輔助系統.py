@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
-st.info("💡 試務組終極進化：兩階段表單的「學生簽名欄」皆已大幅拓寬，給予最充足的簽名空間！")
+st.info("💡 試務組終極進化：兩階段表單的「學生簽名列高」已全面增加 50%！並搭配智能防溢頁引擎，確保寬敞又絕不跑版！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -253,15 +253,16 @@ with tab1:
                             merge_end_col = 6 if is_gen_hs else 9
                             rows_needed = len(df_cls) if is_gen_hs else max(len(df_cls), len(target_mapping))
                             
+                            # 🚀 智能防溢頁列高計算 (Phase 1) - 高度增加 50%
                             if rows_needed >= 38:
                                 scale = 0.75
-                                data_h = 13.5
+                                data_h = 20.25  # (18 * 1.5) * 0.75
                             elif rows_needed >= 32:
                                 scale = 0.85
-                                data_h = 14.5
+                                data_h = 22.95  # (18 * 1.5) * 0.85
                             else:
                                 scale = 1.0
-                                data_h = 18
+                                data_h = 27     # 18 * 1.5 = 27
                                 
                             worksheet.merge_range(current_row, 0, current_row, merge_end_col, template_name, title_format)
                             worksheet.set_row(current_row, int(25 * scale))
@@ -299,6 +300,7 @@ with tab1:
                                         worksheet.write(start_data_row + i, 8, code, mapping_data_format)
                                         worksheet.write(start_data_row + i, 9, name, mapping_data_format)
                                 
+                                # 🚀 套用增加 50% 後的列高
                                 worksheet.set_row(start_data_row + i, data_h)
                                 
                             current_row = start_data_row + rows_needed
@@ -405,8 +407,8 @@ with tab1:
                         # 🚀 第一階段重新分配欄寬，大幅加大簽名欄 (G欄)
                         worksheet.set_column('A:B', 8)
                         worksheet.set_column('C:D', 10)
-                        worksheet.set_column('E:F', 11) # 微縮 E, F 給簽名欄空間
-                        worksheet.set_column('G:G', 22) # 大幅加寬「簽名」欄
+                        worksheet.set_column('E:F', 11) 
+                        worksheet.set_column('G:G', 22) 
                         worksheet.set_column('H:H', 2) 
                         worksheet.set_column('I:I', 8) 
                         worksheet.set_column('J:J', 28) 
@@ -422,7 +424,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！簽名欄位已全面擴充。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！簽名欄列高已增高 50%。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
@@ -537,7 +539,7 @@ with tab2:
                 st.error(f"預讀取檔案進行群別與費用分析時發生錯誤: {e}")
 
         st.markdown("📝 **列印優化說明**：")
-        st.success("已擴充「學號」欄位！啟動 A4 極限微調排版，確保 40 人以上的大班級依然能完美塞進一頁 A4 之中！")
+        st.success("已擴充「學號」欄位！啟動 A4 極限微調排版，確保大班級依然能完美塞進一頁 A4 之中！")
 
     with col2:
         st.subheader("⚙️ 2. 收費檢核與測驗設定")
@@ -787,15 +789,16 @@ with tab2:
                             df_cls = df_details_raw[df_details_raw['班級'] == cls_name]
                             cls_count = len(df_cls)
                             
+                            # 🚀 智能防溢頁列高計算 (Phase 2) - 基礎高度增加 50% (從 16 提升至 24)
                             if cls_count >= 38:
-                                scale = 0.75
-                                data_h = 13.5
+                                scale = 0.70  
+                                data_h = 20.25 # (13.5 * 1.5)
                             elif cls_count >= 32:
-                                scale = 0.85
-                                data_h = 14.5
+                                scale = 0.80  
+                                data_h = 21.75 # (14.5 * 1.5)
                             else:
                                 scale = 1.0
-                                data_h = 16
+                                data_h = 24    # (16 * 1.5)
                             
                             ws_details.merge_range(current_row, 0, current_row, len(headers)-1, f"🏫 國立華南高商 - {mock_name_p2}", title_format)
                             ws_details.set_row(current_row, int(24 * scale)) 
@@ -815,6 +818,7 @@ with tab2:
                                 ws_details.write(current_row, 5, row['單次費用'], data_format)
                                 ws_details.write(current_row, 6, row[f'應繳費用({fee_multiplier}次)'], data_format)
                                 ws_details.write(current_row, 7, '', data_format) 
+                                # 🚀 套用增加 50% 後的列高
                                 ws_details.set_row(current_row, data_h)
                                 current_row += 1
                                 
@@ -902,10 +906,10 @@ with tab2:
                         ws_details.set_column('B:B', 6)  
                         ws_details.set_column('C:C', 10) 
                         ws_details.set_column('D:D', 10) 
-                        ws_details.set_column('E:E', 22) # 微縮 E 給簽名欄空間
-                        ws_details.set_column('F:F', 10) # 微縮 F 
-                        ws_details.set_column('G:G', 12) # 微縮 G
-                        ws_details.set_column('H:H', 24) # 大幅加寬「學生簽名」欄
+                        ws_details.set_column('E:E', 22) 
+                        ws_details.set_column('F:F', 10) 
+                        ws_details.set_column('G:G', 12) 
+                        ws_details.set_column('H:H', 24) 
                         
                         ws_details.write(current_row, 0, '全校總計 (Grand Total)', grand_format)
                         ws_details.write(current_row, 1, '', grand_format)
