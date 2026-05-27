@@ -16,6 +16,12 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     
+    /* --- 關鍵修正：減少 Streamlit 預設頂部邊距，讓標題大幅上移 --- */
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1rem !important;
+    }
+
     /* --- 全域設定 --- */
     html, body, [data-testid="stSidebar"] {
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -39,7 +45,7 @@ st.markdown("""
         color: #888888;
         text-transform: uppercase;
         letter-spacing: 0.15rem;
-        margin-bottom: 1.5rem !important; /* 微調間距 */
+        margin-bottom: 1.0rem !important; /* 微調間距，讓圖片更貼合標題 */
     }
     
     /* --- 模組區塊樣式 --- */
@@ -79,20 +85,21 @@ st.markdown('<p class="sub-title">Intelligent Examination Administration Ecosyst
 # ==========================================
 # 3. 吉卜力風校園建築物 Banner
 # ==========================================
-# 使用 st.container 包裹 st.image 以進行 UX 防呆與排版
-with st.container():
+# 關鍵修正：使用 columns 將圖片置中並縮小 (左右佔 1 份，中間佔 2 份)，避免圖片過大佔滿整個螢幕高度
+_, col_img, _ = st.columns([1, 2, 1])
+
+with col_img:
     # UX 防呆：檢查檔案是否存在
     image_path = os.path.join("assets", "school_ghibli.png")
     if os.path.exists(image_path):
-        # 放置圖片，自然適應寬版佈局
+        # 放置圖片，自動適應「中間欄位」的寬度，達到完美縮小的效果
         st.image(image_path, use_container_width=True, caption="校園一隅")
-        # 加上間距與分割線
-        st.write("")
-        st.divider()
     else:
         # 防呆機制：檔案不存在時顯示專業警示，不影響系統執行
         st.warning(f"⚠️ 找不到吉卜力風 Banner 圖片。請確認檔案放置於 `assets/school_ghibli.png`。")
-        st.divider()
+
+# 統一將分隔線放在區塊最下方，並移除多餘的 st.write("") 節省垂直空間
+st.divider()
 
 # ==========================================
 # 4. 核心工具矩陣入口 (2x2 模組排列)
@@ -174,9 +181,7 @@ with row2_col2:
         - 📈 **圖表化清單**：自動匯出清晰的總務處繳費單與書商訂卷清單。
         """)
         st.write("")
-        # 🎉 【解鎖成功】：正式替換為導航按鈕，無縫串接您的第 4 個模組檔案！
         st.page_link("pages/4_模考調查智能輔助系統.py", label="啟動模擬考調查作業 →", icon="📊")
-
 
 # ==========================================
 # 5. 底部沉穩頁尾
