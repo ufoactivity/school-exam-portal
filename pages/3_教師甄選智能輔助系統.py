@@ -18,8 +18,8 @@ except ImportError:
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
-st.title("🏫 教務處-教師甄選智能排程系统 (雙階段旗艦版)")
-st.info("💡 終極進化：已精準微調評分表高度與簽名間距，完美收攏於單頁，徹底解決空白頁問題！")
+st.title("🏫 教務處-教師甄選智能輔助系统(雙階段旗艦版)")
+st.info("💡 終極進化：已精準微調評分表高度與簽名間距，完美收攏於單頁，徹底解決空白頁問題！115.05.27增修")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
