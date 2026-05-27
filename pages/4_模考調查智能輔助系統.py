@@ -9,8 +9,8 @@ from datetime import datetime
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
-st.title("📊 試務組-模考調查智能輔助系統")
-st.info("💡 試務組終極進化：已導入「AI彈性列高演算引擎」，無論班級人數多寡，系統將自動撐滿版面並保證絕對【一班一頁】不溢出！115.05.27增修")
+st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
+st.info("💡 試務組終極進化：已導入「A4精準高度校準」與「強制單頁鎖定」，無論普高或技高，保證絕對【一班一頁】不溢出！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -212,7 +212,8 @@ with tab1:
                         worksheet = workbook.add_worksheet('調查表')
                         
                         worksheet.set_paper(9) # A4
-                        worksheet.fit_to_pages(1, 0)
+                        # 🚀 終極防溢頁鎖定：強制縮放至 1頁寬 x 1頁高
+                        worksheet.fit_to_pages(1, 1)
                         worksheet.center_horizontally()
                         worksheet.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4)
                         
@@ -253,7 +254,7 @@ with tab1:
                             merge_end_col = 6 if is_gen_hs else 9
                             rows_needed = len(df_cls) if is_gen_hs else max(len(df_cls), len(target_mapping))
                             
-                            # 🚀 準備警語內容
+                            # 🚀 準備警語內容以計算高度
                             if is_gen_hs and selected_preset_sheet:
                                 if "高一" in selected_preset_sheet or "仿真" in selected_preset_sheet:
                                     memo_lines = [
@@ -309,16 +310,16 @@ with tab1:
                                 memo_heights.append(h)
                                 memo_h_sum += h
                             
-                            # 🚀 智能空間演算：加總固定高度，剩餘空間完美均分給學生資料
+                            # 🚀 智能空間演算：加總固定高度，分配彈性列高
                             fixed_h = 25 + 20 + 10 + 35 + 15 + memo_h_sum
                             if is_gen_hs:
                                 fixed_h += 20 + (len(target_mapping) * 18) + 10
                             
-                            # A4 一頁可容納的安全總高度約 930 points
-                            target_page_h = 930
+                            # A4 精準可用高度校準 (780點)
+                            target_page_h = 780
                             calculated_data_h = (target_page_h - fixed_h) / max(1, rows_needed)
-                            # 設定最大最小保護值 (下限16保證能看見，上限32避免太粗)
-                            data_h = max(16, min(calculated_data_h, 32))
+                            # 設定容忍上下限 (大班微縮至14.5不破圖，小班拉展至30最寬敞)
+                            data_h = max(14.5, min(calculated_data_h, 30))
                             
                             # 開始寫入排版
                             worksheet.merge_range(current_row, 0, current_row, merge_end_col, template_name, title_format)
@@ -357,7 +358,7 @@ with tab1:
                                         worksheet.write(start_data_row + i, 8, code, mapping_data_format)
                                         worksheet.write(start_data_row + i, 9, name, mapping_data_format)
                                 
-                                # 套用彈性高度
+                                # 🚀 套用彈性高度
                                 worksheet.set_row(start_data_row + i, data_h)
                                 
                             current_row = start_data_row + rows_needed
@@ -411,7 +412,7 @@ with tab1:
 
                             page_breaks.append(current_row)
                             
-                        # 整體欄寬配置，G欄加寬
+                        # 整體欄寬配置，確保簽名空間大
                         worksheet.set_column('A:B', 8)
                         worksheet.set_column('C:D', 10)
                         worksheet.set_column('E:F', 11) 
@@ -431,7 +432,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！彈性撐滿排版已完美運作。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！彈性撐滿排版與單頁鎖定已完美運作。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
@@ -546,7 +547,7 @@ with tab2:
                 st.error(f"預讀取檔案進行群別與費用分析時發生錯誤: {e}")
 
         st.markdown("📝 **列印優化說明**：")
-        st.success("已擴充「學號」與「簽名」欄位！啟動 A4 彈性空間演算引擎，完美塞進一頁 A4 之中！")
+        st.success("已擴充「學號」與「簽名」欄位！啟動 A4 彈性空間演算引擎與實體鎖定，完美塞進一頁 A4 之中！")
 
     with col2:
         st.subheader("⚙️ 2. 收費檢核與測驗設定")
@@ -768,7 +769,8 @@ with tab2:
                         writer.sheets[sheet2_name] = ws_details 
                         
                         ws_details.set_paper(9)
-                        ws_details.fit_to_pages(1, 0)
+                        # 🚀 終極防溢頁鎖定：強制縮放至 1頁寬 x 1頁高
+                        ws_details.fit_to_pages(1, 1)
                         ws_details.center_horizontally()
                         ws_details.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4) 
                         
@@ -826,11 +828,11 @@ with tab2:
                             # 🚀 智能空間演算：計算階段二的固定高度 (不包含學生列表)
                             fixed_h_p2 = 24 + 18 + 26 + 18 + (len(cls_fee_info) * 16) + 15 + 35 + 15 + memo_h_sum_p2
                             
-                            # 🚀 動態求出能最大化塞滿版面的學生列高 (總容忍高 930pt)
-                            target_page_h_p2 = 930
+                            # A4 精準可用高度校準 (780點)
+                            target_page_h_p2 = 780
                             calculated_data_h_p2 = (target_page_h_p2 - fixed_h_p2) / max(1, cls_count)
-                            # 限制：最小 16 (大班微縮)，最大 32 (小班不至於太突兀)
-                            data_h_p2 = max(16, min(calculated_data_h_p2, 32))
+                            # 設定容忍上下限 (大班微縮至14.5不破圖，小班拉展至32最寬敞)
+                            data_h_p2 = max(14.5, min(calculated_data_h_p2, 32))
 
                             ws_details.merge_range(current_row, 0, current_row, len(headers)-1, f"🏫 國立華南高商 - {mock_name_p2}", title_format)
                             ws_details.set_row(current_row, 24) 
@@ -907,7 +909,7 @@ with tab2:
                                 else:
                                     ws_details.write(current_row, 0, rich_parts[0], fmt)
                                     
-                                worksheet.set_row(current_row, memo_heights_p2[line_idx])
+                                ws_details.set_row(current_row, memo_heights_p2[line_idx])
                                 current_row += 1
                             
                             page_breaks.append(current_row) 
@@ -919,7 +921,7 @@ with tab2:
                         ws_details.set_column('E:E', 22) 
                         ws_details.set_column('F:F', 10) 
                         ws_details.set_column('G:G', 12) 
-                        ws_details.set_column('H:H', 24) # 大幅加寬「學生簽名」欄
+                        ws_details.set_column('H:H', 24) 
                         
                         ws_details.write(current_row, 0, '全校總計 (Grand Total)', grand_format)
                         ws_details.write(current_row, 1, '', grand_format)
