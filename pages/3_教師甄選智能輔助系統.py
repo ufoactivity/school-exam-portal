@@ -37,7 +37,7 @@ if 'df_preview' not in st.session_state:
 # 0. 側邊欄：試務資源與印章設定
 # ==========================================
 st.sidebar.title("📥 試務資源下載")
-template_filename = "114第1次代理教師甄選各科預定流程時間表[最新版]1140606.doc"
+template_filename = "OOO學年第O次代理教師甄選各科預定流程時間表[公版]1140606.doc"
 file_path = template_filename
 if not os.path.exists(file_path):
     if os.path.exists(f"../{template_filename}"):
