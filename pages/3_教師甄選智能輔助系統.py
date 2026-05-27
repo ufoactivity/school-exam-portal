@@ -18,7 +18,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系统 (雙階段旗艦版)")
-st.info("💡 系統已全面升級為「雙階段架構」：第一階段處理全名單前置作業，第二階段專注當天實到排程，完美貼合真實試務流程！")
+st.info("💡 終極進化：第一階段全自動產出「橫式評分表與蓋章簽到表」，第二階段專注當天實到防撞排程！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -32,7 +32,7 @@ if 'tab2_processed' not in st.session_state:
 # ==========================================
 # 0. 側邊欄：試務資源與印章設定
 # ==========================================
-st.sidebar.title("🔴 自動蓋章設定 (公告專用)")
+st.sidebar.title("🔴 自動蓋章設定 (公告與簽到表專用)")
 
 default_stamp_name = "試務組印章.png"
 stamp_path = default_stamp_name
@@ -53,26 +53,123 @@ if has_default_stamp:
     with st.sidebar.expander("🔄 想要臨時更換印章？點此手動上傳"):
         file_stamp = st.file_uploader("上傳新印章圖檔 (.png, .jpg)", type=['png', 'jpg', 'jpeg'], key="stamp_upload")
 else:
-    st.sidebar.markdown("上傳您的「試務組印章.png」，系統將自動印在公告右下角。")
+    st.sidebar.markdown("上傳您的「試務組印章.png」，系統將自動印在表單右下角。")
     file_stamp = st.sidebar.file_uploader("上傳印章圖檔 (.png, .jpg)", type=['png', 'jpg', 'jpeg'], key="stamp_upload")
 
-st.sidebar.divider()
-st.sidebar.markdown("### 📅 全域學年度設定")
+def get_stamp_io():
+    """每次呼叫都產生一個全新的 BytesIO 給 Word 套印，避免檔案被關閉"""
+    if file_stamp:
+        return io.BytesIO(file_stamp.getvalue())
+    elif has_default_stamp:
+        with open(stamp_path, "rb") as f:
+            return io.BytesIO(f.read())
+    return None
+
+# ==========================================
+# 全域參數：學年度與甄選次數設定
+# ==========================================
+st.markdown("### 📅 全域試務設定")
 current_roc_year = datetime.datetime.now().year - 1911
-c_year_sb, c_session_sb = st.sidebar.columns(2)
-with c_year_sb:
-    academic_year = st.number_input("學年度", min_value=100, max_value=200, value=current_roc_year, step=1)
-with c_session_sb:
-    session_num = st.number_input("第幾次甄選", min_value=1, max_value=50, value=1, step=1)
+c_year, c_session = st.columns(2)
+with c_year:
+    academic_year = st.number_input("學年度 (系統已自動帶入)", min_value=100, max_value=200, value=current_roc_year, step=1)
+with c_session:
+    session_num = st.number_input("第幾次甄選 (如: 1)", min_value=1, max_value=50, value=1, step=1)
+st.divider()
 
 # ==========================================
 # 2. 共用函式區 (表單產生器與排程矩陣)
 # ==========================================
-def generate_native_form(academic_year, session_num, df_master, form_name, headers, target_subjs):
+def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
     doc = docx.Document()
     section = doc.sections[0]
-    section.top_margin, section.bottom_margin = Cm(2.0), Cm(2.0)
+    section.top_margin, section.bottom_margin = Cm(1.5), Cm(2.0)
     section.left_margin, section.right_margin = Cm(2.0), Cm(2.0)
+    
+    # 建立頁尾：承辦人簽章與印章
+    footer = section.footer
+    for p in footer.paragraphs: p._element.getparent().remove(p._element)
+    footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
+    footer_table.autofit = False
+    cell_right = footer_table.rows[0].cells[1]
+    
+    p_right = cell_right.paragraphs[0]
+    p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r_sig = p_right.add_run("承辦人簽名：__________________\n")
+    r_sig.font.name = '標楷體'
+    r_sig._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+    r_sig.font.size = Pt(14)
+    
+    stamp_io = get_stamp_io()
+    if stamp_io:
+        run_stamp = p_right.add_run()
+        run_stamp.add_picture(stamp_io, width=Cm(4.0))
+    
+    for idx, subj in enumerate(target_subjs):
+        df_sub = df_master[df_master['報考科目'] == subj]
+        if df_sub.empty: continue
+        
+        p_title = doc.add_paragraph()
+        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r_t = p_title.add_run(f"{academic_year}學年度第{session_num}次代理教師甄選\n【{subj}】考生簽到表")
+        r_t.font.name = '標楷體'
+        r_t._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+        r_t.font.size = Pt(18)
+        r_t.bold = True
+        
+        has_name = '姓名' in df_master.columns
+        headers = ['編號', '甄選證號']
+        if has_name: headers.append('姓名')
+        headers.extend(['報到時間', '考生簽名', '備註'])
+        
+        table = doc.add_table(rows=1, cols=len(headers))
+        table.style = 'Table Grid'
+        
+        for c_i, h in enumerate(headers):
+            cell = table.cell(0, c_i)
+            cell.text = h
+            for p in cell.paragraphs:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for r in p.runs:
+                    r.font.name = '標楷體'
+                    r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                    r.font.size = Pt(14)
+                    r.bold = True
+                    
+        for _, cand in df_sub.iterrows():
+            row_cells = table.add_row().cells
+            name_str = cand.get('姓名', '') if has_name else ''
+            base_data = [str(cand['排序']), str(cand['准考證號'])]
+            if has_name: base_data.append(name_str)
+            
+            for c_i in range(len(headers)):
+                if c_i < len(base_data):
+                    row_cells[c_i].text = base_data[c_i]
+                else:
+                    row_cells[c_i].text = "" 
+                    
+                for p in row_cells[c_i].paragraphs:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for r in p.runs:
+                        r.font.name = '標楷體'
+                        r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                        r.font.size = Pt(14) # 統一14級字
+                        
+        if idx < len(target_subjs) - 1:
+            doc.add_page_break()
+            
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_items, target_subjs):
+    doc = docx.Document()
+    section = doc.sections[0]
+    # 橫式設定 (Landscape)
+    section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
+    section.page_width, section.page_height = section.page_height, section.page_width
+    section.top_margin, section.bottom_margin = Cm(1.5), Cm(1.5)
+    section.left_margin, section.right_margin = Cm(1.5), Cm(1.5)
     
     for idx, subj in enumerate(target_subjs):
         df_sub = df_master[df_master['報考科目'] == subj]
@@ -86,20 +183,28 @@ def generate_native_form(academic_year, session_num, df_master, form_name, heade
         r_t.font.size = Pt(18)
         r_t.bold = True
         
-        if "評分" in form_name:
-            p_judge = doc.add_paragraph()
-            p_judge.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            r_j = p_judge.add_run("評審委員簽名：__________________")
-            r_j.font.name = '標楷體'
-            r_j._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-            r_j.font.size = Pt(14)
-            
-        table = doc.add_table(rows=1, cols=len(headers))
+        cands = df_sub['准考證號'].tolist()
+        table = doc.add_table(rows=len(row_items)+1, cols=len(cands)+1)
         table.style = 'Table Grid'
         
-        for c_i, h in enumerate(headers):
-            cell = table.rows[0].cells[c_i]
-            cell.text = h
+        # 標題列：第一欄為評分項目，後面皆為准考證號 (無姓名)
+        table.cell(0, 0).text = "評分項目"
+        for i, cand in enumerate(cands):
+            table.cell(0, i+1).text = cand
+            
+        for cell in table.rows[0].cells:
+            for p in cell.paragraphs:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for r in p.runs:
+                    r.font.name = '標楷體'
+                    r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                    r.font.size = Pt(14)
+                    r.bold = True
+        
+        # 填寫左側評分項目
+        for r_i, item in enumerate(row_items):
+            cell = table.cell(r_i+1, 0)
+            cell.text = item
             for p in cell.paragraphs:
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 for r in p.runs:
@@ -108,27 +213,25 @@ def generate_native_form(academic_year, session_num, df_master, form_name, heade
                     r.font.size = Pt(14)
                     r.bold = True
                     
-        for _, cand in df_sub.iterrows():
-            row_cells = table.add_row().cells
-            name_str = cand.get('姓名', '') if '姓名' in cand else ''
-            
-            base_data = [str(cand['排序']), str(cand['准考證號'])]
-            if '姓名' in headers:
-                base_data.append(name_str)
-                
-            for c_i in range(len(headers)):
-                if c_i < len(base_data):
-                    row_cells[c_i].text = base_data[c_i]
-                else:
-                    row_cells[c_i].text = "" 
-                    
-                for p in row_cells[c_i].paragraphs:
-                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    for r in p.runs:
-                        r.font.name = '標楷體'
-                        r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                        r.font.size = Pt(14)
-                        
+        doc.add_paragraph("") # 留空行
+        
+        # 表格外左下角與右下角佈局
+        footer_tbl = doc.add_table(rows=1, cols=2)
+        c_left, c_right = footer_tbl.rows[0].cells
+        
+        p_left = c_left.paragraphs[0]
+        r_left = p_left.add_run("本表總分超過90分及不滿70分，請說明原因。")
+        r_left.font.name = '標楷體'
+        r_left._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+        r_left.font.size = Pt(12)
+        
+        p_right = c_right.paragraphs[0]
+        p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r_right = p_right.add_run("評分委員簽名：__________________")
+        r_right.font.name = '標楷體'
+        r_right._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+        r_right.font.size = Pt(14)
+        
         if idx < len(target_subjs) - 1:
             doc.add_page_break()
             
@@ -178,6 +281,9 @@ TEACH_30_MATRIX = {
     9: ("15:10-15:25", "15:25-15:55"), 10: ("15:40-15:55", "15:55-16:25"),
     11: ("16:10-16:25", "16:25-16:55"), 12: ("16:40-16:55", "16:55-17:25"),
     13: ("17:10-17:25", "17:25-17:55"), 14: ("17:40-17:55", "17:55-18:25"), 15: ("18:10-18:25", "18:25-18:55"),
+    16: ("18:40-18:55", "18:55-19:25"), 17: ("19:10-19:25", "19:25-19:55"), 18: ("19:40-19:55", "19:55-20:25"), 
+    19: ("20:10-20:25", "20:25-20:55"), 20: ("20:40-20:55", "20:55-21:25"), 21: ("21:10-21:25", "21:25-21:55"),
+    22: ("21:40-21:55", "21:55-22:25"), 23: ("22:10-22:25", "22:25-22:55"), 24: ("22:40-22:55", "22:55-23:25"), 25: ("23:10-23:25", "23:25-23:55")
 }
 
 def generate_oral_30_independent():
@@ -220,17 +326,18 @@ def check_time_conflict_bool(prep_str, teach_str, oral_str):
         return False
     except: return False
 
+
 # ==========================================
 # 3. 介面分頁 (雙階段架構)
 # ==========================================
-tab1, tab2 = st.tabs(["📂 第一階段：考前前置作業 (產出簽到與評分表)", "⏱️ 第二階段：考試當天排程 (產出公告與時間總表)"])
+tab1, tab2 = st.tabs(["📂 第一階段：考前前置作業 (產出簽到與橫式評分表)", "⏱️ 第二階段：考試當天排程 (產出公告與時間總表)"])
 
 # -------------------------------------------------------------
 # TAB 1: 第一階段 (前置表單產生)
 # -------------------------------------------------------------
 with tab1:
     st.subheader("📝 上傳【全部報名名單】產出前置表單")
-    st.markdown("此階段專為**考試前**準備文件設計，不進行複雜排程，純粹依據准考證號配發編號並產出所有需要的 Word 表單。")
+    st.markdown("此階段專為**考試前**準備文件設計，純粹依據准考證號配發編號並產出所有需要的 Word 表單。")
     
     file_reg = st.file_uploader("1️⃣ 上傳【報名總名單】 (准考證號, 報考科目, [姓名]).xlsx", type=['xlsx'], key="reg_file")
     
@@ -241,61 +348,44 @@ with tab1:
             df_reg = df_reg[df_reg['准考證號'] != ""]
             
             all_subjs_t1 = df_reg['報考科目'].unique().tolist()
-            prac_subjs_t1 = st.multiselect("選擇包含【實作】的科目 (用於判斷是否產出實作評分表)：", options=all_subjs_t1, key="prac_t1")
+            prac_subjs_t1 = st.multiselect("選擇包含【實作】的科目 (用於產出實作評分表)：", options=all_subjs_t1, key="prac_t1")
             
             if st.button("🚀 產出前置作業表單", type="primary", use_container_width=True):
-                # 建立簡易版的 df_master，只給編號
                 all_cands_t1 = []
                 for subj in all_subjs_t1:
                     df_sub_t1 = df_reg[df_reg['報考科目'] == subj].copy()
-                    # 確保照准考證號排序
                     df_sub_t1 = df_sub_t1.sort_values('准考證號')
                     
                     for i, row in enumerate(df_sub_t1.to_dict('records')):
-                        cand_record = {
-                            '報考科目': subj,
-                            '准考證號': row['准考證號'],
-                            '排序': i + 1
-                        }
-                        if '姓名' in row:
-                            cand_record['姓名'] = str(row['姓名']).strip()
+                        cand_record = {'報考科目': subj, '准考證號': row['准考證號'], '排序': i + 1}
+                        if '姓名' in row: cand_record['姓名'] = str(row['姓名']).strip()
                         all_cands_t1.append(cand_record)
                         
                 df_master_t1 = pd.DataFrame(all_cands_t1)
                 
                 # 自動生成 4 種試務評分與簽到表單
-                has_name = '姓名' in df_reg.columns
-                base_headers = ['編號', '甄選證號']
-                if has_name: base_headers.append('姓名')
+                st.session_state.sign_data = generate_signin_sheet(academic_year, session_num, df_master_t1, all_subjs_t1)
                 
-                st.session_state.sign_data = generate_native_form(
-                    academic_year, session_num, df_master_t1, "考生簽到表", 
-                    base_headers + ['報到時間', '考生簽名', '備註'], all_subjs_t1)
-                    
-                st.session_state.teach_data = generate_native_form(
-                    academic_year, session_num, df_master_t1, "試教評分表", 
-                    base_headers + ['各項評分', '總分', '備註'], all_subjs_t1)
-                    
-                st.session_state.oral_data = generate_native_form(
-                    academic_year, session_num, df_master_t1, "口試評分表", 
-                    base_headers + ['各項評分', '總分', '備註'], all_subjs_t1)
+                teach_items = ["教學技巧(30%)", "語言表達(30%)", "儀態(20%)", "教室管理(10%)", "時間管理(10%)", "合計總分", "備註"]
+                st.session_state.teach_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "試教評分表", teach_items, all_subjs_t1)
+                
+                oral_items = ["自述(20%)", "教學理念(20%)", "班級經營(20%)", "表達溝通(20%)", "舉止儀態(20%)", "合計總分", "備註"]
+                st.session_state.oral_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "口試評分表", oral_items, all_subjs_t1)
                     
                 if prac_subjs_t1:
-                    st.session_state.prac_data = generate_native_form(
-                        academic_year, session_num, df_master_t1, "實作評分表", 
-                        base_headers + ['各項評分', '總分', '備註'], prac_subjs_t1)
+                    prac_items = ["評分內容", "評分總分", "備註"]
+                    st.session_state.prac_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "實作評分表", prac_items, prac_subjs_t1)
                 else:
                     st.session_state.prac_data = None
                     
                 st.session_state.tab1_processed = True
-                st.success("🎉 前置表單產出完成！請在下方下載。")
                 
         except Exception as e:
             st.error(f"發生錯誤: {e}")
             st.code(traceback.format_exc())
 
     if st.session_state.tab1_processed:
-        st.markdown("### 📥 下載專區 (前置作業表單)")
+        st.success("🎉 前置表單產出完成！「橫式評分表」與「蓋章簽到表」已為您無中生有。")
         c_d3, c_d4, c_d5, c_d6 = st.columns(4)
         with c_d3:
             st.download_button("✍️ 1. 下載 考生簽到表", data=st.session_state.sign_data, file_name=f"{academic_year}學年度_考生簽到表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
@@ -376,7 +466,7 @@ with tab2:
 
     st.write("---")
 
-    if st.button("🚀 啟動排程與場地整合", type="primary", use_container_width=True, key="btn_phase2"):
+    if st.button("🚀 啟動當天防撞排程", type="primary", use_container_width=True, key="btn_phase2"):
         if not file_candidates or not file_venues:
             st.error("🚨 請確認【實際報到名單】與【場地設定】皆已上傳！")
         else:
@@ -590,15 +680,12 @@ with tab2:
                     run_3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
                     run_3.font.size = Pt(14)
                     
-                    stamp_source = None
-                    if file_stamp: stamp_source = io.BytesIO(file_stamp.getvalue())
-                    elif has_default_stamp: stamp_source = stamp_path
-                    
-                    if stamp_source:
+                    stamp_io = get_stamp_io()
+                    if stamp_io:
                         p_stamp = cell_right.paragraphs[0]
                         p_stamp.alignment = WD_ALIGN_PARAGRAPH.RIGHT 
                         run_stamp = p_stamp.add_run()
-                        run_stamp.add_picture(stamp_source, width=Cm(4.0)) 
+                        run_stamp.add_picture(stamp_io, width=Cm(4.0)) 
                     
                     for subject in all_subjs:
                         df_sub_sched = df_master[df_master['報考科目'] == subject]
