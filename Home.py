@@ -23,7 +23,8 @@ def get_image_base64(image_path):
 # 使用內嵌 CSS 打造現代科技感漸層、極簡字體體系與放大字體
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    /* 🌟 額外載入繁體中文輕鬆黑體字型 (Noto Sans TC)  🌟 */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Noto+Sans+TC:wght@300;400&display=swap');
     
     /* --- 減少 Streamlit 預設頂部邊距，讓標題大幅上移 --- */
     .block-container {
@@ -57,20 +58,40 @@ st.markdown("""
         margin-bottom: 1.0rem !important; 
     }
     
-    /* --- 通過純 HTML Class 設定終極滿版橫幅 --- */
+    /* --- 🌟 關鍵修正：橫幅容器設定 (用於包裹文字註記)  🌟 --- */
+    .hero-banner-container {
+        position: relative;              /* 文字錨點：設定為相對定位  */
+        width: 100% !important;
+        border-radius: 15px;
+        overflow: hidden;                /* 確保圓角與超出內容裁剪 */
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        margin-bottom: 1.5rem;
+    }
+    
+    /* 通過純 HTML Class 設定終極滿版橫幅 */
     .hero-banner {
         width: 100% !important;          /* 寬度 100% 強制填滿螢幕 */
         height: 250px !important;        /* 固定高度為 250px 的扁平橫幅比例 (可自由修改) */
         object-fit: cover !important;    /* 智慧全景裁剪，絕對不會拉伸變形 */
-        
-        /* 🌟 關鍵修正：智慧對焦下移 (顯示下半部階梯)! 🌟 */
-        /* 將原本預設的 object-position: 50% 50% 修改為下移 35%! */
-        object-position: 50% 85% !important; /* 對焦中心下移至底部的 85% 處! */
-        
-        border-radius: 15px !important;  /* 圓角設計 */
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important; /* 沉穩陰影 */
-        margin-bottom: 1.5rem !important;/* 與下方區塊保持適當距離 */
+        object-position: 50% 85% !important; /* 對焦中心下移至底部的 85% 處，顯示階梯 */
         display: block;                  /* 確保不會有奇怪的行內元素空白 */
+    }
+    
+    /* --- 🌟 關鍵修正：圖片右下角「輕鬆字體」文字層  🌟 --- */
+    .banner-overlay-text {
+        position: absolute;              /* 絕對定位  */
+        bottom: 15px;                    /* 距離底部 15px  */
+        right: 20px;                     /* 距離右側 20px  */
+        color: white;                    /* 文字顏色：白色  */
+        
+        /* 使用 Noto Sans TC 的輕字重 (300) 來表達「輕鬆」感  */
+        font-family: 'Noto Sans TC', sans-serif !important;
+        font-weight: 300 !important;
+        font-size: 1.0rem !important;
+        letter-spacing: 0.05rem;         /* 微調字距增加輕鬆感  */
+        
+        /* 增加輕微陰影，保證文字在淡色天空下依然可讀  */
+        text-shadow: 1px 1px 3px rgba(0,0,0,0.5); 
     }
     
     /* --- 模組區塊樣式 --- */
@@ -100,14 +121,21 @@ st.markdown('<h1 class="main-title">⚡試務組 AI 智能輔助平台⚡</h1>',
 st.markdown('<p class="sub-title">Intelligent Examination Administration Ecosystem</p>', unsafe_allow_html=True)
 
 # ==========================================
-# 3. 吉卜力風校園建築物 Banner (純 HTML 渲染技術)
+# 3. 吉卜力風校園建築物 Banner (純 HTML 與定位技術)
 # ==========================================
 image_path = os.path.join("assets", "school_ghibli.png")
 img_base64 = get_image_base64(image_path)
 
 if img_base64:
-    # 🌟 突破 Streamlit 框架限制，直接寫入 HTML，保證完美佔滿版面寬度！
-    st.markdown(f'<img src="data:image/png;base64,{img_base64}" class="hero-banner">', unsafe_allow_html=True)
+    # 🌟 使用容器包裹<img>與註記文字，達成精準定位與滿版效果！ 🌟
+    banner_html = f'''
+        <div class="hero-banner-container">
+            <img src="data:image/png;base64,{img_base64}" class="hero-banner">
+            <div class="banner-overlay-text">攝於115年夏</div>
+        </div>
+    '''
+    # 🌟 將新的 HTML 渲染至網頁  🌟
+    st.markdown(banner_html, unsafe_allow_html=True)
 else:
     st.warning(f"⚠️ 找不到吉卜力風 Banner 圖片。請確認檔案放置於 `assets/school_ghibli.png`。")
 
