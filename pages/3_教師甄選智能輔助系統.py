@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系统 (雙階段旗艦版)")
-st.info("💡 終極進化：已修復空白頁問題！精準控制表格極限高度，完美收攏於單頁中！")
+st.info("💡 終極進化：已拉大評分表下方「委員簽名欄」與表格的距離，提供寬敞舒適的簽名空間！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -219,7 +219,6 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
             for r_i, item in enumerate(row_items):
                 row = table.rows[r_i+1]
                 
-                # 【核心修正】：將 10.0cm 縮減為 8.5cm，避免被 Word 自動推到下一頁
                 if form_name == "實作評分表" and item == "評分內容":
                     row.height = Cm(8.5) 
                     row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
@@ -237,6 +236,10 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
                         r.font.size = Pt(14)
                         r.bold = True
                         
+            # 【核心優化】：連續加入 3 個空白段落，大幅拉開表格與簽名欄的距離
+            for _ in range(3):
+                doc.add_paragraph("")
+            
             # 表格外左下角與右下角佈局
             footer_tbl = doc.add_table(rows=1, cols=2)
             footer_tbl.autofit = False
@@ -257,7 +260,6 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
             r_right._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
             r_right.font.size = Pt(14)
             
-            # 如果不是這個科目的最後一頁，或者不是最後一個科目，就換頁
             if chunk_idx < len(chunks) - 1 or idx < len(target_subjs) - 1:
                 doc.add_page_break()
                 
