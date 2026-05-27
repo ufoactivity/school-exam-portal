@@ -8,7 +8,7 @@ import traceback
 try:
     import docx
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.table import WD_ROW_HEIGHT_RULE
+    from docx.enum.table import WD_ROW_HEIGHT_RULE, WD_TABLE_ALIGNMENT
     from docx.shared import Pt, Cm, RGBColor
     HAS_DOCX = True
 except ImportError:
@@ -90,14 +90,15 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
     # 建立頁尾：承辦人簽章與印章 (強制靠右定位)
     footer = section.footer
     for p in footer.paragraphs: p._element.getparent().remove(p._element)
-    footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
-    footer_table.autofit = False
     
-    # 隱形表格寬度分配：左邊撐開，右邊留給簽名跟印章
+    # 【核心修正】：設定表格靠右對齊，並配置合適寬度
+    footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
+    footer_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    
     cell_left = footer_table.rows[0].cells[0]
-    cell_left.width = Cm(10.0)
+    cell_left.width = Cm(8.0)
     cell_right = footer_table.rows[0].cells[1]
-    cell_right.width = Cm(6.0)
+    cell_right.width = Cm(8.0)
     
     p_right = cell_right.paragraphs[0]
     p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -185,81 +186,91 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
         df_sub = df_master[df_master['報考科目'] == subj]
         if df_sub.empty: continue
         
-        p_title = doc.add_paragraph()
-        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r_t = p_title.add_run(f"{academic_year}學年度第{session_num}次代理教師甄選\n【{subj}】{form_name}")
-        r_t.font.name = '標楷體'
-        r_t._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-        r_t.font.size = Pt(18)
-        r_t.bold = True
+        cands_all = df_sub['准考證號'].tolist()
         
-        cands = df_sub['准考證號'].tolist()
-        table = doc.add_table(rows=len(row_items)+1, cols=len(cands)+1)
-        table.style = 'Table Grid'
+        # 【核心修正】：實作評分表每張只顯示 5 人，其他的可支援到 15 人
+        chunk_size = 5 if form_name == "實作評分表" else 15
+        chunks = [cands_all[i:i + chunk_size] for i in range(0, len(cands_all), chunk_size)]
         
-        # 表頭第一列加高
-        table.rows[0].height = Cm(1.2)
-        table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-        
-        # 標題列：第一欄為評分項目，後面皆為准考證號 (無姓名)
-        table.cell(0, 0).text = "評分項目"
-        for i, cand in enumerate(cands):
-            table.cell(0, i+1).text = cand
+        for chunk_idx, cands in enumerate(chunks):
+            p_title = doc.add_paragraph()
+            p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r_t = p_title.add_run(f"{academic_year}學年度第{session_num}次代理教師甄選\n【{subj}】{form_name}")
+            r_t.font.name = '標楷體'
+            r_t._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            r_t.font.size = Pt(18)
+            r_t.bold = True
             
-        for cell in table.rows[0].cells:
-            for p in cell.paragraphs:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                for r in p.runs:
-                    r.font.name = '標楷體'
-                    r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                    r.font.size = Pt(14)
-                    r.bold = True
-        
-        # 填寫左側評分項目與控制列高
-        for r_i, item in enumerate(row_items):
-            row = table.rows[r_i+1]
+            table = doc.add_table(rows=len(row_items)+1, cols=len(cands)+1)
+            table.style = 'Table Grid'
             
-            # 【核心修正】：實作評分表的「評分內容」給予超級大的空間 (10公分高)
-            if form_name == "實作評分表" and item == "評分內容":
-                row.height = Cm(10.0)
-                row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-            else:
-                # 其餘格子也設定至少 2 公分高，方便委員書寫數字
-                row.height = Cm(2.0)
-                row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+            # 表頭第一列加高
+            table.rows[0].height = Cm(1.2)
+            table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+            
+            # 標題列：第一欄為評分項目，後面皆為准考證號 (無姓名)
+            table.cell(0, 0).text = "評分項目"
+            for i, cand in enumerate(cands):
+                table.cell(0, i+1).text = cand
                 
-            cell = table.cell(r_i+1, 0)
-            cell.text = item
-            for p in cell.paragraphs:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                for r in p.runs:
-                    r.font.name = '標楷體'
-                    r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                    r.font.size = Pt(14)
-                    r.bold = True
-                    
-        doc.add_paragraph("") # 留空行
-        
-        # 表格外左下角與右下角佈局
-        footer_tbl = doc.add_table(rows=1, cols=2)
-        c_left, c_right = footer_tbl.rows[0].cells
-        
-        p_left = c_left.paragraphs[0]
-        r_left = p_left.add_run("本表總分超過90分及不滿70分，請說明原因。")
-        r_left.font.name = '標楷體'
-        r_left._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-        r_left.font.size = Pt(12)
-        
-        p_right = c_right.paragraphs[0]
-        p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        r_right = p_right.add_run("評分委員簽名：__________________")
-        r_right.font.name = '標楷體'
-        r_right._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-        r_right.font.size = Pt(14)
-        
-        if idx < len(target_subjs) - 1:
-            doc.add_page_break()
+            for cell in table.rows[0].cells:
+                for p in cell.paragraphs:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for r in p.runs:
+                        r.font.name = '標楷體'
+                        r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                        r.font.size = Pt(14)
+                        r.bold = True
             
+            # 填寫左側評分項目與控制列高
+            for r_i, item in enumerate(row_items):
+                row = table.rows[r_i+1]
+                
+                # 【核心修正】：實作評分表的「評分內容」給予超級大的空間 (10公分高)
+                if form_name == "實作評分表" and item == "評分內容":
+                    row.height = Cm(10.0) 
+                    row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+                else:
+                    # 其餘格子也設定至少 1.5 公分高，方便委員書寫數字
+                    row.height = Cm(1.5)
+                    row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+                    
+                cell = table.cell(r_i+1, 0)
+                cell.text = item
+                for p in cell.paragraphs:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for r in p.runs:
+                        r.font.name = '標楷體'
+                        r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                        r.font.size = Pt(14)
+                        r.bold = True
+                        
+            doc.add_paragraph("") # 留空行
+            
+            # 表格外左下角與右下角佈局
+            footer_tbl = doc.add_table(rows=1, cols=2)
+            footer_tbl.autofit = False
+            c_left, c_right = footer_tbl.rows[0].cells
+            c_left.width = Cm(16.0)
+            c_right.width = Cm(10.0)
+            
+            p_left = c_left.paragraphs[0]
+            r_left = p_left.add_run("本表總分超過90分及不滿70分，請說明原因。")
+            r_left.font.name = '標楷體'
+            r_left._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            r_left.font.size = Pt(12)
+            
+            p_right = c_right.paragraphs[0]
+            p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            r_right = p_right.add_run("評分委員簽名：__________________")
+            r_right.font.name = '標楷體'
+            r_right._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            r_right.font.size = Pt(14)
+            
+            # 如果不是這個科目的最後一頁，或者不是最後一個科目，就換頁
+            if chunk_idx < len(chunks) - 1 or idx < len(target_subjs) - 1:
+                doc.add_page_break()
+                
     out = io.BytesIO()
     doc.save(out)
     return out.getvalue()
@@ -395,7 +406,7 @@ with tab1:
                 oral_items = ["自述(20%)", "教學理念(20%)", "班級經營(20%)", "表達溝通(20%)", "舉止儀態(20%)", "合計總分", "備註"]
                 st.session_state.oral_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "口試評分表", oral_items, all_subjs_t1)
                     
-                # 產出實作評分表 (橫式 + 評分內容欄位巨大化)
+                # 產出實作評分表 (橫式 + 評分內容欄位巨大化，每5人一頁)
                 if prac_subjs_t1:
                     prac_items = ["評分內容", "評分總分", "備註"]
                     st.session_state.prac_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "實作評分表", prac_items, prac_subjs_t1)
@@ -409,7 +420,7 @@ with tab1:
             st.code(traceback.format_exc())
 
     if st.session_state.tab1_processed:
-        st.success("🎉 前置表單產出完成！「橫式評分表」與「蓋章簽到表」已為您無中生有。")
+        st.success("🎉 前置表單產出完成！「橫式評分表」與「蓋章簽到表」已為您排版完畢。")
         c_d3, c_d4, c_d5, c_d6 = st.columns(4)
         with c_d3:
             st.download_button("✍️ 1. 下載 考生簽到表", data=st.session_state.sign_data, file_name=f"{academic_year}學年度_考生簽到表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
