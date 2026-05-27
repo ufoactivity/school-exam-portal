@@ -23,7 +23,7 @@ def get_image_base64(image_path):
 # 使用內嵌 CSS 打造現代科技感漸層、極簡字體體系與放大字體
 st.markdown("""
     <style>
-    /* 🌟 關鍵修正：載入繁體中文與「極具活潑趣味感」的快樂體字型 (ZCOOL KuaiLe) 🌟 */
+    /* 載入繁體中文與活潑趣味的快樂體字型 (ZCOOL KuaiLe) */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=ZCOOL+KuaiLe&display=swap');
     
     /* --- 減少 Streamlit 預設頂部邊距，讓標題大幅上移 --- */
@@ -60,41 +60,42 @@ st.markdown("""
     
     /* --- 橫幅容器設定 (用於包裹文字註記) --- */
     .hero-banner-container {
-        position: relative;              /* 文字錨點：設定為相對定位 */
+        position: relative;              
         width: 100% !important;
         border-radius: 15px;
-        overflow: hidden;                /* 確保圓角與超出內容裁剪 */
+        overflow: hidden;                
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         margin-bottom: 1.5rem;
     }
     
     /* 通過純 HTML Class 設定終極滿版橫幅 */
     .hero-banner {
-        width: 100% !important;          /* 寬度 100% 強制填滿螢幕 */
-        height: 250px !important;        /* 固定高度為 250px 的扁平橫幅比例 */
-        object-fit: cover !important;    /* 智慧全景裁剪，絕對不會拉伸變形 */
+        width: 100% !important;          
+        height: 250px !important;        
+        object-fit: cover !important;    
         
-        /* 🌟 關鍵修正：畫面再次往下一點（移至95%處），讓階梯展現得更完整生動！ 🌟 */
-        object-position: 50% 95% !important; 
+        /* 🌟 關鍵修正：畫面移至 100% 完美觸底，階梯與地面景色呈現最完整 🌟 */
+        object-position: 50% 100% !important; 
         
-        display: block;                  /* 確保不會有奇怪的行內元素空白 */
+        display: block;                  
     }
     
-    /* --- 🌟 關鍵修正：圖片右下角「活潑加粗字體」文字層 🌟 --- */
+    /* --- 🌟 關鍵修正：優化後的右下角文字層（防黏糊、再往下） 🌟 --- */
     .banner-overlay-text {
-        position: absolute;              /* 絕對定位 */
-        bottom: 18px;                    /* 距離底部 18px */
-        right: 25px;                     /* 距離右側 25px */
-        color: white;                    /* 文字顏色：白色 */
+        position: absolute;              
+        bottom: 12px;                    /* 🌟 關鍵修正：文字再往下移，完美貼近底緣 🌟 */
+        right: 25px;                     
+        color: white;                    
         
-        /* 載入活潑字體，並搭配微軟正黑體防呆，強烈加粗 */
         font-family: 'ZCOOL KuaiLe', 'Microsoft JhengHei', sans-serif !important;
-        font-weight: 700 !important;     /* 100% 強制字體加粗 */
-        font-size: 1.25rem !important;   /* 微調放大字體，讓加粗更有圖標感 */
-        letter-spacing: 0.08rem;         /* 稍微拉開字距，顯得更為大氣活潑 */
         
-        /* 增強立體陰影，配合活潑粗體，在任何背景下都清晰無比 */
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.6); 
+        /* 🌟 關鍵修正：調小粗度至 400，並拉大字距至 0.15rem，徹底解決字體黏糊問題 🌟 */
+        font-weight: 400 !important;     
+        font-size: 1.25rem !important;   
+        letter-spacing: 0.15rem;         
+        
+        /* 微調清晰陰影，讓筆畫更銳利乾淨 */
+        text-shadow: 1px 1px 3px rgba(0,0,0,0.8); 
     }
     
     /* --- 模組區塊樣式 --- */
@@ -178,7 +179,7 @@ with row1_col2:
         st.markdown("""
         - 🧼 **智慧數據清洗**：自動剃除幽靈名單與全半形錯字干擾。
         - 🏫 **多重考場分流**：自動計算最大考場容量，防範座位重疊衝突。
-        - 🖨️ **考務報表輸出**：自動生成個人補考通知單與考場對照表。
+        - 務報表輸出**：自動生成個人補考通知單與考場對照表。
         """)
         st.write("")
         st.page_link("pages/2_補考作業智能輔助系統.py", label="啟動補考處理作業 →", icon="⚡")
@@ -198,7 +199,7 @@ with row2_col1:
         """, unsafe_allow_html=True)
         
         st.markdown("""
-        - 🎙️ **時程自動排定**：無縫接軌口試與試教，智慧避開衝堂與重疊.
+        - 🎙️ **時程自動排定**：無縫接軌口試與試教，智慧避開衝堂與重疊。
         - 📋 **場地動態對位**：自動分配各科休息室與試場，資料無縫串接。
         - 🖨️ **一鍵直出報表**：自動生成大字體、紅字警語且已蓋妥官印之Word公告單.
         """)
