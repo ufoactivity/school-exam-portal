@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 教務處-教師甄選智能排程系统 (雙階段旗艦版)")
-st.info("💡 終極進化：第一階段全自動產出「橫式評分表與蓋章簽到表」，第二階段專注當天實到防撞排程！")
+st.info("💡 終極進化：已修復空白頁問題！精準控制表格極限高度，完美收攏於單頁中！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -91,7 +91,6 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
     footer = section.footer
     for p in footer.paragraphs: p._element.getparent().remove(p._element)
     
-    # 【核心修正】：設定表格靠右對齊，並配置合適寬度
     footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
     footer_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
     
@@ -145,7 +144,6 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
                     
         for _, cand in df_sub.iterrows():
             row_cells = table.add_row().cells
-            # 把每一列的高度加高，讓考生簽名比較好簽
             table.rows[-1].height = Cm(1.2)
             table.rows[-1].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
             
@@ -164,7 +162,7 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
                     for r in p.runs:
                         r.font.name = '標楷體'
                         r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                        r.font.size = Pt(14) # 統一14級字
+                        r.font.size = Pt(14)
                         
         if idx < len(target_subjs) - 1:
             doc.add_page_break()
@@ -176,7 +174,6 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
 def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_items, target_subjs):
     doc = docx.Document()
     section = doc.sections[0]
-    # 橫式設定 (Landscape)
     section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
     section.page_width, section.page_height = section.page_height, section.page_width
     section.top_margin, section.bottom_margin = Cm(1.5), Cm(1.5)
@@ -188,7 +185,6 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
         
         cands_all = df_sub['准考證號'].tolist()
         
-        # 【核心修正】：實作評分表每張只顯示 5 人，其他的可支援到 15 人
         chunk_size = 5 if form_name == "實作評分表" else 15
         chunks = [cands_all[i:i + chunk_size] for i in range(0, len(cands_all), chunk_size)]
         
@@ -204,11 +200,9 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
             table = doc.add_table(rows=len(row_items)+1, cols=len(cands)+1)
             table.style = 'Table Grid'
             
-            # 表頭第一列加高
             table.rows[0].height = Cm(1.2)
             table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
             
-            # 標題列：第一欄為評分項目，後面皆為准考證號 (無姓名)
             table.cell(0, 0).text = "評分項目"
             for i, cand in enumerate(cands):
                 table.cell(0, i+1).text = cand
@@ -222,16 +216,14 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
                         r.font.size = Pt(14)
                         r.bold = True
             
-            # 填寫左側評分項目與控制列高
             for r_i, item in enumerate(row_items):
                 row = table.rows[r_i+1]
                 
-                # 【核心修正】：實作評分表的「評分內容」給予超級大的空間 (10公分高)
+                # 【核心修正】：將 10.0cm 縮減為 8.5cm，避免被 Word 自動推到下一頁
                 if form_name == "實作評分表" and item == "評分內容":
-                    row.height = Cm(10.0) 
+                    row.height = Cm(8.5) 
                     row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
                 else:
-                    # 其餘格子也設定至少 1.5 公分高，方便委員書寫數字
                     row.height = Cm(1.5)
                     row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
                     
@@ -245,8 +237,6 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
                         r.font.size = Pt(14)
                         r.bold = True
                         
-            doc.add_paragraph("") # 留空行
-            
             # 表格外左下角與右下角佈局
             footer_tbl = doc.add_table(rows=1, cols=2)
             footer_tbl.autofit = False
@@ -395,18 +385,18 @@ with tab1:
                         
                 df_master_t1 = pd.DataFrame(all_cands_t1)
                 
-                # 產出簽到表 (含右側定位的承辦人與印章)
+                # 產出簽到表
                 st.session_state.sign_data = generate_signin_sheet(academic_year, session_num, df_master_t1, all_subjs_t1)
                 
-                # 產出試教評分表 (橫式 + 高度優化)
+                # 產出試教評分表
                 teach_items = ["教學技巧(30%)", "語言表達(30%)", "儀態(20%)", "教室管理(10%)", "時間管理(10%)", "合計總分", "備註"]
                 st.session_state.teach_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "試教評分表", teach_items, all_subjs_t1)
                 
-                # 產出口試評分表 (橫式 + 高度優化)
+                # 產出口試評分表
                 oral_items = ["自述(20%)", "教學理念(20%)", "班級經營(20%)", "表達溝通(20%)", "舉止儀態(20%)", "合計總分", "備註"]
                 st.session_state.oral_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "口試評分表", oral_items, all_subjs_t1)
                     
-                # 產出實作評分表 (橫式 + 評分內容欄位巨大化，每5人一頁)
+                # 產出實作評分表
                 if prac_subjs_t1:
                     prac_items = ["評分內容", "評分總分", "備註"]
                     st.session_state.prac_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "實作評分表", prac_items, prac_subjs_t1)
@@ -420,7 +410,7 @@ with tab1:
             st.code(traceback.format_exc())
 
     if st.session_state.tab1_processed:
-        st.success("🎉 前置表單產出完成！「橫式評分表」與「蓋章簽到表」已為您排版完畢。")
+        st.success("🎉 前置表單產出完成！「橫式評分表」與「蓋章簽到表」已為您無中生有。")
         c_d3, c_d4, c_d5, c_d6 = st.columns(4)
         with c_d3:
             st.download_button("✍️ 1. 下載 考生簽到表", data=st.session_state.sign_data, file_name=f"{academic_year}學年度_考生簽到表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
