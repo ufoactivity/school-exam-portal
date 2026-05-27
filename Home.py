@@ -16,7 +16,7 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     
-    /* --- 關鍵修正：減少 Streamlit 預設頂部邊距，讓標題大幅上移 --- */
+    /* --- 減少 Streamlit 預設頂部邊距，讓標題大幅上移 --- */
     .block-container {
         padding-top: 1.5rem !important;
         padding-bottom: 1rem !important;
@@ -45,7 +45,16 @@ st.markdown("""
         color: #888888;
         text-transform: uppercase;
         letter-spacing: 0.15rem;
-        margin-bottom: 1.0rem !important; /* 微調間距，讓圖片更貼合標題 */
+        margin-bottom: 1.0rem !important; 
+    }
+    
+    /* --- 關鍵修正：將圖片調教為「頂級滿版橫幅」，寬度100%對齊下方模組，高度扁平不變形 --- */
+    [data-testid="stImage"] img {
+        width: 100% !important;
+        height: 220px !important;        /* 固定橫幅高度，老師可依喜好微調 (如200px~250px) */
+        object-fit: cover !important;    /* 核心技術：智慧全景裁剪，確保校園圖片不扁塌、不變形 */
+        border-radius: 15px !important;  /* 完美圓角 */
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important; /* 沉穩陰影 */
     }
     
     /* --- 模組區塊樣式 --- */
@@ -65,14 +74,6 @@ st.markdown("""
     [data-testid="stSidebar"] {
         font-size: 1.1rem !important;
     }
-    
-    /* --- 吉卜力風圖片容器樣式 --- */
-    .ghibli-banner {
-        border-radius: 15px;
-        overflow: hidden;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        margin-bottom: 2.5rem;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -85,20 +86,15 @@ st.markdown('<p class="sub-title">Intelligent Examination Administration Ecosyst
 # ==========================================
 # 3. 吉卜力風校園建築物 Banner
 # ==========================================
-# 關鍵修正：使用 columns 將圖片置中並縮小 (左右佔 1 份，中間佔 2 份)，避免圖片過大佔滿整個螢幕高度
-_, col_img, _ = st.columns([1, 2, 1])
+# 關鍵修正：直接在主畫面上投放滿版圖片，使其左右兩端與下方排版 100% 齊平
+image_path = os.path.join("assets", "school_ghibli.png")
+if os.path.exists(image_path):
+    # 啟用 use_container_width 讓寬度撐滿，配合上方的 CSS 限制高度，即可化身完美的橫幅
+    st.image(image_path, use_container_width=True)
+else:
+    st.warning(f"⚠️ 找不到吉卜力風 Banner 圖片。請確認檔案放置於 `assets/school_ghibli.png`。")
 
-with col_img:
-    # UX 防呆：檢查檔案是否存在
-    image_path = os.path.join("assets", "school_ghibli.png")
-    if os.path.exists(image_path):
-        # 放置圖片，自動適應「中間欄位」的寬度，達到完美縮小的效果
-        st.image(image_path, use_container_width=True, caption="校園一隅")
-    else:
-        # 防呆機制：檔案不存在時顯示專業警示，不影響系統執行
-        st.warning(f"⚠️ 找不到吉卜力風 Banner 圖片。請確認檔案放置於 `assets/school_ghibli.png`。")
-
-# 統一將分隔線放在區塊最下方，並移除多餘的 st.write("") 節省垂直空間
+# 統一分割線，讓橫幅與下方功能區有專業的層次感
 st.divider()
 
 # ==========================================
@@ -120,7 +116,7 @@ with row1_col1:
         """, unsafe_allow_html=True)
         
         st.markdown("""
-        - 🧠 **AI 最佳化對位**：自動平衡全校教師堂數配額與連堂規則。
+        - 🧠 **AI 最佳化對位**：自動平衡全校教師堂數配額與連堂規則.
         - 🖨️ **原格式套印**：公布總表、一覽表 100% 完美保留原 Excel 框線。
         - 🏷️ **標籤全聯動**：交叉比對配課表，一鍵合成試卷袋列印貼紙。
         """)
