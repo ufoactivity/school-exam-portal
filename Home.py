@@ -121,7 +121,7 @@ st.markdown("""
 # ==========================================
 # 2. 歡迎與標頭區塊
 # ==========================================
-st.markdown('<h1 class="main-title">⚡試務組 AI 智能輔助平台⚡</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-title">⚡華南高商 試務組 AI 智能輔助平台⚡</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">Intelligent Examination Administration Ecosystem</p>', unsafe_allow_html=True)
 
 # ==========================================
