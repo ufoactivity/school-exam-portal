@@ -9,8 +9,8 @@ from datetime import datetime
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
-st.title("📊 試務組-模考調查智能輔助系統")
-st.info("💡 試務組終極進化：第二階段已導入「普高彈性收費倍率引擎」，可自由切換 1次、2次 或 5次 收費，並自動套用對應的教務處警語！115.05.22增修")
+st.title("📊 教務處-模擬考調查智能輔助系統 (動態工作表切換版)")
+st.info("💡 試務組終極進化：兩階段表單的「學生簽名欄」皆已大幅拓寬，給予最充足的簽名空間！")
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -402,12 +402,14 @@ with tab1:
 
                             page_breaks.append(current_row)
                             
+                        # 🚀 第一階段重新分配欄寬，大幅加大簽名欄 (G欄)
                         worksheet.set_column('A:B', 8)
                         worksheet.set_column('C:D', 10)
-                        worksheet.set_column('E:G', 12)
-                        worksheet.set_column('H:H', 3) 
-                        worksheet.set_column('I:I', 10) 
-                        worksheet.set_column('J:J', 32) 
+                        worksheet.set_column('E:F', 11) # 微縮 E, F 給簽名欄空間
+                        worksheet.set_column('G:G', 22) # 大幅加寬「簽名」欄
+                        worksheet.set_column('H:H', 2) 
+                        worksheet.set_column('I:I', 8) 
+                        worksheet.set_column('J:J', 28) 
                         
                         if page_breaks:
                             worksheet.set_h_pagebreaks(page_breaks)
@@ -420,7 +422,7 @@ with tab1:
 
     if st.session_state.template_processed:
         school_prefix = "技高" if "技高" in school_type else "普高"
-        st.success(f"🎉 {school_prefix}空白調查表生成完畢！版面留白與智能防溢頁已完美套用。")
+        st.success(f"🎉 {school_prefix}空白調查表生成完畢！簽名欄位已全面擴充。")
         st.download_button(
             label=f"📥 下載【{school_prefix} A4分頁版調查表】",
             data=st.session_state.template_excel_data,
@@ -535,12 +537,11 @@ with tab2:
                 st.error(f"預讀取檔案進行群別與費用分析時發生錯誤: {e}")
 
         st.markdown("📝 **列印優化說明**：")
-        st.success("已擴充「學號」欄位！啟動 A4 極限微調排版，確保大班級依然能完美塞進一頁 A4 之中！")
+        st.success("已擴充「學號」欄位！啟動 A4 極限微調排版，確保 40 人以上的大班級依然能完美塞進一頁 A4 之中！")
 
     with col2:
         st.subheader("⚙️ 2. 收費檢核與測驗設定")
         
-        # 🚀 階段二專屬：動態學制與期數乘數器
         school_type_p2 = st.radio("🏫 選擇本表單學制類型：", ["技高 (全學年5次合併收費)", "普高 (依次數彈性收費)"], horizontal=True, key="school_type_p2")
         
         if "普高" in school_type_p2:
@@ -706,7 +707,6 @@ with tab2:
                         st.warning("⚠️ 攔截警告：經過分析後檔案內找不到有效報考資料。")
                         st.stop()
 
-                    # 🚀 動態乘數器：根據選擇的次數計算應繳費用
                     df_clean['單次應繳費用'] = df_clean['報考類群'].apply(lambda x: special_fee_dict.get(x, base_fee_p2))
                     df_clean['總繳費金額'] = df_clean['單次應繳費用'] * fee_multiplier
                     
@@ -762,15 +762,6 @@ with tab2:
                         ws_details.fit_to_pages(1, 0)
                         ws_details.center_horizontally()
                         ws_details.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4) 
-                        
-                        ws_details.set_column('A:A', 9)  
-                        ws_details.set_column('B:B', 6)  
-                        ws_details.set_column('C:C', 10) 
-                        ws_details.set_column('D:D', 10) 
-                        ws_details.set_column('E:E', 23) 
-                        ws_details.set_column('F:F', 11) 
-                        ws_details.set_column('G:G', 13) 
-                        ws_details.set_column('H:H', 15) 
                         
                         title_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#F2F2F2', 'border': 1})
                         header_format = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#D9E1F2', 'align': 'center', 'valign': 'vcenter'})
@@ -863,7 +854,6 @@ with tab2:
                             ws_details.set_row(current_row, int(15 * scale)) 
                             current_row += 1
 
-                            # 🚀 階段二底部動態紅框警語：依照普高/技高切換專屬內容
                             if "普高" in school_type_p2:
                                 memo_lines_p2 = [
                                     ["\n1.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至教務處試務組。\n"]
@@ -906,6 +896,16 @@ with tab2:
                                 current_row += 1
                             
                             page_breaks.append(current_row) 
+                            
+                        # 🚀 第二階段重新分配欄寬，大幅加大學生簽名欄 (H欄)
+                        ws_details.set_column('A:A', 8)  
+                        ws_details.set_column('B:B', 6)  
+                        ws_details.set_column('C:C', 10) 
+                        ws_details.set_column('D:D', 10) 
+                        ws_details.set_column('E:E', 22) # 微縮 E 給簽名欄空間
+                        ws_details.set_column('F:F', 10) # 微縮 F 
+                        ws_details.set_column('G:G', 12) # 微縮 G
+                        ws_details.set_column('H:H', 24) # 大幅加寬「學生簽名」欄
                         
                         ws_details.write(current_row, 0, '全校總計 (Grand Total)', grand_format)
                         ws_details.write(current_row, 1, '', grand_format)
