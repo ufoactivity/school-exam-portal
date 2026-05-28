@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：工作人員資料袋場地已精準對接「場地教室」，且已將「試場用品」與「工作人員」順序對調，工作人員移至最下方！(115.05.28增修)")
+st.info("💡 終極進化：工作人員封面套用「隱形文字技術」確保對齊。已修復第一階段「實作評分表」選擇與產出功能！(115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -31,6 +31,8 @@ if 'tab2_processed' not in st.session_state:
     st.session_state.tab2_processed = False
 if 'staff_env_data' not in st.session_state:
     st.session_state.staff_env_data = None
+if 'prac_data' not in st.session_state:
+    st.session_state.prac_data = None
 
 # ==========================================
 # 0. 側邊欄：試務資源與印章設定
@@ -388,7 +390,7 @@ def generate_staff_envelopes(df_dict):
             if supplies.lower() == 'nan': supplies = ""
             p4 = doc.add_paragraph()
             p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p4.paragraph_format.space_before = Pt(60) # 原本工作人員的距離
+            p4.paragraph_format.space_before = Pt(60) 
             
             run4 = p4.add_run(f"試場用品：\n{supplies}")
             run4.font.name = '標楷體'
@@ -478,6 +480,7 @@ CHRONOLOGICAL_ORAL_POOL = [
 ]
 
 def check_time_conflict_bool(prep_str, teach_str, oral_str):
+    if not prep_str or not teach_str or not oral_str or "手掌握" in oral_str: return False # 防止錯字，維持原本手動
     if not prep_str or not teach_str or not oral_str or "手動" in oral_str: return False
     def parse_m(s):
         try:
@@ -509,6 +512,16 @@ with tab1:
     
     file_reg = st.file_uploader("1️⃣ 上傳【報名總名單】 (准考證號, 報考科目, [姓名]).xlsx", type=['xlsx'], key="reg_file")
     
+    prac_subjs_t1 = []
+    if file_reg:
+        try:
+            df_temp_reg = pd.read_excel(file_reg).fillna("")
+            if '報考科目' in df_temp_reg.columns:
+                all_subjs_temp = df_temp_reg['報考科目'].unique().tolist()
+                prac_subjs_t1 = st.multiselect("👉 請選擇包含【實作】的科目 (用於產出實作評分表)：", options=all_subjs_temp, key="prac_t1")
+        except:
+            pass
+            
     st.markdown("---")
     file_staff = st.file_uploader("2️⃣ 上傳【工作人員資料袋套印】 (工作表需為：準備室/試教場地/口試場地).xlsx", type=['xlsx'], key="staff_file")
     
@@ -544,7 +557,11 @@ with tab1:
                     oral_items = ["自述(20%)", "教學理念(20%)", "班級經營(20%)", "表達溝通(20%)", "舉止儀態(20%)", "合計總分", "備註"]
                     st.session_state.oral_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "口試評分表", oral_items, all_subjs_t1)
                         
-                    prac_subjs_t1 = [s for s in all_subjs_t1 if '實作' in s] 
+                    if prac_subjs_t1:
+                        prac_items = ["評分內容", "評分總分", "備註"]
+                        st.session_state.prac_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "實作評分表", prac_items, prac_subjs_t1)
+                    else:
+                        st.session_state.prac_data = None
                     
                     st.session_state.oral_env_data = generate_envelope_cover(all_subjs_t1, "口試評分表")
                     st.session_state.teach_env_data = generate_envelope_cover(all_subjs_t1, "試教評分表")
@@ -579,6 +596,9 @@ with tab1:
                 st.download_button("🧑‍🏫 2. 下載 試教評分表", data=st.session_state.teach_data, file_name=f"{academic_year}學年度_試教評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
             with c_d5:
                 st.download_button("🗣️ 3. 下載 口試評分表", data=st.session_state.oral_data, file_name=f"{academic_year}學年度_口試評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
+            with c_d6:
+                if st.session_state.get('prac_data'):
+                    st.download_button("🛠️ 4. 下載 實作評分表", data=st.session_state.prac_data, file_name=f"{academic_year}學年度_實作評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
             
             st.markdown("#### ✉️ 評分表專用信封袋 (B4 橫向、大字體)")
             c_env1, c_env2 = st.columns(2)
