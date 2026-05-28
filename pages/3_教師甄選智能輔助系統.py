@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：工作人員資料袋場地已更新為單行 `[場地類型:地點]` 格式！(115.05.28增修)")
+st.info("💡 終極進化：工作人員資料袋場地已精準對接「場地教室」欄位，並更新為 `【場地類型:地點】` 格式！(115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -311,7 +311,7 @@ def generate_envelope_cover(target_subjs, env_title):
     return out.getvalue()
 
 def generate_staff_envelopes(df_dict):
-    """產出工作人員資料袋封面，支援雙科分行與場地自動標示"""
+    """產出工作人員資料袋封面，支援雙科分行與場地自動標示【工作表:場地教室】"""
     doc = docx.Document()
     section = doc.sections[0]
     
@@ -363,15 +363,15 @@ def generate_staff_envelopes(df_dict):
             run2.font.size = Pt(72)
             run2.bold = True
             
-            # 3. 處理試場場地 (48pt) -> 更改為 [場地類型:地點] 格式
-            venue = str(row.get('試場場地', '')).strip()
+            # 3. 處理試場場地 (48pt) -> 更改為 【場地類型:地點】 格式
+            venue = str(row.get('場地教室', '')).strip()
             if venue.lower() == 'nan': venue = ""
             p3 = doc.add_paragraph()
             p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p3.paragraph_format.space_before = Pt(40)
             
             # 依據有無教室地點，產出字串
-            venue_text = f"[{sheet_name}:{venue}]" if venue else f"[{sheet_name}]"
+            venue_text = f"【{sheet_name}:{venue}】" if venue else f"【{sheet_name}】"
             
             run3 = p3.add_run(venue_text)
             run3.font.name = '標楷體'
