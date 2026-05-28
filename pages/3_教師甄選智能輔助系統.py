@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：工作人員資料袋場地已精準對接「場地教室」欄位，並更新為 `【場地類型:地點】` 格式！(115.05.28增修)")
+st.info("💡 終極進化：工作人員資料袋場地已精準對接，支援「試場場地/場地教室」欄位自動捕捉，正確顯示 `【場地類型:地點】`！(115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -364,7 +364,8 @@ def generate_staff_envelopes(df_dict):
             run2.bold = True
             
             # 3. 處理試場場地 (48pt) -> 更改為 【場地類型:地點】 格式
-            venue = str(row.get('場地教室', '')).strip()
+            # 【完美捕捉】：不管老師命名為 '試場場地', '場地教室' 或 '教室地點' 都能抓到！
+            venue = str(row.get('試場場地', row.get('場地教室', row.get('教室地點', '')))).strip()
             if venue.lower() == 'nan': venue = ""
             p3 = doc.add_paragraph()
             p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
