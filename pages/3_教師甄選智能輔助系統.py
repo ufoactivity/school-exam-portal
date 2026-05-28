@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：工作人員資料袋場地已精準對接，支援「試場場地/場地教室」欄位自動捕捉，正確顯示 `【場地類型:地點】`！(115.05.28增修)")
+st.info("💡 終極進化：工作人員資料袋場地已精準對接「場地教室」，且「工作人員」已設定為完美置中排版！(115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -364,7 +364,6 @@ def generate_staff_envelopes(df_dict):
             run2.bold = True
             
             # 3. 處理試場場地 (48pt) -> 更改為 【場地類型:地點】 格式
-            # 【完美捕捉】：不管老師命名為 '試場場地', '場地教室' 或 '教室地點' 都能抓到！
             venue = str(row.get('試場場地', row.get('場地教室', row.get('教室地點', '')))).strip()
             if venue.lower() == 'nan': venue = ""
             p3 = doc.add_paragraph()
@@ -380,11 +379,11 @@ def generate_staff_envelopes(df_dict):
             run3.font.size = Pt(48)
             run3.bold = True
             
-            # 4. 處理工作人員 (36pt)
+            # 4. 處理工作人員 (36pt) -> ★ 置中對齊 ★
             staff = str(row.get('工作人員', '')).strip()
             if staff.lower() == 'nan': staff = ""
             p4 = doc.add_paragraph()
-            p4.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p4.paragraph_format.space_before = Pt(60)
             
             run4 = p4.add_run(f"工作人員：{staff}")
@@ -392,11 +391,11 @@ def generate_staff_envelopes(df_dict):
             run4._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
             run4.font.size = Pt(36)
             
-            # 5. 處理試場用品 (36pt)
+            # 5. 處理試場用品 (36pt) -> ★ 試場用品也一起置中會比較好看 ★
             supplies = str(row.get('試場用品', '')).strip()
             if supplies.lower() == 'nan': supplies = ""
             p5 = doc.add_paragraph()
-            p5.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p5.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p5.paragraph_format.space_before = Pt(40)
             
             run5 = p5.add_run(f"試場用品：\n{supplies}")
