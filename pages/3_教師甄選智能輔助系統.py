@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：已精準微調評分表高度與簽名間距，完美收攏於單頁。並新增「B4 橫式評分表信封封面」全自動產出功能！(115.05.28增修)")
+st.info("💡 終極進化：已精準微調評分表高度與簽名間距。信封封面已更新為「B4 橫向、精準邊界、80級超大字體」！(115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -277,25 +277,29 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
     return out.getvalue()
 
 def generate_envelope_cover(target_subjs, env_title):
-    """【全新模組】：自動產出 B4 大小橫式的信封封面"""
+    """【全新模組】：自動產出 B4 橫式、精準邊界與超大字體的信封封面"""
     doc = docx.Document()
     section = doc.sections[0]
     
-    # ★ 強制設定為 B4 橫式尺寸 (Landscape) ★
+    # ★ 強制設定為 B4 橫向 (Landscape) ★
     section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
     section.page_width = Cm(36.4)
     section.page_height = Cm(25.7)
     
+    # ★ 邊界精準設定 ★
+    section.top_margin = Cm(10.0)
+    section.bottom_margin = Cm(6.0)
+    section.left_margin = Cm(10.0)
+    section.right_margin = Cm(10.0)
+    
     for i, subject in enumerate(target_subjs):
-        # 因為版面改為橫式，高度變短，將前面的空白行數調整為 4 行，維持視覺置中
-        for _ in range(4): doc.add_paragraph()
-            
+        # 因為已經設定了明確的上邊界 10cm，所以拿掉原本推擠版面的空白行
         p1 = doc.add_paragraph()
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run1 = p1.add_run(subject)
         run1.font.name = '標楷體'
         run1._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-        run1.font.size = Pt(48)
+        run1.font.size = Pt(80) # 字體放大至 80pt
         run1.bold = True
         
         p2 = doc.add_paragraph()
@@ -303,7 +307,7 @@ def generate_envelope_cover(target_subjs, env_title):
         run2 = p2.add_run(env_title)
         run2.font.name = '標楷體'
         run2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-        run2.font.size = Pt(48)
+        run2.font.size = Pt(80) # 字體放大至 80pt
         run2.bold = True
         
         p3 = doc.add_paragraph()
@@ -311,7 +315,7 @@ def generate_envelope_cover(target_subjs, env_title):
         run3 = p3.add_run("(內附原子筆，進入試場前煩請確認是否能書寫)")
         run3.font.name = '標楷體'
         run3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-        run3.font.size = Pt(20)
+        run3.font.size = Pt(20) # 警語維持 20pt
         
         # 非最後一科則換頁
         if i < len(target_subjs) - 1:
@@ -459,7 +463,7 @@ with tab1:
                 else:
                     st.session_state.prac_data = None
 
-                # ★ 新增：產出 B4 橫式信封封面
+                # ★ 新增：產出 B4 橫式信封封面 (80pt 超大字體)
                 st.session_state.oral_env_data = generate_envelope_cover(all_subjs_t1, "口試評分表")
                 st.session_state.teach_env_data = generate_envelope_cover(all_subjs_t1, "試教評分表")
                     
@@ -470,7 +474,7 @@ with tab1:
             st.code(traceback.format_exc())
 
     if st.session_state.tab1_processed:
-        st.success("🎉 前置表單產出完成！「橫式評分表」、「蓋章簽到表」及「B4 橫式信封封面」皆已為您排版完畢。")
+        st.success("🎉 前置表單產出完成！「橫式評分表」、「蓋章簽到表」及「B4 超大字體信封封面」皆已為您排版完畢。")
         
         st.markdown("#### 📄 報到與評分表 (A4)")
         c_d3, c_d4, c_d5, c_d6 = st.columns(4)
@@ -484,12 +488,12 @@ with tab1:
             if st.session_state.prac_data:
                 st.download_button("🛠️ 4. 下載 實作評分表", data=st.session_state.prac_data, file_name=f"{academic_year}學年度_實作評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
 
-        st.markdown("#### ✉️ 評分表專用信封袋 (B4 橫式尺寸)")
+        st.markdown("#### ✉️ 評分表專用信封袋 (B4 橫向、大字體)")
         c_env1, c_env2 = st.columns(2)
         with c_env1:
-            st.download_button("✉️ 下載 試教信封封面 (B4橫式)", data=st.session_state.teach_env_data, file_name=f"01.試教評分表信封封面(B4橫式)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
+            st.download_button("✉️ 下載 試教信封封面 (B4橫向)", data=st.session_state.teach_env_data, file_name=f"01.試教評分表信封封面(B4橫向)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
         with c_env2:
-            st.download_button("✉️ 下載 口試信封封面 (B4橫式)", data=st.session_state.oral_env_data, file_name=f"01.口試評分表信封封面(B4橫式)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
+            st.download_button("✉️ 下載 口試信封封面 (B4橫向)", data=st.session_state.oral_env_data, file_name=f"01.口試評分表信封封面(B4橫向)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
 
 # -------------------------------------------------------------
 # TAB 2: 第二階段 (當天精準排程與公告)
