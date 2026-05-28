@@ -8,6 +8,7 @@ import traceback
 try:
     import docx
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ROW_HEIGHT_RULE, WD_TABLE_ALIGNMENT
     from docx.shared import Pt, Cm, RGBColor
     HAS_DOCX = True
 except ImportError:
@@ -16,71 +17,310 @@ except ImportError:
 # ==========================================
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
-st.set_page_config(page_title="教甄智能排程系統", page_icon="🏫", layout="wide")
-st.title("🏫 教務處-教師甄選智能排程系統 (排版置中旗艦版)")
-st.info("💡 終極優化：新增「B4 信封封面全自動產出」功能！現在系統將一併產出口試與試教評分表的信封封面，尺寸已預設為 B4 大小。")
+st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
+st.title("🏫 試務組-教師甄選智能輔助系统")
+st.info("💡 終極進化：已精準微調評分表高度與簽名間距，完美收攏於單頁，徹底解決空白頁問題！並新增「B4 評分表信封封面」全自動產出功能 (115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
 
-# 初始化系統記憶體
-if 'processed' not in st.session_state:
-    st.session_state.processed = False
-if 'excel_data' not in st.session_state:
-    st.session_state.excel_data = None
-if 'word_data' not in st.session_state:
-    st.session_state.word_data = None
-if 'oral_env_data' not in st.session_state:
-    st.session_state.oral_env_data = None
-if 'teach_env_data' not in st.session_state:
-    st.session_state.teach_env_data = None
-if 'df_preview' not in st.session_state:
-    st.session_state.df_preview = None
+# 初始化 Session State
+if 'tab1_processed' not in st.session_state:
+    st.session_state.tab1_processed = False
+if 'tab2_processed' not in st.session_state:
+    st.session_state.tab2_processed = False
 
 # ==========================================
 # 0. 側邊欄：試務資源與印章設定
 # ==========================================
-st.sidebar.title("📥 試務資源下載")
-template_filename = "114第1次代理教師甄選各科預定流程時間表[最新版]1140606.doc"
-file_path = template_filename
-if not os.path.exists(file_path):
-    if os.path.exists(f"../{template_filename}"):
-        file_path = f"../{template_filename}"
-    elif os.path.exists(f"pages/{template_filename}"):
-        file_path = f"pages/{template_filename}"
+st.sidebar.title("🔴 自動蓋章設定 (公告與簽到表專用)")
 
-if os.path.exists(file_path):
-    with open(file_path, "rb") as file:
-        st.sidebar.download_button(
-            label="📥 下載 Word 官方合併列印範本",
-            data=file,
-            file_name=template_filename,
-            mime="application/msword",
-            type="primary"
-        )
-else:
-    st.sidebar.warning(f"⚠️ 找不到 `{template_filename}`，請確認已上傳至專案目錄。")
-
-st.sidebar.divider()
-
-# 自動抓取印章，移除上傳元件
-st.sidebar.title("🔴 自動蓋章設定 (Word專用)")
-stamp_filename = "試務組印章.png" 
-stamp_path = stamp_filename
-if not os.path.exists(stamp_path):
-    if os.path.exists(f"../{stamp_filename}"):
-        stamp_path = f"../{stamp_filename}"
-    elif os.path.exists(f"pages/{stamp_filename}"):
-        stamp_path = f"pages/{stamp_filename}"
+default_stamp_name = "試務組印章.png"
+stamp_path = default_stamp_name
+has_default_stamp = False
+file_stamp = None
 
 if os.path.exists(stamp_path):
-    st.sidebar.success(f"✅ 已成功綁定內建印章！系統將自動在每頁右下角蓋章。")
+    has_default_stamp = True
+elif os.path.exists(f"../{default_stamp_name}"):
+    stamp_path = f"../{default_stamp_name}"
+    has_default_stamp = True
+elif os.path.exists(f"pages/{default_stamp_name}"):
+    stamp_path = f"pages/{default_stamp_name}"
+    has_default_stamp = True
+
+if has_default_stamp:
+    st.sidebar.success(f"✅ 系統已自動載入預設印章：\n`{default_stamp_name}`")
+    with st.sidebar.expander("🔄 想要臨時更換印章？點此手動上傳"):
+        file_stamp = st.file_uploader("上傳新印章圖檔 (.png, .jpg)", type=['png', 'jpg', 'jpeg'], key="stamp_upload")
 else:
-    st.sidebar.warning(f"⚠️ 找不到印章檔案 `{stamp_filename}`。請確認已放置於專案或 pages 目錄中，否則產出的 Word 將不會有印章。")
+    st.sidebar.markdown("上傳您的「試務組印章.png」，系統將自動印在表單右下角。")
+    file_stamp = st.sidebar.file_uploader("上傳印章圖檔 (.png, .jpg)", type=['png', 'jpg', 'jpeg'], key="stamp_upload")
+
+def get_stamp_io():
+    """每次呼叫都產生一個全新的 BytesIO 給 Word 套印，避免檔案被關閉"""
+    if file_stamp:
+        return io.BytesIO(file_stamp.getvalue())
+    elif has_default_stamp:
+        with open(stamp_path, "rb") as f:
+            return io.BytesIO(f.read())
+    return None
 
 # ==========================================
-# 2. 華南教甄官方硬性時間矩陣資料庫
+# 全域參數：學年度與甄選次數設定
 # ==========================================
+st.markdown("### 📅 全域試務設定")
+current_roc_year = datetime.datetime.now().year - 1911
+c_year, c_session = st.columns(2)
+with c_year:
+    academic_year = st.number_input("學年度 (系統已自動帶入)", min_value=100, max_value=200, value=current_roc_year, step=1)
+with c_session:
+    session_num = st.number_input("第幾次甄選 (如: 1)", min_value=1, max_value=50, value=1, step=1)
+st.divider()
+
+# ==========================================
+# 2. 共用函式區 (表單產生器與排程矩陣)
+# ==========================================
+def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
+    doc = docx.Document()
+    section = doc.sections[0]
+    section.top_margin, section.bottom_margin = Cm(1.5), Cm(2.0)
+    section.left_margin, section.right_margin = Cm(2.0), Cm(2.0)
+    
+    # 建立頁尾：承辦人簽章與印章 (強制靠右定位)
+    footer = section.footer
+    for p in footer.paragraphs: p._element.getparent().remove(p._element)
+    
+    # 設定表格靠右對齊，並配置合適寬度
+    footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
+    footer_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    
+    cell_left = footer_table.rows[0].cells[0]
+    cell_left.width = Cm(8.0)
+    cell_right = footer_table.rows[0].cells[1]
+    cell_right.width = Cm(8.0)
+    
+    p_right = cell_right.paragraphs[0]
+    p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r_sig = p_right.add_run("承辦人簽名：__________________\n")
+    r_sig.font.name = '標楷體'
+    r_sig._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+    r_sig.font.size = Pt(14)
+    
+    stamp_io = get_stamp_io()
+    if stamp_io:
+        run_stamp = p_right.add_run()
+        run_stamp.add_picture(stamp_io, width=Cm(4.0))
+    
+    for idx, subj in enumerate(target_subjs):
+        df_sub = df_master[df_master['報考科目'] == subj]
+        if df_sub.empty: continue
+        
+        p_title = doc.add_paragraph()
+        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r_t = p_title.add_run(f"{academic_year}學年度第{session_num}次代理教師甄選\n【{subj}】考生簽到表")
+        r_t.font.name = '標楷體'
+        r_t._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+        r_t.font.size = Pt(18)
+        r_t.bold = True
+        
+        has_name = '姓名' in df_master.columns
+        headers = ['編號', '甄選證號']
+        if has_name: headers.append('姓名')
+        headers.extend(['報到時間', '考生簽名', '備註'])
+        
+        table = doc.add_table(rows=1, cols=len(headers))
+        table.style = 'Table Grid'
+        
+        for c_i, h in enumerate(headers):
+            cell = table.cell(0, c_i)
+            cell.text = h
+            for p in cell.paragraphs:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for r in p.runs:
+                    r.font.name = '標楷體'
+                    r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                    r.font.size = Pt(14)
+                    r.bold = True
+                    
+        for _, cand in df_sub.iterrows():
+            row_cells = table.add_row().cells
+            # 把每一列的高度加高，讓考生簽名比較好簽
+            table.rows[-1].height = Cm(1.2)
+            table.rows[-1].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+            
+            name_str = cand.get('姓名', '') if has_name else ''
+            base_data = [str(cand['排序']), str(cand['准考證號'])]
+            if has_name: base_data.append(name_str)
+            
+            for c_i in range(len(headers)):
+                if c_i < len(base_data):
+                    row_cells[c_i].text = base_data[c_i]
+                else:
+                    row_cells[c_i].text = "" 
+                    
+                for p in row_cells[c_i].paragraphs:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for r in p.runs:
+                        r.font.name = '標楷體'
+                        r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                        r.font.size = Pt(14) # 統一14級字
+                        
+        if idx < len(target_subjs) - 1:
+            doc.add_page_break()
+            
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_items, target_subjs):
+    doc = docx.Document()
+    section = doc.sections[0]
+    # 橫式設定 (Landscape)
+    section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
+    section.page_width, section.page_height = section.page_height, section.page_width
+    section.top_margin, section.bottom_margin = Cm(1.5), Cm(1.5)
+    section.left_margin, section.right_margin = Cm(1.5), Cm(1.5)
+    
+    for idx, subj in enumerate(target_subjs):
+        df_sub = df_master[df_master['報考科目'] == subj]
+        if df_sub.empty: continue
+        
+        cands_all = df_sub['准考證號'].tolist()
+        
+        # 實作評分表每張只顯示 5 人，其他的可支援到 15 人
+        chunk_size = 5 if form_name == "實作評分表" else 15
+        chunks = [cands_all[i:i + chunk_size] for i in range(0, len(cands_all), chunk_size)]
+        
+        for chunk_idx, cands in enumerate(chunks):
+            p_title = doc.add_paragraph()
+            p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r_t = p_title.add_run(f"{academic_year}學年度第{session_num}次代理教師甄選\n【{subj}】{form_name}")
+            r_t.font.name = '標楷體'
+            r_t._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            r_t.font.size = Pt(18)
+            r_t.bold = True
+            
+            table = doc.add_table(rows=len(row_items)+1, cols=len(cands)+1)
+            table.style = 'Table Grid'
+            
+            # 表頭第一列加高
+            table.rows[0].height = Cm(1.2)
+            table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+            
+            # 標題列：第一欄為評分項目，後面皆為准考證號 (無姓名)
+            table.cell(0, 0).text = "評分項目"
+            for i, cand in enumerate(cands):
+                table.cell(0, i+1).text = cand
+                
+            for cell in table.rows[0].cells:
+                for p in cell.paragraphs:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for r in p.runs:
+                        r.font.name = '標楷體'
+                        r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                        r.font.size = Pt(14)
+                        r.bold = True
+            
+            # 填寫左側評分項目與控制列高
+            for r_i, item in enumerate(row_items):
+                row = table.rows[r_i+1]
+                
+                # 【極限微調】：將高度調為 8.0cm，確保完美容納於單頁
+                if form_name == "實作評分表" and item == "評分內容":
+                    row.height = Cm(8.0) 
+                    row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+                else:
+                    row.height = Cm(1.5)
+                    row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+                    
+                cell = table.cell(r_i+1, 0)
+                cell.text = item
+                for p in cell.paragraphs:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for r in p.runs:
+                        r.font.name = '標楷體'
+                        r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                        r.font.size = Pt(14)
+                        r.bold = True
+                        
+            # 【極限微調】：將 3 行空白減為 2 行，空間夠大且絕不擠到下一頁
+            for _ in range(2):
+                doc.add_paragraph("")
+            
+            # 表格外左下角與右下角佈局
+            footer_tbl = doc.add_table(rows=1, cols=2)
+            footer_tbl.autofit = False
+            c_left, c_right = footer_tbl.rows[0].cells
+            c_left.width = Cm(16.0)
+            c_right.width = Cm(10.0)
+            
+            p_left = c_left.paragraphs[0]
+            r_left = p_left.add_run("本表總分超過90分及不滿70分，請說明原因。")
+            r_left.font.name = '標楷體'
+            r_left._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            r_left.font.size = Pt(12)
+            
+            p_right = c_right.paragraphs[0]
+            p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            r_right = p_right.add_run("評分委員簽名：__________________")
+            r_right.font.name = '標楷體'
+            r_right._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            r_right.font.size = Pt(14)
+            
+            # 如果不是這個科目的最後一頁，或者不是最後一個科目，就換頁
+            if chunk_idx < len(chunks) - 1 or idx < len(target_subjs) - 1:
+                doc.add_page_break()
+                
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+def generate_envelope_cover(target_subjs, env_title):
+    """【全新模組】：自動產出 B4 大小的信封封面"""
+    doc = docx.Document()
+    section = doc.sections[0]
+    
+    # 強制設定為 B4 直式尺寸 (寬25.7cm x 高36.4cm)
+    section.page_width = Cm(25.7)
+    section.page_height = Cm(36.4)
+    
+    for i, subject in enumerate(target_subjs):
+        # 往下推幾行，達到信封視覺置中效果
+        for _ in range(5): doc.add_paragraph()
+            
+        p1 = doc.add_paragraph()
+        p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run1 = p1.add_run(subject)
+        run1.font.name = '標楷體'
+        run1._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+        run1.font.size = Pt(48)
+        run1.bold = True
+        
+        p2 = doc.add_paragraph()
+        p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run2 = p2.add_run(env_title)
+        run2.font.name = '標楷體'
+        run2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+        run2.font.size = Pt(48)
+        run2.bold = True
+        
+        p3 = doc.add_paragraph()
+        p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run3 = p3.add_run("(內附原子筆，進入試場前煩請確認是否能書寫)")
+        run3.font.name = '標楷體'
+        run3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+        run3.font.size = Pt(20)
+        
+        # 非最後一科則換頁
+        if i < len(target_subjs) - 1:
+            doc.add_page_break()
+            
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+# --- 排程矩陣設定 ---
 TEACH_15_MATRIX = {
     1: ("09:40-09:55", "09:55-10:10"), 2: ("09:55-10:10", "10:10-10:25"),
     3: ("10:10-10:25", "10:25-10:40"), 4: ("10:25-10:40", "10:40-10:55"),
@@ -124,431 +364,490 @@ TEACH_30_MATRIX = {
     13: ("17:10-17:25", "17:25-17:55"), 14: ("17:40-17:55", "17:55-18:25"), 15: ("18:10-18:25", "18:25-18:55"),
 }
 
-ORAL_30_MATRIX = {
-    1: "13:40-13:50", 2: "13:55-14:05", 3: "14:10-14:20", 4: "14:21-14:31",
-    5: "14:40-14:50", 6: "14:55-15:05", 7: "15:10-15:20", 8: "15:25-15:35",
-    9: "15:40-15:50", 10: "15:55-16:05", 11: "16:10-16:20", 12: "16:25-16:35",
-    13: "16:40-16:50", 14: "16:55-17:05", 15: "17:10-17:20",
-}
+def generate_oral_30_independent():
+    matrix = {}
+    base_schedule = [
+        "10:25-10:35", "09:40-09:50", "09:55-10:05", "10:10-10:20", "10:40-10:50", "10:55-11:05", "11:10-11:20", "11:25-11:35", "11:40-11:50",
+        "13:10-13:20", "13:25-13:35", "13:40-13:50", "13:55-14:05", "14:10-14:20", "14:25-14:35", "14:40-14:50", "14:55-15:05", "15:10-15:20",
+        "15:25-15:35", "15:40-15:50", "15:55-16:05", "16:10-16:20", "16:25-16:35", "16:40-16:50", "16:55-17:05"
+    ]
+    for n in range(1, 26):
+        matrix[n] = {i+1: base_schedule[i] for i in range(n)}
+    return matrix
 
-# ==========================================
-# 3. 介面佈局與參數設定
-# ==========================================
-col1, col2 = st.columns([1, 1], gap="large")
+ORAL_30_MATRIX_INDEPENDENT = generate_oral_30_independent()
 
-with col1:
-    st.subheader("📂 1. 上傳考生名單與場地")
-    file_candidates = st.file_uploader("1️⃣ 上傳報考名單 (准考證號, 報考科目).xlsx", type=['xlsx'])
-    file_venues = st.file_uploader("2️⃣ 上傳場地配置 (如 3.場地.xlsx)", type=['xlsx'])
-    
-    group_settings = []
-    practical_subjects = []
-    all_subjs = []
-    venue_dict = {}
-    
-    if file_candidates:
+CHRONOLOGICAL_ORAL_POOL = [
+    "09:40-09:50", "09:55-10:05", "10:10-10:20", "10:25-10:35", "10:40-10:50", "10:55-11:05",
+    "11:10-11:20", "11:25-11:35", "11:40-11:50", 
+    "13:10-13:20", "13:25-13:35", "13:40-13:50", "13:55-14:05", "14:10-14:20", "14:25-14:35",
+    "14:40-14:50", "14:55-15:05", "15:10-15:20", "15:25-15:35", "15:40-15:50", "15:55-16:05",
+    "16:10-16:20", "16:25-16:35", "16:40-16:50", "16:55-17:05", "17:10-17:20", "17:25-17:35",
+    "17:40-17:50", "17:55-18:05", "18:10-18:20", "18:25-18:35", "18:40-18:50", "18:55-19:05"
+]
+
+def check_time_conflict_bool(prep_str, teach_str, oral_str):
+    if not prep_str or not teach_str or not oral_str or "手動" in oral_str: return False
+    def parse_m(s):
         try:
-            df_temp = pd.read_excel(file_candidates).fillna("")
-            if '報考科目' in df_temp.columns:
-                all_subjs = df_temp['報考科目'].unique().tolist()
-                
-                st.write("---")
-                st.markdown("### 🤝 2. 設定合併口試群組")
-                num_groups = st.number_input("欲建立的「合併口試組」數量：", min_value=0, max_value=5, value=0, step=1)
-                already_assigned = set()
-                for g_i in range(int(num_groups)):
-                    available_options = [s for s in all_subjs if s not in already_assigned]
-                    selected_for_g = st.multiselect(
-                        f"選擇【合併口試群組 {g_i + 1}】的成員科目：",
-                        options=available_options,
-                        key=f"group_select_{g_i}"
-                    )
-                    if selected_for_g:
-                        group_settings.append(selected_for_g)
-                        already_assigned.update(selected_for_g)
-                
-                st.write("---")
-                st.markdown("### 🛠️ 3. 設定實作學科 (切換 30 分鐘時間軸)")
-                practical_subjects = st.multiselect("選擇包含實作的科目：", options=all_subjs)
-                
-        except Exception as e:
-            st.error(f"讀取失敗: {e}")
-
-with col2:
-    st.subheader("📝 4. 甄選標題設定")
-    c_year, c_session = st.columns(2)
-    with c_year:
-        academic_year = st.number_input("學年度 (如: 114)", min_value=100, max_value=200, value=114, step=1)
-    with c_session:
-        session_num = st.number_input("第幾次甄選 (如: 1)", min_value=1, max_value=50, value=1, step=1)
-    
-    st.write("---")
-    st.subheader("📋 5. 系統輸出說明")
-    st.markdown("""
-    本系統現已成為**全自動試務產出中心**：
-    
-    1. **排版優化**：表格標題與內容皆已「全面置中」，「編號」欄寬微調防換行。
-    2. **印章全自動化**：自動抓取 `試務組印章.png` 加蓋於 Word，免除上傳手續。
-    3. **【全新功能】評分信封 B4 大小自動生成**：一鍵同時產出《口試》及《試教》評分表專屬信封封面，格式已鎖定為 B4，字體放大完美置中！
-    """)
-
-st.divider()
+            h, m = map(int, s.strip().split(':'))
+            return h * 60 + m
+        except: return 0
+    try:
+        p_s, p_e = map(parse_m, prep_str.split('-'))
+        t_s, t_e = map(parse_m, teach_str.split('-'))
+        o_s, o_e = map(parse_m, oral_str.split('-'))
+        times = [(p_s, p_e, 'p'), (t_s, t_e, 't'), (o_s, o_e, 'o')]
+        times.sort(key=lambda x: x[0])
+        for i in range(len(times)-1):
+            if times[i][1] > times[i+1][0]: return True
+        return False
+    except: return False
 
 # ==========================================
-# 4. 核心排程與生成演算法
+# 3. 介面分頁 (雙階段架構)
 # ==========================================
-if st.button("🚀 啟動排程與所有表單產出", type="primary", use_container_width=True):
-    if not file_candidates or not file_venues:
-        st.error("🚨 請確認【1️⃣報考名單】與【2️⃣場地設定】皆已上傳！")
-    else:
+tab1, tab2 = st.tabs(["📂 第一階段：考前前置作業 (產出簽到與橫式評分表)", "⏱️ 第二階段：考試當天排程 (產出公告與時間總表)"])
+
+# -------------------------------------------------------------
+# TAB 1: 第一階段 (前置表單產生)
+# -------------------------------------------------------------
+with tab1:
+    st.subheader("📝 上傳【全部報名名單】產出前置表單")
+    st.markdown("此階段專為**考試前**準備文件設計，純粹依據准考證號配發編號並產出所有需要的 Word 表單 (含信封)。")
+    
+    file_reg = st.file_uploader("1️⃣ 上傳【報名總名單】 (准考證號, 報考科目, [姓名]).xlsx", type=['xlsx'], key="reg_file")
+    
+    if file_reg:
         try:
-            dynamic_title = f"{academic_year}學年度第{session_num}次代理教師甄選人員試教及口試時間表"
+            df_reg = pd.read_excel(file_reg).fillna("")
+            df_reg['准考證號'] = df_reg['准考證號'].astype(str).str.strip()
+            df_reg = df_reg[df_reg['准考證號'] != ""]
             
-            df_venues = pd.read_excel(file_venues).fillna("")
-            for _, row in df_venues.iterrows():
-                subj = str(row.get('科目', '')).strip()
-                if subj:
-                    venue_dict[subj] = {
-                        '休息室': str(row.get('休息室', '')).strip(),
-                        '準備室': str(row.get('準備室', '')).strip(),
-                        '試教': str(row.get('試教', '')).strip(),
-                        '口試': str(row.get('口試', '')).strip()
-                    }
-
-            df_candidates = pd.read_excel(file_candidates).fillna("")
-            df_candidates['准考證號'] = df_candidates['准考證號'].astype(str).str.strip()
-            df_candidates = df_candidates[df_candidates['准考證號'] != ""]
-
-            if df_candidates.empty:
-                st.warning("⚠️ 攔截警告：名單內已無有效考生！")
-                st.stop()
-
-            final_processing_groups = []
-            assigned_set = set()
-            for g_subs in group_settings:
-                if g_subs:
-                    final_processing_groups.append({'type': 'merged', 'subjects': g_subs})
-                    assigned_set.update(g_subs)
-            for sub in all_subjs:
-                if sub not in assigned_set:
-                    final_processing_groups.append({'type': 'independent', 'subjects': [sub]})
-
-            all_schedules = []
+            all_subjs_t1 = df_reg['報考科目'].unique().tolist()
+            prac_subjs_t1 = st.multiselect("選擇包含【實作】的科目 (用於產出實作評分表)：", options=all_subjs_t1, key="prac_t1")
             
-            for group in final_processing_groups:
-                group_total_candidates = sum(len(df_candidates[df_candidates['報考科目'] == sub]) for sub in group['subjects'])
-                global_idx = 1
-                
-                for s_idx, subject in enumerate(group['subjects']):
-                    is_practical = subject in practical_subjects
-                    df_sub = df_candidates[df_candidates['報考科目'] == subject]
-                    candidates = df_sub.to_dict('records')
-                    n_candidates = len(candidates)
-                    if n_candidates == 0: continue
+            if st.button("🚀 產出前置作業表單", type="primary", use_container_width=True):
+                all_cands_t1 = []
+                for subj in all_subjs_t1:
+                    df_sub_t1 = df_reg[df_reg['報考科目'] == subj].copy()
+                    df_sub_t1 = df_sub_t1.sort_values('准考證號')
                     
-                    for i in range(n_candidates):
-                        cand = candidates[i]
-                        sort_num = i + 1 
+                    for i, row in enumerate(df_sub_t1.to_dict('records')):
+                        cand_record = {'報考科目': subj, '准考證號': row['准考證號'], '排序': i + 1}
+                        if '姓名' in row: cand_record['姓名'] = str(row['姓名']).strip()
+                        all_cands_t1.append(cand_record)
                         
-                        if is_practical:
-                            times_tuple = TEACH_30_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
-                            oral_range = ORAL_30_MATRIX.get(global_idx, "請手動調整")
-                        else:
-                            times_tuple = TEACH_15_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
-                            lookup_n = group_total_candidates if group_total_candidates <= 9 else 10
-                            oral_range = ORAL_15_MATRIX.get(lookup_n, {}).get(global_idx, "請手動調整")
-                            
-                        all_schedules.append({
-                            '報考科目': subject,
-                            '准考證號': cand['准考證號'],
-                            '排序': sort_num,
-                            '準備時間': times_tuple[0],
-                            '試教(實作)時間': times_tuple[1],
-                            '口試時間': oral_range
-                        })
-                        global_idx += 1
+                df_master_t1 = pd.DataFrame(all_cands_t1)
+                
+                # 產出簽到表
+                st.session_state.sign_data = generate_signin_sheet(academic_year, session_num, df_master_t1, all_subjs_t1)
+                
+                # 產出試教評分表
+                teach_items = ["教學技巧(30%)", "語言表達(30%)", "儀態(20%)", "教室管理(10%)", "時間管理(10%)", "合計總分", "備註"]
+                st.session_state.teach_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "試教評分表", teach_items, all_subjs_t1)
+                
+                # 產出口試評分表
+                oral_items = ["自述(20%)", "教學理念(20%)", "班級經營(20%)", "表達溝通(20%)", "舉止儀態(20%)", "合計總分", "備註"]
+                st.session_state.oral_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "口試評分表", oral_items, all_subjs_t1)
+                    
+                # 產出實作評分表
+                if prac_subjs_t1:
+                    prac_items = ["評分內容", "評分總分", "備註"]
+                    st.session_state.prac_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "實作評分表", prac_items, prac_subjs_t1)
+                else:
+                    st.session_state.prac_data = None
 
-            df_master = pd.DataFrame(all_schedules)
-            
-            # --- Excel 產出 ---
-            df_merge = df_master.copy()
-            df_merge = df_merge.rename(columns={'報考科目': '科目', '准考證號': '准考證', '試教(實作)時間': '試教時間'})
-            
-            df_merge.insert(1, '休息室', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('休息室', '未設定')))
-            df_merge.insert(2, '準備室', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('準備室', '未設定')))
-            df_merge.insert(3, '試教', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('試教', '未設定')))
-            df_merge.insert(4, '口試', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('口試', '未設定')))
-            df_merge = df_merge[['科目', '休息室', '準備室', '試教', '口試', '准考證', '排序', '準備時間', '試教時間', '口試時間']]
-            
-            merge_with_blanks = []
-            prev_subj = None
-            for idx, row in df_merge.iterrows():
-                curr_subj = row['科目']
-                if prev_subj is not None and curr_subj != prev_subj:
-                    merge_with_blanks.append({col: "" for col in df_merge.columns})
-                merge_with_blanks.append(row.to_dict())
-                prev_subj = curr_subj
-            df_merge_final = pd.DataFrame(merge_with_blanks)
-            
-            output_excel = io.BytesIO()
-            with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
-                df_master.to_excel(writer, index=False, sheet_name='試務中心總表')
-                df_merge_final.to_excel(writer, index=False, sheet_name='合併列印專用')
-                df_teach = df_master[['報考科目', '排序', '試教(實作)時間', '准考證號']].copy()
-                df_teach.to_excel(writer, index=False, sheet_name='門口_試教實作表')
-                df_int = df_master[['報考科目', '准考證號', '口試時間']].copy()
-                df_int['開始時間'] = df_int['口試時間'].str[:5]
-                df_int = df_int.sort_values(['報考科目', '開始時間']).drop(columns=['開始時間'])
-                df_int.to_excel(writer, index=False, sheet_name='門口_口試表')
-            
-            st.session_state.excel_data = output_excel.getvalue()
-
-            # --- Word 直出引擎 (置中排版 + 自動蓋章) ---
-            if HAS_DOCX:
-                doc = docx.Document()
+                # ★ 新增：產出 B4 信封封面
+                st.session_state.oral_env_data = generate_envelope_cover(all_subjs_t1, "口試評分表")
+                st.session_state.teach_env_data = generate_envelope_cover(all_subjs_t1, "試教評分表")
+                    
+                st.session_state.tab1_processed = True
                 
-                # 【全域設定】
-                section = doc.sections[0]
-                section.footer_distance = Cm(1.0)
-                section.bottom_margin = Cm(3.0)
-                
-                style = doc.styles['Normal']
-                style.font.name = '標楷體'
-                style._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                style.font.size = Pt(16)
-                
-                # 【頁尾引擎】
-                footer = section.footer
-                for p in footer.paragraphs:
-                    p._element.getparent().remove(p._element)
-                
-                footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
-                footer_table.autofit = False
-                
-                cell_left = footer_table.rows[0].cells[0]
-                cell_left.width = Cm(11.5)
-                cell_right = footer_table.rows[0].cells[1]
-                cell_right.width = Cm(4.5)
-                
-                p_footer_text = cell_left.paragraphs[0]
-                p_footer_text.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                run_footer_text = p_footer_text.add_run("※試教及口試時間將依現場實際報到人數及試場情形作調整，請考生於各科指定之休息室等候叫號")
-                run_footer_text.font.name = '標楷體'
-                run_footer_text._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                run_footer_text.font.size = Pt(16)
-                run_footer_text.font.color.rgb = RGBColor(255, 0, 0)
-                
-                if os.path.exists(stamp_path):
-                    p_stamp = cell_right.paragraphs[0]
-                    p_stamp.alignment = WD_ALIGN_PARAGRAPH.RIGHT 
-                    run_stamp = p_stamp.add_run()
-                    run_stamp.add_picture(stamp_path, width=Cm(4.0)) 
-                
-                # 內容生成 (時間表)
-                for subject in all_subjs:
-                    df_sub_sched = df_master[df_master['報考科目'] == subject]
-                    if df_sub_sched.empty: continue
-                    
-                    p_title = doc.add_paragraph()
-                    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run_title = p_title.add_run(dynamic_title)
-                    run_title.font.size = Pt(18)
-                    run_title.bold = True
-                    
-                    p_sub = doc.add_paragraph()
-                    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run_sub = p_sub.add_run(f"【{subject}】")
-                    run_sub.font.size = Pt(16)
-                    run_sub.bold = True
-                    
-                    v = venue_dict.get(subject, {})
-                    doc.add_paragraph(f"考生休息室：{v.get('休息室', '未設定')}")
-                    doc.add_paragraph(f"試教準備室：{v.get('準備室', '未設定')}")
-                    doc.add_paragraph(f"試教場地：{v.get('試教', '未設定')}")
-                    doc.add_paragraph(f"口試場地：{v.get('口試', '未設定')}")
-                    
-                    table = doc.add_table(rows=1, cols=5)
-                    table.style = 'Table Grid'
-                    table.autofit = False 
-                    
-                    col_widths = [Cm(3.5), Cm(2.0), Cm(3.5), Cm(3.5), Cm(3.5)]
-                    
-                    table.style.font.name = '標楷體'
-                    table.style._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                    table.style.font.size = Pt(16)
-                    
-                    hdr_cells = table.rows[0].cells
-                    hdr_headers = ['甄選證號', '編號', '試教準備室', '試教', '口試']
-                    for col_idx in range(5):
-                        hdr_cells[col_idx].text = hdr_headers[col_idx]
-                        hdr_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        hdr_cells[col_idx].width = col_widths[col_idx]
-                        table.columns[col_idx].width = col_widths[col_idx]
-                    
-                    for _, cand in df_sub_sched.iterrows():
-                        row_cells = table.add_row().cells
-                        row_data = [
-                            str(cand['准考證號']),
-                            str(cand['排序']),
-                            str(cand['準備時間']),
-                            str(cand['試教(實作)時間']),
-                            str(cand['口試時間'])
-                        ]
-                        for col_idx in range(5):
-                            row_cells[col_idx].text = row_data[col_idx]
-                            row_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            row_cells[col_idx].width = col_widths[col_idx]
-                    
-                    doc.add_page_break()
-                    
-                output_word = io.BytesIO()
-                doc.save(output_word)
-                st.session_state.word_data = output_word.getvalue()
-                
-                # ==========================================
-                # ★ 全新功能：產出信封封面 (口試 & 試教)
-                # ==========================================
-                doc_oral_env = docx.Document()
-                doc_teach_env = docx.Document()
-                
-                # 【重點修改處】將兩份信封檔案的第一個 Section 設定為 B4 尺寸 (寬25.7cm x 高36.4cm)
-                section_oral = doc_oral_env.sections[0]
-                section_oral.page_width = Cm(25.7)
-                section_oral.page_height = Cm(36.4)
-                
-                section_teach = doc_teach_env.sections[0]
-                section_teach.page_width = Cm(25.7)
-                section_teach.page_height = Cm(36.4)
-                
-                for i, subject in enumerate(all_subjs):
-                    
-                    # --- 1. 口試評分表信封 ---
-                    # 往下推幾行以達成信封置中視覺效果
-                    for _ in range(5): doc_oral_env.add_paragraph()
-                        
-                    p1 = doc_oral_env.add_paragraph()
-                    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run1 = p1.add_run(subject)
-                    run1.font.name = '標楷體'
-                    run1._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                    run1.font.size = Pt(48)
-                    run1.bold = True
-                    
-                    p2 = doc_oral_env.add_paragraph()
-                    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run2 = p2.add_run("口試評分表")
-                    run2.font.name = '標楷體'
-                    run2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                    run2.font.size = Pt(48)
-                    run2.bold = True
-                    
-                    p3 = doc_oral_env.add_paragraph()
-                    p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run3 = p3.add_run("(內附原子筆，進入試場前煩請確認是否能書寫)")
-                    run3.font.name = '標楷體'
-                    run3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                    run3.font.size = Pt(20)
-                    
-                    # --- 2. 試教評分表信封 ---
-                    for _ in range(5): doc_teach_env.add_paragraph()
-                        
-                    pt1 = doc_teach_env.add_paragraph()
-                    pt1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    runt1 = pt1.add_run(subject)
-                    runt1.font.name = '標楷體'
-                    runt1._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                    runt1.font.size = Pt(48)
-                    runt1.bold = True
-                    
-                    pt2 = doc_teach_env.add_paragraph()
-                    pt2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    runt2 = pt2.add_run("試教評分表")
-                    runt2.font.name = '標楷體'
-                    runt2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                    runt2.font.size = Pt(48)
-                    runt2.bold = True
-                    
-                    pt3 = doc_teach_env.add_paragraph()
-                    pt3.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    runt3 = pt3.add_run("(內附原子筆，進入試場前煩請確認是否能書寫)")
-                    runt3.font.name = '標楷體'
-                    runt3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                    runt3.font.size = Pt(20)
-                    
-                    if i < len(all_subjs) - 1:
-                        doc_oral_env.add_page_break()
-                        doc_teach_env.add_page_break()
-                        
-                out_oral = io.BytesIO()
-                doc_oral_env.save(out_oral)
-                st.session_state.oral_env_data = out_oral.getvalue()
-                
-                out_teach = io.BytesIO()
-                doc_teach_env.save(out_teach)
-                st.session_state.teach_env_data = out_teach.getvalue()
-                
-            st.session_state.df_preview = df_merge_final.head(15)
-            st.session_state.excel_filename = f"{academic_year}學年度第{session_num}次_排程與場地整合表.xlsx"
-            st.session_state.word_filename = f"{academic_year}學年度第{session_num}次_各科公告表(附印章).docx"
-            st.session_state.oral_env_filename = f"01.口試評分表信封封面(B4)_{academic_year}學年度第{session_num}次.docx"
-            st.session_state.teach_env_filename = f"01.試教評分表信封封面(B4)_{academic_year}學年度第{session_num}次.docx"
-            
-            st.session_state.processed = True
-
         except Exception as e:
             st.error(f"發生錯誤: {e}")
             st.code(traceback.format_exc())
 
-# ==========================================
-# 5. 結果顯示區
-# ==========================================
-if st.session_state.processed:
-    st.balloons()
-    st.success("🎉 排版與 B4 信封完美產出！列印時免再手動調整紙張大小囉！")
-    
-    st.markdown("### 📥 試務檔案下載專區")
-    c_d1, c_d2 = st.columns(2)
-    with c_d1:
-        st.download_button(
-            label="📄 1. 下載 Excel 總表 (含門口張貼用)",
-            data=st.session_state.excel_data,
-            file_name=st.session_state.excel_filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-    with c_d2:
-        if HAS_DOCX and st.session_state.word_data:
-            st.download_button(
-                label="🖨️ 2. 下載 Word 各科公告時間表 (全自動蓋章版)",
-                data=st.session_state.word_data,
-                file_name=st.session_state.word_filename,
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True,
-                type="primary"
-            )
+    if st.session_state.tab1_processed:
+        st.success("🎉 前置表單產出完成！「橫式評分表」、「蓋章簽到表」及「B4 信封封面」皆已為您排版完畢。")
+        
+        st.markdown("#### 📄 報到與評分表 (A4)")
+        c_d3, c_d4, c_d5, c_d6 = st.columns(4)
+        with c_d3:
+            st.download_button("✍️ 1. 下載 考生簽到表", data=st.session_state.sign_data, file_name=f"{academic_year}學年度_考生簽到表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
+        with c_d4:
+            st.download_button("🧑‍🏫 2. 下載 試教評分表", data=st.session_state.teach_data, file_name=f"{academic_year}學年度_試教評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
+        with c_d5:
+            st.download_button("🗣️ 3. 下載 口試評分表", data=st.session_state.oral_data, file_name=f"{academic_year}學年度_口試評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
+        with c_d6:
+            if st.session_state.prac_data:
+                st.download_button("🛠️ 4. 下載 實作評分表", data=st.session_state.prac_data, file_name=f"{academic_year}學年度_實作評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
 
-    c_d3, c_d4 = st.columns(2)
-    with c_d3:
-        if HAS_DOCX and st.session_state.oral_env_data:
-            st.download_button(
-                label="✉️ 3. 下載 Word 口試信封封面 (B4 尺寸)",
-                data=st.session_state.oral_env_data,
-                file_name=st.session_state.oral_env_filename,
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True,
-                type="primary"
-            )
-    with c_d4:
-        if HAS_DOCX and st.session_state.teach_env_data:
-            st.download_button(
-                label="✉️ 4. 下載 Word 試教信封封面 (B4 尺寸)",
-                data=st.session_state.teach_env_data,
-                file_name=st.session_state.teach_env_filename,
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True,
-                type="primary"
-            )
+        st.markdown("#### ✉️ 評分表專用信封袋 (B4 尺寸)")
+        c_env1, c_env2 = st.columns(2)
+        with c_env1:
+            st.download_button("✉️ 下載 試教信封封面 (B4)", data=st.session_state.teach_env_data, file_name=f"01.試教評分表信封封面(B4)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
+        with c_env2:
+            st.download_button("✉️ 下載 口試信封封面 (B4)", data=st.session_state.oral_env_data, file_name=f"01.口試評分表信封封面(B4)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
+
+# -------------------------------------------------------------
+# TAB 2: 第二階段 (當天精準排程與公告)
+# -------------------------------------------------------------
+with tab2:
+    st.subheader("⏱️ 上傳【實際報到名單與場地】進行排程計算")
+    st.markdown("此階段將根據**考試當天實際報到**的考生，動態進行防撞與排程計算，產出最終的 Excel 時間總表與對外公告 Word。")
+    
+    col_t2_1, col_t2_2 = st.columns([1, 1], gap="large")
+    
+    with col_t2_1:
+        file_candidates = st.file_uploader("1️⃣ 上傳【實際報到名單】 (准考證號, 報考科目).xlsx", type=['xlsx'], key="real_cand")
+        file_venues = st.file_uploader("2️⃣ 上傳場地配置 (如 3.場地.xlsx)", type=['xlsx'], key="venues")
+        
+        group_settings = []
+        practical_subjects = []
+        all_subjs = []
+        venue_dict = {}
+        
+        if file_candidates:
+            try:
+                df_temp = pd.read_excel(file_candidates).fillna("")
+                if '報考科目' in df_temp.columns:
+                    all_subjs = df_temp['報考科目'].unique().tolist()
+                    
+                    st.write("---")
+                    st.markdown("### 🤝 3. 設定合併口試群組")
+                    num_groups = st.number_input("欲建立的「合併口試組」數量：", min_value=0, max_value=5, value=0, step=1, key="num_grp_t2")
+                    already_assigned = set()
+                    
+                    for g_i in range(int(num_groups)):
+                        st.markdown(f"**【口試合併群組 {g_i + 1}】**")
+                        available_options = [s for s in all_subjs if s not in already_assigned]
+                        selected_for_g = st.multiselect(
+                            f"選擇成員科目：",
+                            options=available_options,
+                            key=f"group_select_t2_{g_i}"
+                        )
+                        
+                        merged_teaching = st.checkbox(
+                            "✅ 此群組『試教』也共用同一組委員 (接力排下去)", 
+                            value=False, 
+                            key=f"merged_teach_t2_{g_i}"
+                        )
+                        st.write("")
+                        
+                        if selected_for_g:
+                            group_settings.append({
+                                'subjects': selected_for_g,
+                                'merged_teaching': merged_teaching
+                            })
+                            already_assigned.update(selected_for_g)
+                    
+                    st.write("---")
+                    st.markdown("### 🛠️ 4. 設定實作學科")
+                    practical_subjects = st.multiselect("選擇包含實作的科目 (切換30分時間軸)：", options=all_subjs, key="prac_t2")
+                    
+            except Exception as e:
+                st.error(f"讀取失敗: {e}")
+
+    with col_t2_2:
+        st.markdown("#### 💡 排程引擎運作說明")
+        st.markdown("""
+        * **試教分離邏輯**：口試合併時，可自由決定試教要「同時起跑」還是「接力排程」。
+        * **絕對時間軸防撞**：合併口試採用純時間序防跳號設計，完美按時間順序填補空檔。
+        """)
 
     st.write("---")
-    st.write("👀 **專屬 Excel 對接資料預覽：**")
-    st.dataframe(st.session_state.df_preview)
+
+    if st.button("🚀 啟動當天防撞排程", type="primary", use_container_width=True, key="btn_phase2"):
+        if not file_candidates or not file_venues:
+            st.error("🚨 請確認【實際報到名單】與【場地設定】皆已上傳！")
+        else:
+            try:
+                dynamic_title = f"{academic_year}學年度第{session_num}次代理教師甄選人員試教及口試時間表"
+                
+                df_venues = pd.read_excel(file_venues).fillna("")
+                for _, row in df_venues.iterrows():
+                    subj = str(row.get('科目', '')).strip()
+                    if subj:
+                        venue_dict[subj] = {
+                            '休息室': str(row.get('休息室', '')).strip(),
+                            '準備室': str(row.get('準備室', '')).strip(),
+                            '試教': str(row.get('試教', '')).strip(),
+                            '口試': str(row.get('口試', '')).strip()
+                        }
+
+                df_candidates = pd.read_excel(file_candidates).fillna("")
+                df_candidates['准考證號'] = df_candidates['准考證號'].astype(str).str.strip()
+                df_candidates = df_candidates[df_candidates['准考證號'] != ""]
+
+                if df_candidates.empty:
+                    st.warning("⚠️ 攔截警告：名單內已無有效考生！")
+                    st.stop()
+
+                final_processing_groups = []
+                assigned_set = set()
+                for g_dict in group_settings:
+                    if g_dict['subjects']:
+                        final_processing_groups.append({
+                            'type': 'merged', 
+                            'subjects': g_dict['subjects'],
+                            'merged_teaching': g_dict['merged_teaching']
+                        })
+                        assigned_set.update(g_dict['subjects'])
+                for sub in all_subjs:
+                    if sub not in assigned_set:
+                        final_processing_groups.append({
+                            'type': 'independent', 
+                            'subjects': [sub],
+                            'merged_teaching': False
+                        })
+
+                all_schedules = []
+                
+                for group in final_processing_groups:
+                    group_total_candidates = sum(len(df_candidates[df_candidates['報考科目'] == sub]) for sub in group['subjects'])
+                    is_merged_group = len(group['subjects']) > 1 
+                    merged_teaching = group['merged_teaching']
+                    
+                    if is_merged_group:
+                        group['subjects'].sort(key=lambda x: 1 if x in practical_subjects else 0)
+                    
+                    global_oral_idx = 1
+                    global_teach_idx = 1
+                    used_oral_indices = set() 
+                    
+                    for s_idx, subject in enumerate(group['subjects']):
+                        is_practical = subject in practical_subjects
+                        df_sub = df_candidates[df_candidates['報考科目'] == subject]
+                        candidates = df_sub.to_dict('records')
+                        n_candidates = len(candidates)
+                        if n_candidates == 0: continue
+                        
+                        for i in range(n_candidates):
+                            cand = candidates[i]
+                            sort_num = global_teach_idx if merged_teaching else (i + 1)
+                            
+                            if is_practical:
+                                prep, teach = TEACH_30_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
+                            else:
+                                prep, teach = TEACH_15_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
+                            
+                            if merged_teaching:
+                                global_teach_idx += 1
+                                
+                            oral_range = "請手動調整"
+                            
+                            if is_merged_group:
+                                for o_idx, test_oral in enumerate(CHRONOLOGICAL_ORAL_POOL):
+                                    if o_idx in used_oral_indices: continue
+                                    if not check_time_conflict_bool(prep, teach, test_oral):
+                                        oral_range = test_oral
+                                        used_oral_indices.add(o_idx)
+                                        break
+                            else:
+                                if is_practical:
+                                    lookup_n = group_total_candidates if group_total_candidates <= 25 else 25
+                                    oral_range = ORAL_30_MATRIX_INDEPENDENT.get(lookup_n, {}).get(global_oral_idx, "請手動調整")
+                                else:
+                                    lookup_n = group_total_candidates if group_total_candidates <= 9 else 10
+                                    oral_range = ORAL_15_MATRIX.get(lookup_n, {}).get(global_oral_idx, "請手動調整")
+                            
+                            all_schedules.append({
+                                '報考科目': subject,
+                                '准考證號': cand['准考證號'],
+                                '排序': sort_num,
+                                '準備時間': prep,
+                                '試教(實作)時間': teach,
+                                '口試時間': oral_range
+                            })
+                            global_oral_idx += 1
+
+                df_master = pd.DataFrame(all_schedules)
+                
+                def get_flow(row):
+                    p_time = str(row.get('準備時間', '')).split('-')[0].strip()
+                    t_time = str(row.get('試教(實作)時間', '')).split('-')[0].strip()
+                    o_time = str(row.get('口試時間', '')).split('-')[0].strip()
+                    if "手動" in p_time or "手動" in o_time or not p_time or not o_time: return "待手動確認"
+                    flow_list = [(p_time, "準備"), (t_time, "試教"), (o_time, "口試")]
+                    flow_list.sort(key=lambda x: x[0])
+                    return " → ".join([item[1] for item in flow_list])
+
+                def check_time_conflict_text(row):
+                    def parse_time(time_str, name):
+                        try:
+                            if not time_str or "手動" in time_str: return None
+                            s, e = str(time_str).strip().split('-')
+                            s_min = int(s.split(':')[0]) * 60 + int(s.split(':')[1])
+                            e_min = int(e.split(':')[0]) * 60 + int(e.split(':')[1])
+                            return (s_min, e_min, name)
+                        except: return None
+                    times = []
+                    for val, label in [(row.get('準備時間', ''), '準備'), (row.get('試教(實作)時間', ''), '試教'), (row.get('口試時間', ''), '口試')]:
+                        item = parse_time(val, label)
+                        if item: times.append(item)
+                    times.sort(key=lambda x: x[0])
+                    conflicts = []
+                    for i in range(len(times) - 1):
+                        if times[i][1] > times[i+1][0]:
+                            conflicts.append(f"{times[i][2]}與{times[i+1][2]}")
+                    if not times or len(times) < 3: return "⚠️ 待確認"
+                    if conflicts: return "🚨 衝突: " + "、".join(conflicts)
+                    return "✅ 無衝突"
+                    
+                df_master['考試流程'] = df_master.apply(get_flow, axis=1)
+                df_master['衝突檢核'] = df_master.apply(check_time_conflict_text, axis=1)
+                
+                df_merge = df_master.copy()
+                df_merge = df_merge.rename(columns={'報考科目': '科目', '准考證號': '准考證', '試教(實作)時間': '試教時間'})
+                df_merge.insert(1, '休息室', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('休息室', '未設定')))
+                df_merge.insert(2, '準備室', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('準備室', '未設定')))
+                df_merge.insert(3, '試教', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('試教', '未設定')))
+                df_merge.insert(4, '口試', df_merge['科目'].apply(lambda x: venue_dict.get(x, {}).get('口試', '未設定')))
+                
+                df_merge = df_merge[['科目', '休息室', '準備室', '試教', '口試', '准考證', '排序', '準備時間', '試教時間', '口試時間']]
+                
+                merge_with_blanks = []
+                prev_subj = None
+                for idx, row in df_merge.iterrows():
+                    curr_subj = row['科目']
+                    if prev_subj is not None and curr_subj != prev_subj:
+                        merge_with_blanks.append({col: "" for col in df_merge.columns})
+                    merge_with_blanks.append(row.to_dict())
+                    prev_subj = curr_subj
+                df_merge_final = pd.DataFrame(merge_with_blanks)
+                
+                output_excel = io.BytesIO()
+                with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
+                    df_master.to_excel(writer, index=False, sheet_name='試務中心總表')
+                    df_merge_final.to_excel(writer, index=False, sheet_name='合併列印專用')
+                    df_teach = df_master[['報考科目', '排序', '試教(實作)時間', '准考證號']].copy()
+                    df_teach.to_excel(writer, index=False, sheet_name='門口_試教實作表')
+                    df_int = df_master[['報考科目', '准考證號', '口試時間']].copy()
+                    df_int['開始時間'] = df_int['口試時間'].str[:5]
+                    df_int = df_int.sort_values(['報考科目', '開始時間']).drop(columns=['開始時間'])
+                    df_int.to_excel(writer, index=False, sheet_name='門口_口試表')
+                
+                st.session_state.excel_data = output_excel.getvalue()
+
+                if HAS_DOCX:
+                    doc = docx.Document()
+                    section = doc.sections[0]
+                    section.footer_distance = Cm(1.0)
+                    section.bottom_margin = Cm(3.0)
+                    
+                    style = doc.styles['Normal']
+                    style.font.name = '標楷體'
+                    style._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                    style.font.size = Pt(16)
+                    
+                    footer = section.footer
+                    for p in footer.paragraphs: p._element.getparent().remove(p._element)
+                    
+                    footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
+                    footer_table.autofit = False
+                    cell_left = footer_table.rows[0].cells[0]
+                    cell_left.width = Cm(11.5)
+                    cell_right = footer_table.rows[0].cells[1]
+                    cell_right.width = Cm(4.5)
+                    
+                    p_footer_text = cell_left.paragraphs[0]
+                    p_footer_text.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    
+                    run_1 = p_footer_text.add_run("※試教及口試時間")
+                    run_1.font.name = '標楷體'
+                    run_1._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                    run_1.font.size = Pt(14)
+                    
+                    run_2 = p_footer_text.add_run("將依現場實際報到人數及試場情形作調整，")
+                    run_2.font.name = '標楷體'
+                    run_2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                    run_2.font.size = Pt(16)
+                    run_2.font.color.rgb = RGBColor(255, 0, 0)
+                    
+                    run_3 = p_footer_text.add_run("請考生於各科指定之休息室等候叫號")
+                    run_3.font.name = '標楷體'
+                    run_3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                    run_3.font.size = Pt(14)
+                    
+                    stamp_io = get_stamp_io()
+                    if stamp_io:
+                        p_stamp = cell_right.paragraphs[0]
+                        p_stamp.alignment = WD_ALIGN_PARAGRAPH.RIGHT 
+                        run_stamp = p_stamp.add_run()
+                        run_stamp.add_picture(stamp_io, width=Cm(4.0)) 
+                    
+                    for subject in all_subjs:
+                        df_sub_sched = df_master[df_master['報考科目'] == subject]
+                        if df_sub_sched.empty: continue
+                        
+                        p_title = doc.add_paragraph()
+                        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        run_title = p_title.add_run(dynamic_title)
+                        run_title.font.size = Pt(18)
+                        run_title.bold = True
+                        
+                        p_sub = doc.add_paragraph()
+                        p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        run_sub = p_sub.add_run(f"【{subject}】")
+                        run_sub.font.size = Pt(16)
+                        run_sub.bold = True
+                        
+                        v = venue_dict.get(subject, {})
+                        doc.add_paragraph(f"考生休息室：{v.get('休息室', '未設定')}")
+                        doc.add_paragraph(f"試教準備室：{v.get('準備室', '未設定')}")
+                        doc.add_paragraph(f"試教場地：{v.get('試教', '未設定')}")
+                        doc.add_paragraph(f"口試場地：{v.get('口試', '未設定')}")
+                        
+                        table = doc.add_table(rows=1, cols=5)
+                        table.style = 'Table Grid'
+                        table.autofit = False 
+                        
+                        col_widths = [Cm(3.5), Cm(2.0), Cm(3.5), Cm(3.5), Cm(3.5)]
+                        table.style.font.name = '標楷體'
+                        table.style._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                        table.style.font.size = Pt(16)
+                        
+                        hdr_cells = table.rows[0].cells
+                        hdr_headers = ['甄選證號', '編號', '試教準備室', '試教', '口試']
+                        for col_idx in range(5):
+                            hdr_cells[col_idx].text = hdr_headers[col_idx]
+                            hdr_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER 
+                            hdr_cells[col_idx].width = col_widths[col_idx]
+                            table.columns[col_idx].width = col_widths[col_idx]
+                        
+                        for _, cand in df_sub_sched.iterrows():
+                            row_cells = table.add_row().cells
+                            row_data = [str(cand['准考證號']), str(cand['排序']), str(cand['準備時間']), str(cand['試教(實作)時間']), str(cand['口試時間'])]
+                            for col_idx in range(5):
+                                row_cells[col_idx].text = row_data[col_idx]
+                                row_cells[col_idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                row_cells[col_idx].width = col_widths[col_idx]
+                        
+                        doc.add_page_break()
+                        
+                    output_word = io.BytesIO()
+                    doc.save(output_word)
+                    st.session_state.word_data = output_word.getvalue()
+                    
+                st.session_state.df_preview = df_merge_final.head(15)
+                st.session_state.excel_filename = f"{academic_year}學年度第{session_num}次_排程與場地整合表(當天排程).xlsx"
+                st.session_state.word_filename = f"{academic_year}學年度第{session_num}次_各科公告表(自動排版).docx"
+                st.session_state.tab2_processed = True
+
+            except Exception as e:
+                st.error(f"發生錯誤: {e}")
+                st.code(traceback.format_exc())
+
+    if st.session_state.tab2_processed:
+        st.success("🎉 當天排程計算完成！所有衝堂皆已避開，請在下方下載對外公告與排程檔案。")
+        c_d1, c_d2 = st.columns(2)
+        with c_d1:
+            st.download_button("📊 1. 下載 Excel 總表 (含考試流程與檢核)", data=st.session_state.excel_data, file_name=st.session_state.excel_filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
+        with c_d2:
+            if HAS_DOCX and st.session_state.word_data:
+                st.download_button("📄 2. 下載 Word 各科公告時間表 (自動蓋章版)", data=st.session_state.word_data, file_name=st.session_state.word_filename, mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
+        
+        st.write("---")
+        st.write("👀 **專屬 Word 對接資料預覽：**")
+        st.dataframe(st.session_state.df_preview)
