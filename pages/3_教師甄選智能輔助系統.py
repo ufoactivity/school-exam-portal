@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：工作人員資料袋場地已精準對接「場地教室」，且「工作人員」已設定為完美置中排版！(115.05.28增修)")
+st.info("💡 終極進化：工作人員封面套用「隱形文字技術」，徹底解決單/雙科目行高落差，確保每一張場地高度 100% 完美對齊！(115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -311,7 +311,7 @@ def generate_envelope_cover(target_subjs, env_title):
     return out.getvalue()
 
 def generate_staff_envelopes(df_dict):
-    """產出工作人員資料袋封面，支援雙科分行與場地自動標示【工作表:場地教室】"""
+    """產出工作人員資料袋封面，支援雙科分行與隱形文字對齊技術"""
     doc = docx.Document()
     section = doc.sections[0]
     
@@ -355,22 +355,27 @@ def generate_staff_envelopes(df_dict):
             
             if subj2 and subj2.lower() != 'nan':
                 run2 = p2.add_run(subj2)
+                run2.font.name = '標楷體'
+                run2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                run2.font.size = Pt(72)
+                run2.bold = True
             else:
-                run2 = p2.add_run("　") 
-                
-            run2.font.name = '標楷體'
-            run2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-            run2.font.size = Pt(72)
-            run2.bold = True
+                # 【終極解法：隱形中文字】放入真正的中文字，並將顏色設為白色
+                # 這樣 Word 就會配置出與第一行「完全一模一樣」的行高！
+                run2 = p2.add_run("一") 
+                run2.font.name = '標楷體'
+                run2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                run2.font.size = Pt(72)
+                run2.bold = True
+                run2.font.color.rgb = RGBColor(255, 255, 255) # 純白隱形
             
-            # 3. 處理試場場地 (48pt) -> 更改為 【場地類型:地點】 格式
+            # 3. 處理試場場地 (48pt)
             venue = str(row.get('試場場地', row.get('場地教室', row.get('教室地點', '')))).strip()
             if venue.lower() == 'nan': venue = ""
             p3 = doc.add_paragraph()
             p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p3.paragraph_format.space_before = Pt(40)
             
-            # 依據有無教室地點，產出字串
             venue_text = f"【{sheet_name}:{venue}】" if venue else f"【{sheet_name}】"
             
             run3 = p3.add_run(venue_text)
@@ -379,7 +384,7 @@ def generate_staff_envelopes(df_dict):
             run3.font.size = Pt(48)
             run3.bold = True
             
-            # 4. 處理工作人員 (36pt) -> ★ 置中對齊 ★
+            # 4. 處理工作人員 (36pt) -> 置中對齊
             staff = str(row.get('工作人員', '')).strip()
             if staff.lower() == 'nan': staff = ""
             p4 = doc.add_paragraph()
@@ -391,7 +396,7 @@ def generate_staff_envelopes(df_dict):
             run4._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
             run4.font.size = Pt(36)
             
-            # 5. 處理試場用品 (36pt) -> ★ 試場用品也一起置中會比較好看 ★
+            # 5. 處理試場用品 (36pt) -> 置中對齊
             supplies = str(row.get('試場用品', '')).strip()
             if supplies.lower() == 'nan': supplies = ""
             p5 = doc.add_paragraph()
