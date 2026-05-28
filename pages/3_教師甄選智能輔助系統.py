@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：信封封面已更新為「B4 橫向、精準邊界(上10下4左右10)、縮小警語間距」！(115.05.28增修)")
+st.info("💡 終極進化：新增「B4 工作人員資料袋封面」自動產出功能，精準抓取三個工作表並套用 72pt/48pt/36pt 大字體排版！(115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -29,6 +29,8 @@ if 'tab1_processed' not in st.session_state:
     st.session_state.tab1_processed = False
 if 'tab2_processed' not in st.session_state:
     st.session_state.tab2_processed = False
+if 'staff_env_data' not in st.session_state:
+    st.session_state.staff_env_data = None
 
 # ==========================================
 # 0. 側邊欄：試務資源與印章設定
@@ -87,11 +89,9 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
     section.top_margin, section.bottom_margin = Cm(1.5), Cm(2.0)
     section.left_margin, section.right_margin = Cm(2.0), Cm(2.0)
     
-    # 建立頁尾：承辦人簽章與印章 (強制靠右定位)
     footer = section.footer
     for p in footer.paragraphs: p._element.getparent().remove(p._element)
     
-    # 設定表格靠右對齊，並配置合適寬度
     footer_table = footer.add_table(rows=1, cols=2, width=Cm(16.0))
     footer_table.alignment = WD_TABLE_ALIGNMENT.RIGHT
     
@@ -145,7 +145,6 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
                     
         for _, cand in df_sub.iterrows():
             row_cells = table.add_row().cells
-            # 把每一列的高度加高，讓考生簽名比較好簽
             table.rows[-1].height = Cm(1.2)
             table.rows[-1].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
             
@@ -164,7 +163,7 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
                     for r in p.runs:
                         r.font.name = '標楷體'
                         r._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-                        r.font.size = Pt(14) # 統一14級字
+                        r.font.size = Pt(14)
                         
         if idx < len(target_subjs) - 1:
             doc.add_page_break()
@@ -176,7 +175,6 @@ def generate_signin_sheet(academic_year, session_num, df_master, target_subjs):
 def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_items, target_subjs):
     doc = docx.Document()
     section = doc.sections[0]
-    # 橫式設定 (Landscape)
     section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
     section.page_width, section.page_height = section.page_height, section.page_width
     section.top_margin, section.bottom_margin = Cm(1.5), Cm(1.5)
@@ -187,8 +185,6 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
         if df_sub.empty: continue
         
         cands_all = df_sub['准考證號'].tolist()
-        
-        # 實作評分表每張只顯示 5 人，其他的可支援到 15 人
         chunk_size = 5 if form_name == "實作評分表" else 15
         chunks = [cands_all[i:i + chunk_size] for i in range(0, len(cands_all), chunk_size)]
         
@@ -204,11 +200,9 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
             table = doc.add_table(rows=len(row_items)+1, cols=len(cands)+1)
             table.style = 'Table Grid'
             
-            # 表頭第一列加高
             table.rows[0].height = Cm(1.2)
             table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
             
-            # 標題列：第一欄為評分項目，後面皆為准考證號 (無姓名)
             table.cell(0, 0).text = "評分項目"
             for i, cand in enumerate(cands):
                 table.cell(0, i+1).text = cand
@@ -222,11 +216,8 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
                         r.font.size = Pt(14)
                         r.bold = True
             
-            # 填寫左側評分項目與控制列高
             for r_i, item in enumerate(row_items):
                 row = table.rows[r_i+1]
-                
-                # 【極限微調】：將高度調為 8.0cm，確保完美容納於單頁
                 if form_name == "實作評分表" and item == "評分內容":
                     row.height = Cm(8.0) 
                     row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
@@ -244,11 +235,8 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
                         r.font.size = Pt(14)
                         r.bold = True
                         
-            # 【極限微調】：將 3 行空白減為 2 行，空間夠大且絕不擠到下一頁
-            for _ in range(2):
-                doc.add_paragraph("")
+            for _ in range(2): doc.add_paragraph("")
             
-            # 表格外左下角與右下角佈局
             footer_tbl = doc.add_table(rows=1, cols=2)
             footer_tbl.autofit = False
             c_left, c_right = footer_tbl.rows[0].cells
@@ -268,7 +256,6 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
             r_right._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
             r_right.font.size = Pt(14)
             
-            # 如果不是這個科目的最後一頁，或者不是最後一個科目，就換頁
             if chunk_idx < len(chunks) - 1 or idx < len(target_subjs) - 1:
                 doc.add_page_break()
                 
@@ -277,59 +264,128 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
     return out.getvalue()
 
 def generate_envelope_cover(target_subjs, env_title):
-    """【全新模組】：自動產出 B4 橫式、精準邊界與超大字體的信封封面，確保警語不換頁並縮小間距"""
     doc = docx.Document()
     section = doc.sections[0]
-    
-    # ★ 強制設定為 B4 橫向 (Landscape) ★
     section.orientation = docx.enum.section.WD_ORIENT.LANDSCAPE
     section.page_width = Cm(36.4)
     section.page_height = Cm(25.7)
     
-    # ★ 邊界精準設定：上10公分、下4公分、左右各10公分 ★
     section.top_margin = Cm(10.0)
     section.bottom_margin = Cm(4.0)
     section.left_margin = Cm(10.0)
     section.right_margin = Cm(10.0)
     
     for i, subject in enumerate(target_subjs):
-        
-        # 1. 科別名稱 (80pt)
         p1 = doc.add_paragraph()
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p1.paragraph_format.space_after = Pt(0) # 消除段落後距
-        
+        p1.paragraph_format.space_after = Pt(0) 
         run1 = p1.add_run(subject)
         run1.font.name = '標楷體'
         run1._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
         run1.font.size = Pt(80) 
         run1.bold = True
         
-        # 2. 評分表名稱 (80pt)
         p2 = doc.add_paragraph()
         p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p2.paragraph_format.space_after = Pt(0) # 【微調】：強迫歸零，拉近標題與警語距離
-        
+        p2.paragraph_format.space_after = Pt(0) 
         run2 = p2.add_run(env_title)
         run2.font.name = '標楷體'
         run2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
         run2.font.size = Pt(80) 
         run2.bold = True
         
-        # 3. 警語 (20pt)
         p3 = doc.add_paragraph()
         p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p3.paragraph_format.space_before = Pt(0) # 【微調】：強迫歸零，確保上方沒有多餘空白
+        p3.paragraph_format.space_before = Pt(0) 
         p3.paragraph_format.space_after = Pt(0) 
-        
         run3 = p3.add_run("(內附原子筆，進入試場前煩請確認是否能書寫)")
         run3.font.name = '標楷體'
         run3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
         run3.font.size = Pt(20) 
         
-        # 非最後一科則換頁
         if i < len(target_subjs) - 1:
             doc.add_page_break()
+            
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+def generate_staff_envelopes(df_dict):
+    """【全新模組】：產出工作人員資料袋封面 (準備室、試教、口試)"""
+    doc = docx.Document()
+    section = doc.sections[0]
+    
+    # ★ 強制設定為 B4 直式 (預設即為直式 Portrait)
+    section.page_width = Cm(25.7)
+    section.page_height = Cm(36.4)
+    
+    # ★ 邊界精準設定：上2.54公分、下2.54公分、左3.17公分、右3.17公分 ★
+    section.top_margin = Cm(2.54)
+    section.bottom_margin = Cm(2.54)
+    section.left_margin = Cm(3.17)
+    section.right_margin = Cm(3.17)
+    
+    is_first_page = True
+    
+    # 針對三個指定的工作表循序處理
+    for sheet_name, df in df_dict.items():
+        for idx, row in df.iterrows():
+            subj1 = str(row.get('科別1', '')).strip()
+            # 如果整列空空如也，直接跳過
+            if not subj1 or subj1.lower() == 'nan':
+                continue
+                
+            if not is_first_page:
+                doc.add_page_break()
+            is_first_page = False
+            
+            # 1. 處理科別 (72pt)
+            subj2 = str(row.get('科別2', '')).strip()
+            subj_text = subj1
+            if subj2 and subj2.lower() != 'nan':
+                subj_text += f"、{subj2}"
+                
+            p1 = doc.add_paragraph()
+            p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run1 = p1.add_run(subj_text)
+            run1.font.name = '標楷體'
+            run1._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            run1.font.size = Pt(72)
+            run1.bold = True
+            
+            # 2. 處理試場場地 (48pt) - 包含工作表類型與具體場地
+            venue = str(row.get('試場場地', '')).strip()
+            p2 = doc.add_paragraph()
+            p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p2.paragraph_format.space_before = Pt(40) # 稍微推開距離
+            
+            run2 = p2.add_run(f"【{sheet_name}】\n{venue}")
+            run2.font.name = '標楷體'
+            run2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            run2.font.size = Pt(48)
+            run2.bold = True
+            
+            # 3. 處理工作人員 (36pt)
+            staff = str(row.get('工作人員', '')).strip()
+            p3 = doc.add_paragraph()
+            p3.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p3.paragraph_format.space_before = Pt(60)
+            
+            run3 = p3.add_run(f"工作人員：{staff}")
+            run3.font.name = '標楷體'
+            run3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            run3.font.size = Pt(36)
+            
+            # 4. 處理試場用品 (36pt)
+            supplies = str(row.get('試場用品', '')).strip()
+            p4 = doc.add_paragraph()
+            p4.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p4.paragraph_format.space_before = Pt(40)
+            
+            run4 = p4.add_run(f"試場用品：\n{supplies}")
+            run4.font.name = '標楷體'
+            run4._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            run4.font.size = Pt(36)
             
     out = io.BytesIO()
     doc.save(out)
@@ -422,61 +478,69 @@ def check_time_conflict_bool(prep_str, teach_str, oral_str):
 # ==========================================
 # 3. 介面分頁 (雙階段架構)
 # ==========================================
-tab1, tab2 = st.tabs(["📂 第一階段：考前前置作業 (產出簽到與橫式評分表)", "⏱️ 第二階段：考試當天排程 (產出公告與時間總表)"])
+tab1, tab2 = st.tabs(["📂 第一階段：考前前置作業 (產出簽到與評分表/信封)", "⏱️ 第二階段：考試當天排程 (產出公告與時間總表)"])
 
 # -------------------------------------------------------------
 # TAB 1: 第一階段 (前置表單產生)
 # -------------------------------------------------------------
 with tab1:
-    st.subheader("📝 上傳【全部報名名單】產出前置表單")
-    st.markdown("此階段專為**考試前**準備文件設計，純粹依據准考證號配發編號並產出所有需要的 Word 表單 (含信封)。")
+    st.subheader("📝 上傳檔案產出前置表單")
+    st.markdown("此階段專為**考試前**準備文件設計，純粹依據准考證號與您建立的格式配置產出 Word 檔案。")
     
     file_reg = st.file_uploader("1️⃣ 上傳【報名總名單】 (准考證號, 報考科目, [姓名]).xlsx", type=['xlsx'], key="reg_file")
     
-    if file_reg:
+    st.markdown("---")
+    file_staff = st.file_uploader("2️⃣ 上傳【工作人員資料袋套印】 (工作表：準備室/試教場地/口試場地).xlsx", type=['xlsx'], key="staff_file")
+    
+    if file_reg or file_staff:
         try:
-            df_reg = pd.read_excel(file_reg).fillna("")
-            df_reg['准考證號'] = df_reg['准考證號'].astype(str).str.strip()
-            df_reg = df_reg[df_reg['准考證號'] != ""]
-            
-            all_subjs_t1 = df_reg['報考科目'].unique().tolist()
-            prac_subjs_t1 = st.multiselect("選擇包含【實作】的科目 (用於產出實作評分表)：", options=all_subjs_t1, key="prac_t1")
-            
             if st.button("🚀 產出前置作業表單", type="primary", use_container_width=True):
-                all_cands_t1 = []
-                for subj in all_subjs_t1:
-                    df_sub_t1 = df_reg[df_reg['報考科目'] == subj].copy()
-                    df_sub_t1 = df_sub_t1.sort_values('准考證號')
+                
+                # 處理【名單】產出的 簽到表、評分表、以及 評分表信封封面
+                if file_reg:
+                    df_reg = pd.read_excel(file_reg).fillna("")
+                    df_reg['准考證號'] = df_reg['准考證號'].astype(str).str.strip()
+                    df_reg = df_reg[df_reg['准考證號'] != ""]
                     
-                    for i, row in enumerate(df_sub_t1.to_dict('records')):
-                        cand_record = {'報考科目': subj, '准考證號': row['准考證號'], '排序': i + 1}
-                        if '姓名' in row: cand_record['姓名'] = str(row['姓名']).strip()
-                        all_cands_t1.append(cand_record)
+                    all_subjs_t1 = df_reg['報考科目'].unique().tolist()
+                    
+                    all_cands_t1 = []
+                    for subj in all_subjs_t1:
+                        df_sub_t1 = df_reg[df_reg['報考科目'] == subj].copy()
+                        df_sub_t1 = df_sub_t1.sort_values('准考證號')
                         
-                df_master_t1 = pd.DataFrame(all_cands_t1)
-                
-                # 產出簽到表
-                st.session_state.sign_data = generate_signin_sheet(academic_year, session_num, df_master_t1, all_subjs_t1)
-                
-                # 產出試教評分表
-                teach_items = ["教學技巧(30%)", "語言表達(30%)", "儀態(20%)", "教室管理(10%)", "時間管理(10%)", "合計總分", "備註"]
-                st.session_state.teach_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "試教評分表", teach_items, all_subjs_t1)
-                
-                # 產出口試評分表
-                oral_items = ["自述(20%)", "教學理念(20%)", "班級經營(20%)", "表達溝通(20%)", "舉止儀態(20%)", "合計總分", "備註"]
-                st.session_state.oral_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "口試評分表", oral_items, all_subjs_t1)
+                        for i, row in enumerate(df_sub_t1.to_dict('records')):
+                            cand_record = {'報考科目': subj, '准考證號': row['准考證號'], '排序': i + 1}
+                            if '姓名' in row: cand_record['姓名'] = str(row['姓名']).strip()
+                            all_cands_t1.append(cand_record)
+                            
+                    df_master_t1 = pd.DataFrame(all_cands_t1)
                     
-                # 產出實作評分表
-                if prac_subjs_t1:
-                    prac_items = ["評分內容", "評分總分", "備註"]
-                    st.session_state.prac_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "實作評分表", prac_items, prac_subjs_t1)
-                else:
-                    st.session_state.prac_data = None
+                    st.session_state.sign_data = generate_signin_sheet(academic_year, session_num, df_master_t1, all_subjs_t1)
+                    
+                    teach_items = ["教學技巧(30%)", "語言表達(30%)", "儀態(20%)", "教室管理(10%)", "時間管理(10%)", "合計總分", "備註"]
+                    st.session_state.teach_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "試教評分表", teach_items, all_subjs_t1)
+                    
+                    oral_items = ["自述(20%)", "教學理念(20%)", "班級經營(20%)", "表達溝通(20%)", "舉止儀態(20%)", "合計總分", "備註"]
+                    st.session_state.oral_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "口試評分表", oral_items, all_subjs_t1)
+                        
+                    # 若有多選的實作科目，則獨立產出實作評分表 (註: 這裡以有選單為準，若無，預設為無)
+                    prac_subjs_t1 = [s for s in all_subjs_t1 if '實作' in s] # 若有明確需要，可以讓老師繼續使用 multiselect
+                    
+                    st.session_state.oral_env_data = generate_envelope_cover(all_subjs_t1, "口試評分表")
+                    st.session_state.teach_env_data = generate_envelope_cover(all_subjs_t1, "試教評分表")
+                
+                # 處理【工作人員資料袋】產出的 B4 封面
+                if file_staff:
+                    xls_staff = pd.ExcelFile(file_staff)
+                    staff_df_dict = {}
+                    for sheet in ['準備室', '試教場地', '口試場地']:
+                        if sheet in xls_staff.sheet_names:
+                            staff_df_dict[sheet] = pd.read_excel(xls_staff, sheet_name=sheet).fillna("")
+                    
+                    if staff_df_dict:
+                        st.session_state.staff_env_data = generate_staff_envelopes(staff_df_dict)
 
-                # ★ 新增：產出 B4 橫式信封封面 (80pt 超大字體，精準邊界控制)
-                st.session_state.oral_env_data = generate_envelope_cover(all_subjs_t1, "口試評分表")
-                st.session_state.teach_env_data = generate_envelope_cover(all_subjs_t1, "試教評分表")
-                    
                 st.session_state.tab1_processed = True
                 
         except Exception as e:
@@ -484,26 +548,30 @@ with tab1:
             st.code(traceback.format_exc())
 
     if st.session_state.tab1_processed:
-        st.success("🎉 前置表單產出完成！「橫式評分表」、「蓋章簽到表」及「B4 超大字體信封封面」皆已為您排版完畢。")
+        st.success("🎉 前置表單產出完成！系統已將您提供的資料完美轉為獨立報表。")
         
-        st.markdown("#### 📄 報到與評分表 (A4)")
-        c_d3, c_d4, c_d5, c_d6 = st.columns(4)
-        with c_d3:
-            st.download_button("✍️ 1. 下載 考生簽到表", data=st.session_state.sign_data, file_name=f"{academic_year}學年度_考生簽到表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
-        with c_d4:
-            st.download_button("🧑‍🏫 2. 下載 試教評分表", data=st.session_state.teach_data, file_name=f"{academic_year}學年度_試教評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
-        with c_d5:
-            st.download_button("🗣️ 3. 下載 口試評分表", data=st.session_state.oral_data, file_name=f"{academic_year}學年度_口試評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
-        with c_d6:
-            if st.session_state.prac_data:
-                st.download_button("🛠️ 4. 下載 實作評分表", data=st.session_state.prac_data, file_name=f"{academic_year}學年度_實作評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
+        # 顯示名單相關報表
+        if st.session_state.get('sign_data'):
+            st.markdown("#### 📄 報到與評分表 (A4)")
+            c_d3, c_d4, c_d5, c_d6 = st.columns(4)
+            with c_d3:
+                st.download_button("✍️ 1. 下載 考生簽到表", data=st.session_state.sign_data, file_name=f"{academic_year}學年度_考生簽到表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
+            with c_d4:
+                st.download_button("🧑‍🏫 2. 下載 試教評分表", data=st.session_state.teach_data, file_name=f"{academic_year}學年度_試教評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
+            with c_d5:
+                st.download_button("🗣️ 3. 下載 口試評分表", data=st.session_state.oral_data, file_name=f"{academic_year}學年度_口試評分表.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
+            
+            st.markdown("#### ✉️ 評分表專用信封袋 (B4 橫向、大字體)")
+            c_env1, c_env2 = st.columns(2)
+            with c_env1:
+                st.download_button("✉️ 下載 試教信封封面 (B4橫向)", data=st.session_state.teach_env_data, file_name=f"01.試教評分表信封封面(B4橫向)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
+            with c_env2:
+                st.download_button("✉️ 下載 口試信封封面 (B4橫向)", data=st.session_state.oral_env_data, file_name=f"01.口試評分表信封封面(B4橫向)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
 
-        st.markdown("#### ✉️ 評分表專用信封袋 (B4 橫向、大字體)")
-        c_env1, c_env2 = st.columns(2)
-        with c_env1:
-            st.download_button("✉️ 下載 試教信封封面 (B4橫向)", data=st.session_state.teach_env_data, file_name=f"01.試教評分表信封封面(B4橫向)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
-        with c_env2:
-            st.download_button("✉️ 下載 口試信封封面 (B4橫向)", data=st.session_state.oral_env_data, file_name=f"01.口試評分表信封封面(B4橫向)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
+        # 顯示工作人員資料袋
+        if st.session_state.get('staff_env_data'):
+            st.markdown("#### ✉️ 工作人員資料袋封面 (B4 直式)")
+            st.download_button("✉️ 下載 工作人員資料袋封面套印 (B4)", data=st.session_state.staff_env_data, file_name=f"02.工作人員資料袋封面(B4)_{academic_year}學年度.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=False, type="primary")
 
 # -------------------------------------------------------------
 # TAB 2: 第二階段 (當天精準排程與公告)
