@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：新增「B4 工作人員資料袋封面」自動產出功能，精準抓取三個工作表並套用 72pt/48pt/36pt 大字體排版！(115.05.28增修)")
+st.info("💡 終極進化：工作人員資料袋場地已更新為單行 `[場地類型:地點]` 格式！(115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -311,15 +311,15 @@ def generate_envelope_cover(target_subjs, env_title):
     return out.getvalue()
 
 def generate_staff_envelopes(df_dict):
-    """【全新模組】：產出工作人員資料袋封面 (準備室、試教、口試)"""
+    """產出工作人員資料袋封面，支援雙科分行與場地自動標示"""
     doc = docx.Document()
     section = doc.sections[0]
     
-    # ★ 強制設定為 B4 直式 (預設即為直式 Portrait)
+    # B4 直式
     section.page_width = Cm(25.7)
     section.page_height = Cm(36.4)
     
-    # ★ 邊界精準設定：上2.54公分、下2.54公分、左3.17公分、右3.17公分 ★
+    # 邊界精準設定
     section.top_margin = Cm(2.54)
     section.bottom_margin = Cm(2.54)
     section.left_margin = Cm(3.17)
@@ -327,11 +327,9 @@ def generate_staff_envelopes(df_dict):
     
     is_first_page = True
     
-    # 針對三個指定的工作表循序處理
     for sheet_name, df in df_dict.items():
         for idx, row in df.iterrows():
             subj1 = str(row.get('科別1', '')).strip()
-            # 如果整列空空如也，直接跳過
             if not subj1 or subj1.lower() == 'nan':
                 continue
                 
@@ -339,53 +337,71 @@ def generate_staff_envelopes(df_dict):
                 doc.add_page_break()
             is_first_page = False
             
-            # 1. 處理科別 (72pt)
-            subj2 = str(row.get('科別2', '')).strip()
-            subj_text = subj1
-            if subj2 and subj2.lower() != 'nan':
-                subj_text += f"、{subj2}"
-                
+            # 1. 處理科別 1 (72pt)
             p1 = doc.add_paragraph()
             p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run1 = p1.add_run(subj_text)
+            p1.paragraph_format.space_after = Pt(0) 
+            run1 = p1.add_run(subj1)
             run1.font.name = '標楷體'
             run1._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
             run1.font.size = Pt(72)
             run1.bold = True
             
-            # 2. 處理試場場地 (48pt) - 包含工作表類型與具體場地
-            venue = str(row.get('試場場地', '')).strip()
+            # 2. 處理科別 2 (72pt)
+            subj2 = str(row.get('科別2', '')).strip()
             p2 = doc.add_paragraph()
             p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p2.paragraph_format.space_before = Pt(40) # 稍微推開距離
+            p2.paragraph_format.space_after = Pt(0)
             
-            run2 = p2.add_run(f"【{sheet_name}】\n{venue}")
+            if subj2 and subj2.lower() != 'nan':
+                run2 = p2.add_run(subj2)
+            else:
+                run2 = p2.add_run("　") 
+                
             run2.font.name = '標楷體'
             run2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-            run2.font.size = Pt(48)
+            run2.font.size = Pt(72)
             run2.bold = True
             
-            # 3. 處理工作人員 (36pt)
-            staff = str(row.get('工作人員', '')).strip()
+            # 3. 處理試場場地 (48pt) -> 更改為 [場地類型:地點] 格式
+            venue = str(row.get('試場場地', '')).strip()
+            if venue.lower() == 'nan': venue = ""
             p3 = doc.add_paragraph()
-            p3.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            p3.paragraph_format.space_before = Pt(60)
+            p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p3.paragraph_format.space_before = Pt(40)
             
-            run3 = p3.add_run(f"工作人員：{staff}")
+            # 依據有無教室地點，產出字串
+            venue_text = f"[{sheet_name}:{venue}]" if venue else f"[{sheet_name}]"
+            
+            run3 = p3.add_run(venue_text)
             run3.font.name = '標楷體'
             run3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-            run3.font.size = Pt(36)
+            run3.font.size = Pt(48)
+            run3.bold = True
             
-            # 4. 處理試場用品 (36pt)
-            supplies = str(row.get('試場用品', '')).strip()
+            # 4. 處理工作人員 (36pt)
+            staff = str(row.get('工作人員', '')).strip()
+            if staff.lower() == 'nan': staff = ""
             p4 = doc.add_paragraph()
             p4.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            p4.paragraph_format.space_before = Pt(40)
+            p4.paragraph_format.space_before = Pt(60)
             
-            run4 = p4.add_run(f"試場用品：\n{supplies}")
+            run4 = p4.add_run(f"工作人員：{staff}")
             run4.font.name = '標楷體'
             run4._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
             run4.font.size = Pt(36)
+            
+            # 5. 處理試場用品 (36pt)
+            supplies = str(row.get('試場用品', '')).strip()
+            if supplies.lower() == 'nan': supplies = ""
+            p5 = doc.add_paragraph()
+            p5.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p5.paragraph_format.space_before = Pt(40)
+            
+            run5 = p5.add_run(f"試場用品：\n{supplies}")
+            run5.font.name = '標楷體'
+            run5._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            run5.font.size = Pt(36)
             
     out = io.BytesIO()
     doc.save(out)
@@ -490,7 +506,7 @@ with tab1:
     file_reg = st.file_uploader("1️⃣ 上傳【報名總名單】 (准考證號, 報考科目, [姓名]).xlsx", type=['xlsx'], key="reg_file")
     
     st.markdown("---")
-    file_staff = st.file_uploader("2️⃣ 上傳【工作人員資料袋套印】 (工作表：準備室/試教場地/口試場地).xlsx", type=['xlsx'], key="staff_file")
+    file_staff = st.file_uploader("2️⃣ 上傳【工作人員資料袋套印】 (工作表需為：準備室/試教場地/口試場地).xlsx", type=['xlsx'], key="staff_file")
     
     if file_reg or file_staff:
         try:
@@ -524,8 +540,7 @@ with tab1:
                     oral_items = ["自述(20%)", "教學理念(20%)", "班級經營(20%)", "表達溝通(20%)", "舉止儀態(20%)", "合計總分", "備註"]
                     st.session_state.oral_data = generate_eval_sheet(academic_year, session_num, df_master_t1, "口試評分表", oral_items, all_subjs_t1)
                         
-                    # 若有多選的實作科目，則獨立產出實作評分表 (註: 這裡以有選單為準，若無，預設為無)
-                    prac_subjs_t1 = [s for s in all_subjs_t1 if '實作' in s] # 若有明確需要，可以讓老師繼續使用 multiselect
+                    prac_subjs_t1 = [s for s in all_subjs_t1 if '實作' in s] 
                     
                     st.session_state.oral_env_data = generate_envelope_cover(all_subjs_t1, "口試評分表")
                     st.session_state.teach_env_data = generate_envelope_cover(all_subjs_t1, "試教評分表")
@@ -808,6 +823,7 @@ with tab2:
                     df_teach.to_excel(writer, index=False, sheet_name='門口_試教實作表')
                     df_int = df_master[['報考科目', '准考證號', '口試時間']].copy()
                     df_int['開始時間'] = df_int['口試時間'].str[:5]
+                    df_int['開始時間'] = df_int['開始時間'].fillna("")
                     df_int = df_int.sort_values(['報考科目', '開始時間']).drop(columns=['開始時間'])
                     df_int.to_excel(writer, index=False, sheet_name='門口_口試表')
                 
