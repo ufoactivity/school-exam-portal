@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：已精準微調評分表高度與簽名間距。信封封面已強制消除段落間距，確保 80pt 超大字體與警語完美收攏於同一頁！(115.05.28增修)")
+st.info("💡 終極進化：信封封面已更新為「B4 橫向、精準邊界(上10下4左右10)、縮小警語間距」！(115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -277,7 +277,7 @@ def generate_eval_sheet(academic_year, session_num, df_master, form_name, row_it
     return out.getvalue()
 
 def generate_envelope_cover(target_subjs, env_title):
-    """【全新模組】：自動產出 B4 橫式、精準邊界與超大字體的信封封面，確保警語不換頁"""
+    """【全新模組】：自動產出 B4 橫式、精準邊界與超大字體的信封封面，確保警語不換頁並縮小間距"""
     doc = docx.Document()
     section = doc.sections[0]
     
@@ -286,18 +286,18 @@ def generate_envelope_cover(target_subjs, env_title):
     section.page_width = Cm(36.4)
     section.page_height = Cm(25.7)
     
-    # ★ 邊界精準設定 (微調上下邊界，確保警語有足夠空間不被擠出頁面) ★
-    section.top_margin = Cm(8.0)
+    # ★ 邊界精準設定：上10公分、下4公分、左右各10公分 ★
+    section.top_margin = Cm(10.0)
     section.bottom_margin = Cm(4.0)
-    section.left_margin = Cm(8.0)
-    section.right_margin = Cm(8.0)
+    section.left_margin = Cm(10.0)
+    section.right_margin = Cm(10.0)
     
     for i, subject in enumerate(target_subjs):
         
         # 1. 科別名稱 (80pt)
         p1 = doc.add_paragraph()
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p1.paragraph_format.space_after = Pt(0) # 消除段落後距，防止亂擠
+        p1.paragraph_format.space_after = Pt(0) # 消除段落後距
         
         run1 = p1.add_run(subject)
         run1.font.name = '標楷體'
@@ -308,7 +308,7 @@ def generate_envelope_cover(target_subjs, env_title):
         # 2. 評分表名稱 (80pt)
         p2 = doc.add_paragraph()
         p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p2.paragraph_format.space_after = Pt(20) # 警語前留一點點空隙
+        p2.paragraph_format.space_after = Pt(0) # 【微調】：強迫歸零，拉近標題與警語距離
         
         run2 = p2.add_run(env_title)
         run2.font.name = '標楷體'
@@ -319,7 +319,8 @@ def generate_envelope_cover(target_subjs, env_title):
         # 3. 警語 (20pt)
         p3 = doc.add_paragraph()
         p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p3.paragraph_format.space_after = Pt(0) # 消除段落後距
+        p3.paragraph_format.space_before = Pt(0) # 【微調】：強迫歸零，確保上方沒有多餘空白
+        p3.paragraph_format.space_after = Pt(0) 
         
         run3 = p3.add_run("(內附原子筆，進入試場前煩請確認是否能書寫)")
         run3.font.name = '標楷體'
@@ -572,7 +573,7 @@ with tab2:
 
     st.write("---")
 
-    if st.button("🚀 啟當天防撞排程", type="primary", use_container_width=True, key="btn_phase2"):
+    if st.button("🚀 啟動當天防撞排程", type="primary", use_container_width=True, key="btn_phase2"):
         if not file_candidates or not file_venues:
             st.error("🚨 請確認【實際報到名單】與【場地設定】皆已上傳！")
         else:
