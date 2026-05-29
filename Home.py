@@ -204,7 +204,8 @@ with row2_col1:
         - 🖨️ **一鍵直出報表**：自動生成大字體、紅字警語且已蓋妥官印之Word公告單。
         """)
         st.write("")
-        st.page_link("pages/3_教師甄選智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
+        # 🌟 質感修復：標題為 👨‍🏫，按鈕使用最具行動導向的 🎯 圖示
+        st.page_link("pages/3_教師甄選智能輔助系統.py", label="啟動教師甄選作業 →", icon="🎯")
 
 with row2_col2:
     with st.container(border=True):
@@ -221,7 +222,8 @@ with row2_col2:
         - 📈 **圖表化清單**：自動匯出清晰的總務處繳費單與書商訂卷清單。
         """)
         st.write("")
-        st.page_link("pages/4_模考調查智能輔助系統.py", label="啟動模擬考調查作業 →", icon="📊")
+        # 🌟 質感修復：標題為 📊，按鈕使用代表數據全面啟動的 📈 圖示
+        st.page_link("pages/4_模考調查智能輔助系統.py", label="啟動模擬考調查作業 →", icon="📈")
 
 # ==========================================
 # 5. 底部沉穩頁尾
