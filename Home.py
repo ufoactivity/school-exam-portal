@@ -179,10 +179,10 @@ with row1_col2:
         st.markdown("""
         - 🧼 **智慧數據清洗**：自動剃除幽靈名單與全半形錯字干擾。
         - 🏫 **多重考場分流**：自動計算最大考場容量，防範座位重疊衝突。
-        - 務報表輸出**：自動生成個人補考通知單與考場對照表。
+        - 🖨️ **試務報表輸出**：自動生成個人補考通知單與考場對照表。
         """)
         st.write("")
-        st.page_link("pages/2_補考作業智能輔助系統.py", label="啟動補考處理作業 →", icon="⚡")
+        st.page_link("pages/2_補考作業智能輔助系統.py", label="啟動補考處理作業 →", icon="🚀")
 
 st.write("") # 增加排與排之間的間距
 
@@ -204,7 +204,7 @@ with row2_col1:
         - 🖨️ **一鍵直出報表**：自動生成大字體、紅字警語且已蓋妥官印之Word公告單.
         """)
         st.write("")
-        st.page_link("pages/3_教師甄選智能輔助系統.py", label="啟動教師甄選作業 →", icon="👨‍🏫")
+        st.page_link("pages/3_教師甄選智能輔助系統.py", label="啟動教師甄選作業 →", icon="🚀")
 
 with row2_col2:
     with st.container(border=True):
@@ -221,7 +221,7 @@ with row2_col2:
         - 📈 **圖表化清單**：自動匯出清晰的總務處繳費單與書商訂卷清單。
         """)
         st.write("")
-        st.page_link("pages/4_模考調查智能輔助系統.py", label="啟動模擬考調查作業 →", icon="📊")
+        st.page_link("pages/4_模考調查智能輔助系統.py", label="啟動模擬考調查作業 →", icon="🚀")
 
 # ==========================================
 # 5. 底部沉穩頁尾
