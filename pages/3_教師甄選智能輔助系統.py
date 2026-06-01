@@ -18,8 +18,8 @@ except ImportError:
 # 1. 網頁頁面配置與記憶體初始化
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
-st.title("👨‍🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：工作人員封面套用「隱形文字技術」確保對齊。已修復第一階段「實作評分表」選擇與產出功能！(115.05.28增修)")
+st.title("🏫 試務組-教師甄選智能輔助系统")
+st.info("💡 終極進化：工作人員資料袋已加入「智慧過濾」功能，若該科無工作人員（無人報考）將自動跳過不列印，省時省紙！(115.05.28增修)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -31,8 +31,6 @@ if 'tab2_processed' not in st.session_state:
     st.session_state.tab2_processed = False
 if 'staff_env_data' not in st.session_state:
     st.session_state.staff_env_data = None
-if 'prac_data' not in st.session_state:
-    st.session_state.prac_data = None
 
 # ==========================================
 # 0. 側邊欄：試務資源與印章設定
@@ -313,7 +311,7 @@ def generate_envelope_cover(target_subjs, env_title):
     return out.getvalue()
 
 def generate_staff_envelopes(df_dict):
-    """產出工作人員資料袋封面，支援雙科分行與隱形文字對齊技術"""
+    """產出工作人員資料袋封面，支援雙科分行與隱形文字對齊技術，並智慧過濾無工作人員之科目"""
     doc = docx.Document()
     section = doc.sections[0]
     
@@ -333,6 +331,11 @@ def generate_staff_envelopes(df_dict):
         for idx, row in df.iterrows():
             subj1 = str(row.get('科別1', '')).strip()
             if not subj1 or subj1.lower() == 'nan':
+                continue
+            
+            # ★ 新增優化：智慧過濾，如果工作人員欄位空白，表示無人報考，直接跳過不產出此頁封面！
+            staff = str(row.get('工作人員', '')).strip()
+            if not staff or staff.lower() == 'nan':
                 continue
                 
             if not is_first_page:
@@ -398,8 +401,6 @@ def generate_staff_envelopes(df_dict):
             run4.font.size = Pt(36)
             
             # 5. 處理工作人員 (36pt) -> 置中對齊 (放最下面)
-            staff = str(row.get('工作人員', '')).strip()
-            if staff.lower() == 'nan': staff = ""
             p5 = doc.add_paragraph()
             p5.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p5.paragraph_format.space_before = Pt(40)
