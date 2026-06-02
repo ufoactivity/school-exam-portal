@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：工作人員資料袋已加入「智慧過濾」功能，若該科無工作人員（無人報考）將自動跳過不列印，省時省紙！(115.05.28增修)")
+st.info("💡 終極進化：工作人員資料袋支援單場地3考科，且口試合併群組內可『自訂部分科目合併試教』，滿足極端特殊考場配置！")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -311,7 +311,7 @@ def generate_envelope_cover(target_subjs, env_title):
     return out.getvalue()
 
 def generate_staff_envelopes(df_dict):
-    """產出工作人員資料袋封面，支援雙科分行與隱形文字對齊技術，並智慧過濾無工作人員之科目"""
+    """產出工作人員資料袋封面，升級支援單場地3科分行與隱形文字對齊技術"""
     doc = docx.Document()
     section = doc.sections[0]
     
@@ -333,7 +333,7 @@ def generate_staff_envelopes(df_dict):
             if not subj1 or subj1.lower() == 'nan':
                 continue
             
-            # ★ 新增優化：智慧過濾，如果工作人員欄位空白，表示無人報考，直接跳過不產出此頁封面！
+            # 智慧過濾，如果工作人員欄位空白，表示無人報考，直接跳過不產出此頁封面！
             staff = str(row.get('工作人員', '')).strip()
             if not staff or staff.lower() == 'nan':
                 continue
@@ -365,50 +365,71 @@ def generate_staff_envelopes(df_dict):
                 run2.font.size = Pt(72)
                 run2.bold = True
             else:
-                # 【終極解法：隱形中文字】
+                # 隱形中文字
                 run2 = p2.add_run("一") 
                 run2.font.name = '標楷體'
                 run2._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
                 run2.font.size = Pt(72)
                 run2.bold = True
                 run2.font.color.rgb = RGBColor(255, 255, 255) # 純白隱形
+
+            # 3. 處理科別 3 (72pt) 【重點擴充功能】
+            subj3 = str(row.get('科別3', '')).strip()
+            p3_sub = doc.add_paragraph()
+            p3_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p3_sub.paragraph_format.space_after = Pt(0)
             
-            # 3. 處理試場場地 (48pt) -> 【場地類型:地點】 格式
+            if subj3 and subj3.lower() != 'nan':
+                run3_sub = p3_sub.add_run(subj3)
+                run3_sub.font.name = '標楷體'
+                run3_sub._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                run3_sub.font.size = Pt(72)
+                run3_sub.bold = True
+            else:
+                # 隱形中文字保持整體視覺高度一致
+                run3_sub = p3_sub.add_run("一") 
+                run3_sub.font.name = '標楷體'
+                run3_sub._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+                run3_sub.font.size = Pt(72)
+                run3_sub.bold = True
+                run3_sub.font.color.rgb = RGBColor(255, 255, 255) # 純白隱形
+            
+            # 4. 處理試場場地 (48pt) -> 【場地類型:地點】 格式
             venue = str(row.get('試場場地', row.get('場地教室', row.get('教室地點', '')))).strip()
             if venue.lower() == 'nan': venue = ""
-            p3 = doc.add_paragraph()
-            p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p3.paragraph_format.space_before = Pt(40)
+            p4 = doc.add_paragraph()
+            p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p4.paragraph_format.space_before = Pt(30) # 微調間距適應3行科目
             
             venue_text = f"【{sheet_name}:{venue}】" if venue else f"【{sheet_name}】"
             
-            run3 = p3.add_run(venue_text)
-            run3.font.name = '標楷體'
-            run3._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-            run3.font.size = Pt(48)
-            run3.bold = True
-            
-            # 4. 處理試場用品 (36pt) -> 置中對齊
-            supplies = str(row.get('試場用品', '')).strip()
-            if supplies.lower() == 'nan': supplies = ""
-            p4 = doc.add_paragraph()
-            p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p4.paragraph_format.space_before = Pt(60) 
-            
-            run4 = p4.add_run(f"試場用品：\n{supplies}")
+            run4 = p4.add_run(venue_text)
             run4.font.name = '標楷體'
             run4._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
-            run4.font.size = Pt(36)
+            run4.font.size = Pt(48)
+            run4.bold = True
             
-            # 5. 處理工作人員 (36pt) -> 置中對齊 (放最下面)
+            # 5. 處理試場用品 (36pt) -> 置中對齊
+            supplies = str(row.get('試場用品', '')).strip()
+            if supplies.lower() == 'nan': supplies = ""
             p5 = doc.add_paragraph()
             p5.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p5.paragraph_format.space_before = Pt(40)
+            p5.paragraph_format.space_before = Pt(40) 
             
-            run5 = p5.add_run(f"工作人員：{staff}")
+            run5 = p5.add_run(f"試場用品：\n{supplies}")
             run5.font.name = '標楷體'
             run5._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
             run5.font.size = Pt(36)
+            
+            # 6. 處理工作人員 (36pt) -> 置中對齊 (放最下面)
+            p6 = doc.add_paragraph()
+            p6.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p6.paragraph_format.space_before = Pt(30)
+            
+            run6 = p6.add_run(f"工作人員：{staff}")
+            run6.font.name = '標楷體'
+            run6._element.rPr.rFonts.set(docx.oxml.ns.qn('w:eastAsia'), '標楷體')
+            run6.font.size = Pt(36)
             
     out = io.BytesIO()
     doc.save(out)
@@ -645,15 +666,17 @@ with tab2:
                     for g_i in range(int(num_groups)):
                         st.markdown(f"**【口試合併群組 {g_i + 1}】**")
                         available_options = [s for s in all_subjs if s not in already_assigned]
+                        
                         selected_for_g = st.multiselect(
-                            f"選擇成員科目：",
+                            f"選擇口試合併之成員科目：",
                             options=available_options,
                             key=f"group_select_t2_{g_i}"
                         )
                         
-                        merged_teaching = st.checkbox(
-                            "✅ 此群組『試教』也共用同一組委員 (接力排下去)", 
-                            value=False, 
+                        # 【重點升級】：從單一 Checkbox 進化為多選下拉，允許群組內部分科目合併試教
+                        merged_teach_subjs = st.multiselect(
+                            "👉 此群組中，哪些科目要【合併試教】(接力排程)？未選者將獨立計算試教序號：",
+                            options=selected_for_g,
                             key=f"merged_teach_t2_{g_i}"
                         )
                         st.write("")
@@ -661,7 +684,7 @@ with tab2:
                         if selected_for_g:
                             group_settings.append({
                                 'subjects': selected_for_g,
-                                'merged_teaching': merged_teaching
+                                'merged_teaching_subjects': merged_teach_subjs
                             })
                             already_assigned.update(selected_for_g)
                     
@@ -675,8 +698,8 @@ with tab2:
     with col_t2_2:
         st.markdown("#### 💡 排程引擎運作說明")
         st.markdown("""
-        * **試教分離邏輯**：口試合併時，可自由決定試教要「同時起跑」還是「接力排程」。
-        * **絕對時間軸防撞**：合併口試採用純時間序防跳號設計，完美按時間順序填補空檔。
+        * **細緻化試教分離邏輯**：口試合併群組內，您可以自由指定哪些科目要在試教場「接力排程」，哪些科目要在試教場「獨立起跑」。
+        * **絕對時間軸防撞**：合併口試採用純時間序防跳號設計，完美按時間順序填補空檔，遇到試教時間重疊會自動順延口試時段。
         """)
 
     st.write("---")
@@ -709,20 +732,22 @@ with tab2:
 
                 final_processing_groups = []
                 assigned_set = set()
+                
                 for g_dict in group_settings:
                     if g_dict['subjects']:
                         final_processing_groups.append({
                             'type': 'merged', 
                             'subjects': g_dict['subjects'],
-                            'merged_teaching': g_dict['merged_teaching']
+                            'merged_teaching_subjects': g_dict['merged_teaching_subjects']
                         })
                         assigned_set.update(g_dict['subjects'])
+                        
                 for sub in all_subjs:
                     if sub not in assigned_set:
                         final_processing_groups.append({
                             'type': 'independent', 
                             'subjects': [sub],
-                            'merged_teaching': False
+                            'merged_teaching_subjects': []
                         })
 
                 all_schedules = []
@@ -730,7 +755,7 @@ with tab2:
                 for group in final_processing_groups:
                     group_total_candidates = sum(len(df_candidates[df_candidates['報考科目'] == sub]) for sub in group['subjects'])
                     is_merged_group = len(group['subjects']) > 1 
-                    merged_teaching = group['merged_teaching']
+                    merged_teaching_subjs = group.get('merged_teaching_subjects', [])
                     
                     if is_merged_group:
                         group['subjects'].sort(key=lambda x: 1 if x in practical_subjects else 0)
@@ -746,16 +771,21 @@ with tab2:
                         n_candidates = len(candidates)
                         if n_candidates == 0: continue
                         
+                        # 檢查此科目是否屬於「合併試教」池
+                        is_subject_merged_teach = subject in merged_teaching_subjs
+                        
                         for i in range(n_candidates):
                             cand = candidates[i]
-                            sort_num = global_teach_idx if merged_teaching else (i + 1)
+                            
+                            # 【重點升級】：獨立科目以自身報到序號為準，合併科目則接力遞增
+                            sort_num = global_teach_idx if is_subject_merged_teach else (i + 1)
                             
                             if is_practical:
                                 prep, teach = TEACH_30_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
                             else:
                                 prep, teach = TEACH_15_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
                             
-                            if merged_teaching:
+                            if is_subject_merged_teach:
                                 global_teach_idx += 1
                                 
                             oral_range = "請手動調整"
