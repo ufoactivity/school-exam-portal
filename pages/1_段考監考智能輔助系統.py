@@ -34,6 +34,11 @@ def to_excel_bytes(df, header_df=None):
         final_out = df
     
     final_out = final_out.fillna("")
+    
+    # 【防呆修復】：將所有開頭為 "=" 的字串前面補一個空白，徹底避免 Excel 誤認儲存格為「公式」而產生檔案損毀警告
+    for col in final_out.columns:
+        final_out[col] = final_out[col].apply(lambda x: f" {x}" if isinstance(x, str) and x.startswith("=") else x)
+
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         final_out.to_excel(writer, index=False, header=False)
     return output.getvalue()
@@ -405,7 +410,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                                 actual_matrix['※'][j] += 1
                             else: val = "" 
                         else:
-                            # 統計原本已存在表上的記號
                             if val == "△": actual_matrix['△'][j] += 1
                             elif val == "※": actual_matrix['※'][j] += 1
                                 
@@ -413,15 +417,15 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         df_out_master.iloc[i, ai_period_cols[j]] = val
                     schedule_dict[t] = res
 
-            # ======== 👇 新增：檢核對帳與 Excel 尾部寫入 ========
+            # --- 檢核對帳與 Excel 尾部寫入 ---
             discrepancies = []
             empty_row = {c: "" for c in df_out_master.columns}
             row_act_d, row_req_d = empty_row.copy(), empty_row.copy()
             row_act_s, row_req_s = empty_row.copy(), empty_row.copy()
             row_diff = empty_row.copy()
             
-            # 設定對帳表頭
-            empty_row[df_out_master.columns[teacher_col_idx]] = "=== 系統自動檢核區 ==="
+            # 【修復】：將開頭等於改為橫線，避免 Excel 誤判為數學公式
+            empty_row[df_out_master.columns[teacher_col_idx]] = "--- 系統自動檢核區 ---"
             row_act_d[df_out_master.columns[teacher_col_idx]] = "實際排入 (△)"
             row_req_d[df_out_master.columns[teacher_col_idx]] = "需求總數 (△)"
             row_act_s[df_out_master.columns[teacher_col_idx]] = "實際排入 (※)"
@@ -453,7 +457,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
 
             summary_df = pd.DataFrame([empty_row, row_act_d, row_req_d, row_act_s, row_req_s, row_diff])
             df_out_master = pd.concat([df_out_master, summary_df], ignore_index=True)
-            # ======== 👆 新增結束 ========
 
             # --- 3. 監考一覽表分配邏輯 ---
             with st.spinner("🎯 執行班級自動分配..."):
