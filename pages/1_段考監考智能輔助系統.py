@@ -14,7 +14,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
 st.title("📅 試務組-段考監考智能輔助系統")
-st.info("💡 終極升級：實裝「兼課教師精確時段鎖定」！現在不僅能鎖定特定天數，還能指定老師「只能排第幾節」，AI 會完美避開衝突區域並進行智慧豁免。")
+st.info("💡 終極升級：實裝「雙重智慧檢核機制」！AI 將在網頁端與匯出總表底部，全自動對帳「實際排班數」與「需求總數」，精準抓出人力缺口。")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -135,7 +135,6 @@ with col2:
     with c_d1: d1_date = st.date_input("📅 AI Day1", datetime.now())
     with c_d2: d2_date = st.date_input("📅 AI Day2", datetime.now())
     
-    # ======== 👇 新增：兼課老師精確時段鎖定 ========
     st.write("---")
     st.markdown("#### ⏳ 兼課教師可用時段精確鎖定")
     st.info("💡 設定兼課/代課老師**允許排考**的日期與節次（若不限制節次請留空）。AI 會自動避開其餘所有時段。")
@@ -153,7 +152,6 @@ with col2:
             "允許節次": st.column_config.TextColumn("⏰ 允許節次 (如: 1,2,3)", help="請輸入阿拉伯數字並以逗號分隔，留空代表該日全天皆可。")
         }
     )
-    # ======== 👆 新增結束 ========
 
     st.write("---")
     st.markdown("#### 🎯 特定班級與老師綁定")
@@ -303,7 +301,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             df_list = df_list_raw.iloc[header_row_idx+1:].copy()
             teachers = df_list.iloc[:, teacher_col_idx].astype(str).str.strip().tolist()
 
-            # ======== 👇 新增：解析兼課教師時段限制 ========
             time_constraints = {}
             for _, row in edited_time_df.iterrows():
                 t_name = str(row['老師']).strip()
@@ -312,7 +309,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     p_limit_str = str(row['允許節次']).strip()
                     p_limits = [int(p) for p in re.findall(r'\d+', p_limit_str)] if p_limit_str else []
                     time_constraints[t_name] = {'day': d_limit, 'periods': p_limits}
-            # ======== 👆 新增結束 ========
 
             # --- 2. PuLP 運算 ---
             with st.spinner(f"🧠 實裝 8 大規則運算中 (偵測到 AI 需排班 {ai_periods} 節)..."):
@@ -339,7 +335,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     penalty += (dfct_pos + dfct_neg) * 500
                     if t in flex_names: penalty -= dfct_neg * 400
                     
-                    # ======== 👇 新增：套用兼課教師精確時段鎖定 ========
                     is_time_constrained = t in time_constraints
                     if is_time_constrained:
                         tc = time_constraints[t]
@@ -347,24 +342,20 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                             is_day1 = j in d1_idx
                             is_day2 = j in d2_idx
                             
-                            # 1. 檢查日期限制
                             if tc['day'] == '僅 Day 1' and is_day2:
                                 prob += vX[i][j] == 0; prob += vY[i][j] == 0
                             elif tc['day'] == '僅 Day 2' and is_day1:
                                 prob += vX[i][j] == 0; prob += vY[i][j] == 0
                                 
-                            # 2. 檢查節次限制
                             if tc['periods']:
                                 if ai_period_nums[j] not in tc['periods']:
                                     prob += vX[i][j] == 0; prob += vY[i][j] == 0
                     
-                    # 豁免被鎖定時段的老師「必須排兩天」的常規限制
                     if tgt >= 5 and len(day_starts) >= 2 and not is_time_constrained:
                         prob += pulp.lpSum([vX[i][j] + vY[i][j] for j in d1_idx]) >= 1
                         prob += pulp.lpSum([vX[i][j] + vY[i][j] for j in d2_idx]) >= 1
                         prob += pulp.lpSum([vX[i][j] for j in range(ai_periods)]) >= 1
                         prob += pulp.lpSum([vY[i][j] for j in range(ai_periods)]) >= 1
-                    # ======== 👆 新增結束 ========
 
                     for j in range(ai_periods):
                         prob += vX[i][j] + vY[i][j] <= 1
@@ -397,6 +388,8 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
 
                 schedule_dict = {}
                 df_out_master = df_list.copy()
+                actual_matrix = {'△': [0]*ai_periods, '※': [0]*ai_periods}
+                
                 for i, t in enumerate(teachers):
                     res = []
                     df_out_master.iloc[i, quota_col_in_list] = int(quota_dict.get(t, 0))
@@ -404,12 +397,63 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     for j in range(ai_periods):
                         val = str(df_list.iloc[i, ai_period_cols[j]]).strip()
                         if val == "" or val == "nan":
-                            if vX[i][j].varValue == 1: val = "△"
-                            elif vY[i][j].varValue == 1: val = "※"
+                            if vX[i][j].varValue == 1: 
+                                val = "△"
+                                actual_matrix['△'][j] += 1
+                            elif vY[i][j].varValue == 1: 
+                                val = "※"
+                                actual_matrix['※'][j] += 1
                             else: val = "" 
+                        else:
+                            # 統計原本已存在表上的記號
+                            if val == "△": actual_matrix['△'][j] += 1
+                            elif val == "※": actual_matrix['※'][j] += 1
+                                
                         res.append(val)
                         df_out_master.iloc[i, ai_period_cols[j]] = val
                     schedule_dict[t] = res
+
+            # ======== 👇 新增：檢核對帳與 Excel 尾部寫入 ========
+            discrepancies = []
+            empty_row = {c: "" for c in df_out_master.columns}
+            row_act_d, row_req_d = empty_row.copy(), empty_row.copy()
+            row_act_s, row_req_s = empty_row.copy(), empty_row.copy()
+            row_diff = empty_row.copy()
+            
+            # 設定對帳表頭
+            empty_row[df_out_master.columns[teacher_col_idx]] = "=== 系統自動檢核區 ==="
+            row_act_d[df_out_master.columns[teacher_col_idx]] = "實際排入 (△)"
+            row_req_d[df_out_master.columns[teacher_col_idx]] = "需求總數 (△)"
+            row_act_s[df_out_master.columns[teacher_col_idx]] = "實際排入 (※)"
+            row_req_s[df_out_master.columns[teacher_col_idx]] = "需求總數 (※)"
+            row_diff[df_out_master.columns[teacher_col_idx]]  = "異常差額警示"
+
+            for j in range(ai_periods):
+                col_name = df_out_master.columns[ai_period_cols[j]]
+                period_name = str(df_list_raw.iloc[header_row_idx, ai_period_cols[j]]).strip()
+                day_name = "Day1" if j in d1_idx else "Day2"
+                
+                act_d, req_d = actual_matrix['△'][j], req_matrix['△'][j]
+                act_s, req_s = actual_matrix['※'][j], req_matrix['※'][j]
+                
+                row_act_d[col_name], row_req_d[col_name] = act_d, req_d
+                row_act_s[col_name], row_req_s[col_name] = act_s, req_s
+                
+                diff_d, diff_s = act_d - req_d, act_s - req_s
+                diff_strs = []
+                
+                if diff_d != 0:
+                    diff_strs.append(f"△{'+' if diff_d>0 else ''}{diff_d}")
+                    discrepancies.append(f"【{day_name}】第 {period_name} 節 - △：需求 {req_d} 人，實際 {act_d} 人 (差額: {diff_d})")
+                if diff_s != 0:
+                    diff_strs.append(f"※{'+' if diff_s>0 else ''}{diff_s}")
+                    discrepancies.append(f"【{day_name}】第 {period_name} 節 - ※：需求 {req_s} 人，實際 {act_s} 人 (差額: {diff_s})")
+                    
+                row_diff[col_name] = "、".join(diff_strs) if diff_strs else "正常吻合"
+
+            summary_df = pd.DataFrame([empty_row, row_act_d, row_req_d, row_act_s, row_req_s, row_diff])
+            df_out_master = pd.concat([df_out_master, summary_df], ignore_index=True)
+            # ======== 👆 新增結束 ========
 
             # --- 3. 監考一覽表分配邏輯 ---
             with st.spinner("🎯 執行班級自動分配..."):
@@ -693,13 +737,22 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     wb_label.save(out_label)
                     label_bytes = out_label.getvalue()
 
-            st.balloons()
             st.session_state['results'] = {
                 'orig': to_excel_bytes(df_out_master, header_df),
                 'assign': assign_bytes,
                 'pub': pub_bytes,
-                'label': label_bytes
+                'label': label_bytes,
+                'discrepancies': discrepancies
             }
+            
+            if not discrepancies:
+                st.balloons()
+                st.success("✅ 完美排班！所有節次的監考人數與「監考類型總數」100% 吻合！")
+            else:
+                st.warning("⚠️ 檢核提示：因您設定了特定鎖定條件（如特定日期或時段），部分節次的排入人數與原始需求有落差，明細如下：")
+                for d in discrepancies:
+                    st.write(f"- {d}")
+                st.info("💡 下載出來的「1. 監考總表.xlsx」檔案最下方，也有為您附上完整的對帳明細喔！")
 
         except Exception as e:
             st.error(f"發生錯誤: {e}")
