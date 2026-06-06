@@ -14,7 +14,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
 st.title("📅 試務組-段考監考智能輔助系統")
-st.info("💡 終極升級：實裝「動態日期追蹤引擎」與「特定日期鎖定」！手排日可任意出現，且能強制指定老師僅限 Day 1 或 Day 2 監考，AI 會自動避開衝突完美排班。")
+st.info("💡 終極升級：實裝「兼課教師精確時段鎖定」！現在不僅能鎖定特定天數，還能指定老師「只能排第幾節」，AI 會完美避開衝突區域並進行智慧豁免。")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -105,7 +105,6 @@ with col2:
         xls = pd.ExcelFile(file_quota)
         selected_sheet = st.selectbox("👇 選擇考試項目：", xls.sheet_names)
     
-    # 提前萃取教師名單供下拉選單使用
     flex_names = []
     teacher_list = []
     if file_list:
@@ -119,7 +118,6 @@ with col2:
             except: pass
         flex_names = st.multiselect("🛡️ 優先時數不大於名單：", options=teacher_list)
 
-    # 提前萃取班級名單供下拉選單使用
     class_list = []
     if file_assign:
         df_assign_temp = pd.read_excel(file_assign, header=None).fillna("")
@@ -137,20 +135,28 @@ with col2:
     with c_d1: d1_date = st.date_input("📅 AI Day1", datetime.now())
     with c_d2: d2_date = st.date_input("📅 AI Day2", datetime.now())
     
-    # ======== 👇 新增：特定老師鎖定監考日期 ========
+    # ======== 👇 新增：兼課老師精確時段鎖定 ========
     st.write("---")
-    st.markdown("#### 📅 特定老師鎖定監考日期")
-    st.info("💡 若某位老師僅能於特定日期監考（如：請假或出差），請在此設定。系統將自動避開排入其他 AI 日期。")
-    col_day1, col_day2 = st.columns(2)
-    with col_day1:
-        only_day1_teachers = st.multiselect("🔒 僅限 【AI Day 1】 監考：", options=teacher_list)
-    with col_day2:
-        only_day2_teachers = st.multiselect("🔒 僅限 【AI Day 2】 監考：", options=teacher_list)
+    st.markdown("#### ⏳ 兼課教師可用時段精確鎖定")
+    st.info("💡 設定兼課/代課老師**允許排考**的日期與節次（若不限制節次請留空）。AI 會自動避開其餘所有時段。")
+    
+    if 'time_rules' not in st.session_state:
+        st.session_state.time_rules = pd.DataFrame([{"老師": None, "允許日期": "無限制", "允許節次": ""} for _ in range(3)])
+        
+    edited_time_df = st.data_editor(
+        st.session_state.time_rules, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        column_config={
+            "老師": st.column_config.SelectboxColumn("👨‍🏫 指定老師", options=teacher_list if teacher_list else [""], required=False),
+            "允許日期": st.column_config.SelectboxColumn("📅 允許日期", options=["無限制", "僅 Day 1", "僅 Day 2"], default="無限制"),
+            "允許節次": st.column_config.TextColumn("⏰ 允許節次 (如: 1,2,3)", help="請輸入阿拉伯數字並以逗號分隔，留空代表該日全天皆可。")
+        }
+    )
     # ======== 👆 新增結束 ========
 
     st.write("---")
     st.markdown("#### 🎯 特定班級與老師綁定")
-    st.info("💡 您可以手動新增綁定，或直接上傳先前儲存的綁定名單(.xlsx)。")
 
     if 'bind_rules' not in st.session_state:
         st.session_state.bind_rules = pd.DataFrame([{"老師": None, "班級": None}] * 3)
@@ -198,6 +204,7 @@ with col2:
         st.session_state['results'] = None
         st.session_state['uploader_key'] += 1
         if 'bind_rules' in st.session_state: del st.session_state['bind_rules']
+        if 'time_rules' in st.session_state: del st.session_state['time_rules']
         if 'last_bind_file' in st.session_state: del st.session_state['last_bind_file']
         st.rerun()
 
@@ -296,6 +303,17 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             df_list = df_list_raw.iloc[header_row_idx+1:].copy()
             teachers = df_list.iloc[:, teacher_col_idx].astype(str).str.strip().tolist()
 
+            # ======== 👇 新增：解析兼課教師時段限制 ========
+            time_constraints = {}
+            for _, row in edited_time_df.iterrows():
+                t_name = str(row['老師']).strip()
+                if t_name and t_name != 'None':
+                    d_limit = str(row['允許日期']).strip()
+                    p_limit_str = str(row['允許節次']).strip()
+                    p_limits = [int(p) for p in re.findall(r'\d+', p_limit_str)] if p_limit_str else []
+                    time_constraints[t_name] = {'day': d_limit, 'periods': p_limits}
+            # ======== 👆 新增結束 ========
+
             # --- 2. PuLP 運算 ---
             with st.spinner(f"🧠 實裝 8 大規則運算中 (偵測到 AI 需排班 {ai_periods} 節)..."):
                 prob = pulp.LpProblem("Scheduling", pulp.LpMinimize)
@@ -306,7 +324,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         vX[i][j] = pulp.LpVariable(f"X_{i}_{j}", cat='Binary')
                         vY[i][j] = pulp.LpVariable(f"Y_{i}_{j}", cat='Binary')
                 
-                # 計算 Day1 與 Day2 的 index 區間
                 d1_idx = list(range(day_starts[0], day_starts[1])) if len(day_starts) > 1 else list(range(ai_periods))
                 d2_idx = list(range(day_starts[1], ai_periods)) if len(day_starts) > 1 else []
 
@@ -322,19 +339,27 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     penalty += (dfct_pos + dfct_neg) * 500
                     if t in flex_names: penalty -= dfct_neg * 400
                     
-                    # ======== 👇 新增：鎖定特定日期的硬性條件 ========
-                    if t in only_day1_teachers:
-                        for j in d2_idx:
-                            prob += vX[i][j] == 0
-                            prob += vY[i][j] == 0
+                    # ======== 👇 新增：套用兼課教師精確時段鎖定 ========
+                    is_time_constrained = t in time_constraints
+                    if is_time_constrained:
+                        tc = time_constraints[t]
+                        for j in range(ai_periods):
+                            is_day1 = j in d1_idx
+                            is_day2 = j in d2_idx
+                            
+                            # 1. 檢查日期限制
+                            if tc['day'] == '僅 Day 1' and is_day2:
+                                prob += vX[i][j] == 0; prob += vY[i][j] == 0
+                            elif tc['day'] == '僅 Day 2' and is_day1:
+                                prob += vX[i][j] == 0; prob += vY[i][j] == 0
+                                
+                            # 2. 檢查節次限制
+                            if tc['periods']:
+                                if ai_period_nums[j] not in tc['periods']:
+                                    prob += vX[i][j] == 0; prob += vY[i][j] == 0
                     
-                    if t in only_day2_teachers:
-                        for j in d1_idx:
-                            prob += vX[i][j] == 0
-                            prob += vY[i][j] == 0
-                    
-                    # 修改原有規則：豁免被鎖定單日老師的「必須排兩天」限制
-                    if tgt >= 5 and len(day_starts) >= 2 and (t not in only_day1_teachers) and (t not in only_day2_teachers):
+                    # 豁免被鎖定時段的老師「必須排兩天」的常規限制
+                    if tgt >= 5 and len(day_starts) >= 2 and not is_time_constrained:
                         prob += pulp.lpSum([vX[i][j] + vY[i][j] for j in d1_idx]) >= 1
                         prob += pulp.lpSum([vX[i][j] + vY[i][j] for j in d2_idx]) >= 1
                         prob += pulp.lpSum([vX[i][j] for j in range(ai_periods)]) >= 1
