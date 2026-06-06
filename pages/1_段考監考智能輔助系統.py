@@ -689,8 +689,8 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         if '班級' in col_map and '監考老師' in col_map:
                             header_row = r; break
 
-                    d1_ymd, d1_date.strftime('%Y-%m-%d'), d1_short, d1_slash = d1_date.strftime('%m-%d'), d1_date.strftime('%m-%d'), d1_date.strftime('%Y/%m/%d')
-                    d2_ymd, d2_date.strftime('%Y-%m-%d'), d2_short, d2_slash = d2_date.strftime('%m-%d'), d2_date.strftime('%m-%d'), d2_date.strftime('%Y/%m/%d')
+                    d1_ymd, d1_short, d1_slash = d1_date.strftime('%Y-%m-%d'), d1_date.strftime('%m-%d'), d1_date.strftime('%Y/%m/%d')
+                    d2_ymd, d2_short, d2_slash = d2_date.strftime('%Y-%m-%d'), d2_date.strftime('%m-%d'), d2_date.strftime('%Y/%m/%d')
                     
                     day_p_val_to_ai_col = {}
                     curr_day_idx = 0
