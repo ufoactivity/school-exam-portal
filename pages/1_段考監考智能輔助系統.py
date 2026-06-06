@@ -14,7 +14,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
 st.title("📅 試務組-段考監考智能輔助系統")
-st.info("💡 終極升級：實裝「動態日期追蹤引擎」！手排日可任意出現在第一天、中間或最後一天，AI 都能精準鎖定保護。新增下拉選單特定綁定，並支援「名單匯出/匯入」重複使用！115.05.24增修")
+st.info("💡 終極升級：實裝「動態日期追蹤引擎」與「特定日期鎖定」！手排日可任意出現，且能強制指定老師僅限 Day 1 或 Day 2 監考，AI 會自動避開衝突完美排班。")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -69,7 +69,6 @@ def extract_period_num(s):
         if 1 <= p <= 15: return p
     return -1
 
-# 【全新核心】：動態日期比對器，不限格式看懂日期
 def matches_date(val_str, d_date):
     if not d_date: return False
     s = str(val_str).replace(' ', '').replace('nan', '')
@@ -138,18 +137,26 @@ with col2:
     with c_d1: d1_date = st.date_input("📅 AI Day1", datetime.now())
     with c_d2: d2_date = st.date_input("📅 AI Day2", datetime.now())
     
-    # ======== 👇 新增：特定老師綁定特定班級 UI (支援匯入/匯出) ========
+    # ======== 👇 新增：特定老師鎖定監考日期 ========
+    st.write("---")
+    st.markdown("#### 📅 特定老師鎖定監考日期")
+    st.info("💡 若某位老師僅能於特定日期監考（如：請假或出差），請在此設定。系統將自動避開排入其他 AI 日期。")
+    col_day1, col_day2 = st.columns(2)
+    with col_day1:
+        only_day1_teachers = st.multiselect("🔒 僅限 【AI Day 1】 監考：", options=teacher_list)
+    with col_day2:
+        only_day2_teachers = st.multiselect("🔒 僅限 【AI Day 2】 監考：", options=teacher_list)
+    # ======== 👆 新增結束 ========
+
     st.write("---")
     st.markdown("#### 🎯 特定班級與老師綁定")
     st.info("💡 您可以手動新增綁定，或直接上傳先前儲存的綁定名單(.xlsx)。")
 
-    # 初始化綁定清單的 Session State
     if 'bind_rules' not in st.session_state:
         st.session_state.bind_rules = pd.DataFrame([{"老師": None, "班級": None}] * 3)
     if 'last_bind_file' not in st.session_state:
         st.session_state.last_bind_file = None
 
-    # 1. 上傳綁定名單
     file_bind = st.file_uploader("📥 [選填] 匯入既有綁定名單 (.xlsx)", type=['xlsx'], key=f"f_bind_{st.session_state['uploader_key']}")
     if file_bind and st.session_state.last_bind_file != file_bind.name:
         try:
@@ -157,33 +164,20 @@ with col2:
             if "老師" in df_bind_up.columns and "班級" in df_bind_up.columns:
                 st.session_state.bind_rules = df_bind_up[["老師", "班級"]]
                 st.session_state.last_bind_file = file_bind.name
-                st.rerun() # 重新載入以更新下方的表格
+                st.rerun() 
         except Exception as e:
             st.error("讀取失敗，請確認檔案是否為之前下載的格式。")
 
-    # 2. 編輯綁定名單 (支援下拉選單)
     edited_bind_df = st.data_editor(
         st.session_state.bind_rules, 
         num_rows="dynamic", 
         use_container_width=True,
         column_config={
-            "老師": st.column_config.SelectboxColumn(
-                "👨‍🏫 指定老師",
-                help="請選擇監考老師",
-                options=teacher_list if teacher_list else [""],
-                required=False
-            ),
-            "班級": st.column_config.SelectboxColumn(
-                "🏫 指定班級",
-                help="請選擇監考班級",
-                options=class_list if class_list else [""],
-                required=False
-            )
+            "老師": st.column_config.SelectboxColumn("👨‍🏫 指定老師", options=teacher_list if teacher_list else [""], required=False),
+            "班級": st.column_config.SelectboxColumn("🏫 指定班級", options=class_list if class_list else [""], required=False)
         }
     )
     
-    # 3. 下載目前綁定名單
-    # 這裡建立專屬的匯出邏輯，確保匯出時保留表頭 (header=True)，供下次完美匯入
     bind_output = io.BytesIO()
     with pd.ExcelWriter(bind_output, engine='xlsxwriter') as writer:
         edited_bind_df.to_excel(writer, index=False, header=True)
@@ -196,12 +190,10 @@ with col2:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
-    # ======== 👆 新增結束 ========
     
     st.write("---")
     force_run = st.checkbox("⚠️ 忽略健檢警告，強制執行")
     
-    # 強化清除設定按鈕，連同暫存的綁定狀態也一併刪除
     if st.button("🗑️ 清除所有設定", use_container_width=True):
         st.session_state['results'] = None
         st.session_state['uploader_key'] += 1
@@ -230,7 +222,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             
             df_list_raw = pd.read_excel(file_list, header=None).fillna("")
             
-            # 定位教師標題行
             header_row_idx = 1
             for r in range(min(5, df_list_raw.shape[0])):
                 if any(k in str(df_list_raw.iloc[r, 1]).strip() for k in ["教師", "姓名", "老師"]):
@@ -239,7 +230,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             teacher_col_idx = 1
             quota_col_in_list = 2
             
-            # 定位所有節次欄位
             period_cols = []
             for c in range(3, df_list_raw.shape[1]):
                 val = str(df_list_raw.iloc[header_row_idx, c]).strip()
@@ -253,13 +243,11 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
             total_periods = len(period_cols)
             date_row_idx = header_row_idx - 1 if header_row_idx > 0 else 0
             
-            # 【關鍵修復】：處理合併儲存格的日期，向右填滿
             date_row_s = df_list_raw.iloc[date_row_idx, :].replace(['nan', ''], np.nan).ffill().fillna("")
             
             manual_cols = []
             ai_period_cols = []
             
-            # 【動態分流】：自動依日期判定誰是手排區、誰是 AI 區
             for c in period_cols:
                 d_str = str(date_row_s[c])
                 if has_manual and d0_date and matches_date(d_str, d0_date):
@@ -274,12 +262,10 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 
             ai_period_nums = [extract_period_num(str(df_list_raw.iloc[header_row_idx, c])) for c in ai_period_cols]
             
-            # 動態偵測換日線
             day_starts = [0]
             for j in range(1, ai_periods):
                 if ai_period_nums[j] <= ai_period_nums[j-1]: day_starts.append(j)
 
-            # 抓取類型總數矩陣，並只留下 AI 負責的欄位需求
             df_type = pd.read_excel(file_type, header=None).fillna("")
             req_matrix = {'△': [0]*ai_periods, '※': [0]*ai_periods}
             for i in range(len(df_type)):
@@ -320,6 +306,10 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         vX[i][j] = pulp.LpVariable(f"X_{i}_{j}", cat='Binary')
                         vY[i][j] = pulp.LpVariable(f"Y_{i}_{j}", cat='Binary')
                 
+                # 計算 Day1 與 Day2 的 index 區間
+                d1_idx = list(range(day_starts[0], day_starts[1])) if len(day_starts) > 1 else list(range(ai_periods))
+                d2_idx = list(range(day_starts[1], ai_periods)) if len(day_starts) > 1 else []
+
                 penalty = 0
                 for i, t in enumerate(teachers):
                     tgt = int(quota_dict.get(t, 0))
@@ -332,13 +322,24 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     penalty += (dfct_pos + dfct_neg) * 500
                     if t in flex_names: penalty -= dfct_neg * 400
                     
-                    if tgt >= 5 and len(day_starts) >= 2:
-                        d1_idx = list(range(day_starts[0], day_starts[1]))
-                        d2_idx = list(range(day_starts[1], ai_periods))
+                    # ======== 👇 新增：鎖定特定日期的硬性條件 ========
+                    if t in only_day1_teachers:
+                        for j in d2_idx:
+                            prob += vX[i][j] == 0
+                            prob += vY[i][j] == 0
+                    
+                    if t in only_day2_teachers:
+                        for j in d1_idx:
+                            prob += vX[i][j] == 0
+                            prob += vY[i][j] == 0
+                    
+                    # 修改原有規則：豁免被鎖定單日老師的「必須排兩天」限制
+                    if tgt >= 5 and len(day_starts) >= 2 and (t not in only_day1_teachers) and (t not in only_day2_teachers):
                         prob += pulp.lpSum([vX[i][j] + vY[i][j] for j in d1_idx]) >= 1
                         prob += pulp.lpSum([vX[i][j] + vY[i][j] for j in d2_idx]) >= 1
                         prob += pulp.lpSum([vX[i][j] for j in range(ai_periods)]) >= 1
                         prob += pulp.lpSum([vY[i][j] for j in range(ai_periods)]) >= 1
+                    # ======== 👆 新增結束 ========
 
                     for j in range(ai_periods):
                         prob += vX[i][j] + vY[i][j] <= 1
@@ -391,14 +392,13 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 raw_list = df_assign_calc.iloc[:, 0].astype(str).str.strip().tolist()
                 class_names_raw = [x for x in raw_list if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考", "註"])]
                 
-                # 【綁定解析】：解析老師在網頁上或匯入的綁定名單
                 norm_class_names = [normalize_cls(c) for c in class_names_raw]
                 assign_map = {name: idx for idx, name in enumerate(norm_class_names)}
                 
                 t2c_map = {}
                 for _, row in edited_bind_df.iterrows():
                     t_name = str(row['老師']).strip()
-                    c_name = normalize_cls(row['班級']) # 進行班級正規化防呆
+                    c_name = normalize_cls(row['班級']) 
                     if t_name and t_name != 'None' and c_name in assign_map:
                         t2c_map[t_name] = assign_map[c_name]
                 
@@ -408,12 +408,10 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     day_end = day_starts[i_day+1] if i_day+1 < len(day_starts) else ai_periods
                     day_length = day_end - day_start
                     
-                    # ==== 第 1 節 ====
                     j1 = day_start
                     proctors_j1 = [t for t in teachers if schedule_dict[t][j1] in ["△", "※"]]
                     random.shuffle(proctors_j1)
                     
-                    # 1. 優先處理自訂綁定
                     rem_j1 = []
                     for p in proctors_j1:
                         if p in t2c_map and assigned_matrix[t2c_map[p], j1] is None:
@@ -421,7 +419,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         else:
                             rem_j1.append(p)
                             
-                    # 2. 處理剩餘隨機分配
                     r_ptr = 0
                     for idx in range(len(class_names_raw)):
                         if assigned_matrix[idx, j1] is None and r_ptr < len(rem_j1):
@@ -429,12 +426,10 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                             r_ptr += 1
                     
                     if day_length > 1:
-                        # ==== 第 2 節 ====
                         j2 = day_start + 1
                         proctors_j2 = [t for t in teachers if schedule_dict[t][j2] in ["△", "※"]]
                         bound = {}
                         
-                        # 1. 絕對連堂規則 (※ 必須接 △)
                         for idx in range(len(class_names_raw)):
                             p_prev = assigned_matrix[idx, j1]
                             if p_prev is not None and p_prev in schedule_dict:
@@ -445,7 +440,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         rem = [p for p in proctors_j2 if p not in bound]
                         random.shuffle(rem)
                         
-                        # 2. 優先處理自訂綁定
                         rem_after_bind = []
                         for p in rem:
                             if p in t2c_map and assigned_matrix[t2c_map[p], j2] is None:
@@ -453,19 +447,16 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                             else:
                                 rem_after_bind.append(p)
                                 
-                        # 3. 處理剩餘隨機分配
                         r_idx = 0
                         for idx in range(len(class_names_raw)):
                             if assigned_matrix[idx, j2] is None and r_idx < len(rem_after_bind):
                                 assigned_matrix[idx, j2] = rem_after_bind[r_idx]; r_idx += 1
 
-                        # ==== 第 3 節以後 ====
                         for offset in range(2, day_length):
                             curr_j = day_start + offset
                             proctors = [t for t in teachers if schedule_dict[t][curr_j] in ["△", "※"]]
                             random.shuffle(proctors)
                             
-                            # 1. 優先處理自訂綁定
                             rem_curr = []
                             for p in proctors:
                                 if p in t2c_map and assigned_matrix[t2c_map[p], curr_j] is None:
@@ -473,7 +464,6 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                                 else:
                                     rem_curr.append(p)
                                     
-                            # 2. 處理剩餘隨機分配
                             r_ptr = 0
                             for idx in range(len(class_names_raw)):
                                 if assigned_matrix[idx, curr_j] is None and r_ptr < len(rem_curr):
@@ -483,11 +473,10 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 for r_idx, c_name in enumerate(class_names_raw):
                     class_proctor_schedule[normalize_cls(c_name)] = [assigned_matrix[r_idx, col] for col in range(ai_periods)]
 
-                # --- 【相對座標定位寫入，保護手排欄】 ---
                 wb_assign = openpyxl.load_workbook(file_assign)
                 ws_assign = wb_assign.active
                 
-                manual_proctors = {} # cls -> {period_num : teacher}
+                manual_proctors = {} 
                 first_class_row, class_col_idx = -1, 1
                 for r in range(1, 20):
                     for c in range(1, 5):
