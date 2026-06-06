@@ -14,7 +14,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
 st.title("📅 試務組-段考監考智能輔助系統")
-st.info("💡 終極升級：實裝「雙重智慧檢核機制」！AI 將在網頁端與匯出總表【最上方】，全自動對帳「實際排班數」與「需求總數」，精準抓出人力缺口。")
+st.info("💡 終極升級：實裝「雙重智慧檢核機制」！AI 將在網頁端與匯出總表【最上方】，全自動對帳「實際排班數」與「需求總數」，精準抓出人力缺口。115.06.06增修")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
