@@ -14,7 +14,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
 st.title("📅 試務組-段考監考智能輔助系統")
-st.info("💡 終極升級：實裝「雙重智慧檢核機制」！AI 將在網頁端與匯出總表底部，全自動對帳「實際排班數」與「需求總數」，精準抓出人力缺口。")
+st.info("💡 終極升級：實裝「雙重智慧檢核機制」！AI 將在網頁端與匯出總表【最上方】，全自動對帳「實際排班數」與「需求總數」，精準抓出人力缺口。")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -28,16 +28,16 @@ if 'uploader_key' not in st.session_state:
 def to_excel_bytes(df, header_df=None):
     output = io.BytesIO()
     if header_df is not None:
-        df.columns = header_df.columns
+        # 將標題列(header_df)與內容(df，現已包含頂部檢核區與名單)合併
         final_out = pd.concat([header_df, df], ignore_index=True)
     else:
         final_out = df
     
     final_out = final_out.fillna("")
     
-    # 【防呆修復】：將所有開頭為 "=" 的字串前面補一個空白，徹底避免 Excel 誤認儲存格為「公式」而產生檔案損毀警告
+    # 【防呆修復】：將所有開頭為 "=" 或 "-" 的字串前面補一個空白，徹底避免 Excel 誤認儲存格為「公式」而產生檔案損毀警告
     for col in final_out.columns:
-        final_out[col] = final_out[col].apply(lambda x: f" {x}" if isinstance(x, str) and x.startswith("=") else x)
+        final_out[col] = final_out[col].apply(lambda x: f" {x}" if isinstance(x, str) and (x.startswith("=") or x.startswith("-")) else x)
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         final_out.to_excel(writer, index=False, header=False)
@@ -417,14 +417,14 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         df_out_master.iloc[i, ai_period_cols[j]] = val
                     schedule_dict[t] = res
 
-            # --- 檢核對帳與 Excel 尾部寫入 ---
+            # ======== 👇 檢核區移至最上方 ========
             discrepancies = []
             empty_row = {c: "" for c in df_out_master.columns}
             row_act_d, row_req_d = empty_row.copy(), empty_row.copy()
             row_act_s, row_req_s = empty_row.copy(), empty_row.copy()
             row_diff = empty_row.copy()
             
-            # 【修復】：將開頭等於改為橫線，避免 Excel 誤判為數學公式
+            # 使用橫線開頭，避免 Excel 辨識為公式
             empty_row[df_out_master.columns[teacher_col_idx]] = "--- 系統自動檢核區 ---"
             row_act_d[df_out_master.columns[teacher_col_idx]] = "實際排入 (△)"
             row_req_d[df_out_master.columns[teacher_col_idx]] = "需求總數 (△)"
@@ -455,8 +455,13 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                     
                 row_diff[col_name] = "、".join(diff_strs) if diff_strs else "正常吻合"
 
-            summary_df = pd.DataFrame([empty_row, row_act_d, row_req_d, row_act_s, row_req_s, row_diff])
-            df_out_master = pd.concat([df_out_master, summary_df], ignore_index=True)
+            # 建立檢核區塊，最後補一行空白列，讓版面與下方教師名單有區隔
+            empty_row_spacer = {c: "" for c in df_out_master.columns}
+            summary_df = pd.DataFrame([empty_row, row_act_d, row_req_d, row_act_s, row_req_s, row_diff, empty_row_spacer])
+            
+            # 【重要修改】：將檢核區 summary_df 放置於 df_out_master 最上方！
+            df_out_master = pd.concat([summary_df, df_out_master], ignore_index=True)
+            # ======== 👆 移至最上方修改結束 ========
 
             # --- 3. 監考一覽表分配邏輯 ---
             with st.spinner("🎯 執行班級自動分配..."):
@@ -684,8 +689,8 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                         if '班級' in col_map and '監考老師' in col_map:
                             header_row = r; break
 
-                    d1_ymd, d1_short, d1_slash = d1_date.strftime('%Y-%m-%d'), d1_date.strftime('%m-%d'), d1_date.strftime('%Y/%m/%d')
-                    d2_ymd, d2_short, d2_slash = d2_date.strftime('%Y-%m-%d'), d2_date.strftime('%m-%d'), d2_date.strftime('%Y/%m/%d')
+                    d1_ymd, d1_date.strftime('%Y-%m-%d'), d1_short, d1_slash = d1_date.strftime('%m-%d'), d1_date.strftime('%m-%d'), d1_date.strftime('%Y/%m/%d')
+                    d2_ymd, d2_date.strftime('%Y-%m-%d'), d2_short, d2_slash = d2_date.strftime('%m-%d'), d2_date.strftime('%m-%d'), d2_date.strftime('%Y/%m/%d')
                     
                     day_p_val_to_ai_col = {}
                     curr_day_idx = 0
@@ -755,7 +760,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", use_conta
                 st.warning("⚠️ 檢核提示：因您設定了特定鎖定條件（如特定日期或時段），部分節次的排入人數與原始需求有落差，明細如下：")
                 for d in discrepancies:
                     st.write(f"- {d}")
-                st.info("💡 下載出來的「1. 監考總表.xlsx」檔案最下方，也有為您附上完整的對帳明細喔！")
+                st.info("💡 下載出來的「1. 監考總表.xlsx」檔案最上方，也有為您附上完整的對帳明細喔！")
 
         except Exception as e:
             st.error(f"發生錯誤: {e}")
