@@ -10,7 +10,13 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 試務組-模考調查智能輔助系統")
-st.info("💡 試務組終極進化：已恢復【一班一頁】正常分頁功能，並結合「AI彈性列高引擎」，大班級自動微縮保證單頁不溢出！115.05.27增修")
+st.info("💡 試務組終極進化：已恢復【一班一頁】正常分頁功能，並結合「AI彈性列高引擎」，大班級自動微縮保證單頁不溢出！且報表年度已會隨時間自動更新！")
+
+# --- 新增：自動計算當前學年度邏輯 ---
+current_time = datetime.now()
+roc_year = current_time.year - 1911
+# 若在 8 月前，算是前一學年度；8 月後為新學年度
+academic_year = roc_year if current_time.month >= 8 else roc_year - 1
 
 # --- 初始化系統記憶體 (防重整閃退) ---
 if 'mock_processed' not in st.session_state:
@@ -45,7 +51,7 @@ def get_str_col(df, keywords):
 
 def clean_class_name(c):
     if pd.isna(c): return ""
-    s = str(c).strip().replace('ㄧ', '一').replace(' ', '').replace('　', '')
+    s = str(c).strip().replace('ㄧ', '一').replace(' ', '').replace(' ', '')
     s = s.translate(str.maketrans('１２３４５６７８９０', '1234567890'))
     return s
 
@@ -117,7 +123,8 @@ with tab1:
         school_type = st.radio("🏫 選擇產出的學制類型：", ["技高 (統測群類)", "普高 (學測考科)"], horizontal=True)
         
     with col2_t1:
-        default_title = "114學年度國立華南高商統測模擬考 報考類組調查表" if "技高" in school_type else "114學年度國立華南高商學測模擬考 報考考科調查表"
+        # --- 修改點：將預設標題的 "114" 替換為動態變數 academic_year ---
+        default_title = f"{academic_year}學年度國立華南高商統測模擬考 報考類組調查表" if "技高" in school_type else f"{academic_year}學年度國立華南高商學測模擬考 報考考科調查表"
         template_name = st.text_input("🎯 擬定表單大標題", value=default_title)
         default_price = st.number_input("💰 預設單次費用 (無對照檔或查無資料時套用，可留 0)", min_value=0, max_value=2000, value=0, step=10)
         deadline_date = st.date_input("📅 調查表繳回截止日", value=datetime.today())
@@ -212,7 +219,6 @@ with tab1:
                         worksheet = workbook.add_worksheet('調查表')
                         
                         worksheet.set_paper(9) # A4
-                        # 🚀 恢復 1 頁寬，讓水平分頁符號 (一班一頁) 正常運作！
                         worksheet.fit_to_pages(1, 0)
                         worksheet.center_horizontally()
                         worksheet.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4)
@@ -295,7 +301,6 @@ with tab1:
                                     ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。\n"]
                                 ]
 
-                            # 🚀 智能空間演算：預先計算警語高度
                             memo_heights = []
                             memo_h_sum = 0
                             for line_idx, rich_parts in enumerate(memo_lines):
@@ -309,18 +314,14 @@ with tab1:
                                 memo_heights.append(h)
                                 memo_h_sum += h
                             
-                            # 🚀 智能空間演算：加總固定高度，分配彈性列高
                             fixed_h = 25 + 20 + 10 + 35 + 15 + memo_h_sum
                             if is_gen_hs:
                                 fixed_h += 20 + (len(target_mapping) * 18) + 10
                             
-                            # A4 精準可用高度校準 (780點)
                             target_page_h = 780
                             calculated_data_h = (target_page_h - fixed_h) / max(1, rows_needed)
-                            # 設定容忍上下限 (大班微縮至14.5不破圖，小班拉展至30最寬敞)
                             data_h = max(14.5, min(calculated_data_h, 30))
                             
-                            # 開始寫入排版
                             worksheet.merge_range(current_row, 0, current_row, merge_end_col, template_name, title_format)
                             worksheet.set_row(current_row, 25)
                             current_row += 1
@@ -357,7 +358,6 @@ with tab1:
                                         worksheet.write(start_data_row + i, 8, code, mapping_data_format)
                                         worksheet.write(start_data_row + i, 9, name, mapping_data_format)
                                 
-                                # 🚀 套用彈性高度
                                 worksheet.set_row(start_data_row + i, data_h)
                                 
                             current_row = start_data_row + rows_needed
@@ -409,10 +409,8 @@ with tab1:
                                 worksheet.set_row(current_row, memo_heights[line_idx])
                                 current_row += 1
 
-                            # 🚀 加入分頁符號，保證下一個班級從新的一頁開始
                             page_breaks.append(current_row)
                             
-                        # 整體欄寬配置，確保簽名空間大
                         worksheet.set_column('A:B', 8)
                         worksheet.set_column('C:D', 10)
                         worksheet.set_column('E:F', 11) 
@@ -421,7 +419,6 @@ with tab1:
                         worksheet.set_column('I:I', 8) 
                         worksheet.set_column('J:J', 28) 
                         
-                        # 🚀 將分頁符號寫入 Excel
                         if page_breaks:
                             worksheet.set_h_pagebreaks(page_breaks)
                             
@@ -555,13 +552,14 @@ with tab2:
         
         school_type_p2 = st.radio("🏫 選擇本表單學制類型：", ["技高 (全學年5次合併收費)", "普高 (依次數彈性收費)"], horizontal=True, key="school_type_p2")
         
+        # --- 修改點：將階段二的預設標題 "114" 也替換為動態變數 academic_year ---
         if "普高" in school_type_p2:
             fee_mode = st.radio("🔄 普高本次收費模式：", ["收 1 次費用 (如：第一、二次模考)", "收 2 次費用 (如：第三、四次合併)"], horizontal=True)
             fee_multiplier = 1 if "1 次" in fee_mode else 2
-            mock_name_default = "114學年度普高模擬考"
+            mock_name_default = f"{academic_year}學年度普高模擬考"
         else:
             fee_multiplier = 5
-            mock_name_default = "114學年度高職模擬考(全學年共5次)"
+            mock_name_default = f"{academic_year}學年度高職模擬考(全學年共5次)"
             
         mock_name_p2 = st.text_input("🎯 產出報表標題", value=mock_name_default)
         base_fee_p2 = st.number_input("💰 預設單次報名費", min_value=0, max_value=5000, value=160, step=10)
@@ -770,7 +768,6 @@ with tab2:
                         writer.sheets[sheet2_name] = ws_details 
                         
                         ws_details.set_paper(9)
-                        # 🚀 恢復 1 頁寬，讓水平分頁符號 (一班一頁) 正常運作！
                         ws_details.fit_to_pages(1, 0)
                         ws_details.center_horizontally()
                         ws_details.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4) 
@@ -810,7 +807,6 @@ with tab2:
                                     ["3.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至總務處出納組，此張單子請繳回到教務處試務組。\n"]
                                 ]
 
-                            # 🚀 智能空間演算：預先計算警語高度
                             memo_heights_p2 = []
                             memo_h_sum_p2 = 0
                             for line_idx, rich_parts in enumerate(memo_lines_p2):
@@ -826,13 +822,10 @@ with tab2:
                             
                             cls_fee_info = df_cls[['報考類群', '單次費用']].drop_duplicates().sort_values('報考類群')
                             
-                            # 🚀 智能空間演算：計算階段二的固定高度 (不包含學生列表)
                             fixed_h_p2 = 24 + 18 + 26 + 18 + (len(cls_fee_info) * 16) + 15 + 35 + 15 + memo_h_sum_p2
                             
-                            # A4 精準可用高度校準 (780點)
                             target_page_h_p2 = 780
                             calculated_data_h_p2 = (target_page_h_p2 - fixed_h_p2) / max(1, cls_count)
-                            # 設定容忍上下限 (大班微縮至14.5不破圖，小班拉展至32最寬敞)
                             data_h_p2 = max(14.5, min(calculated_data_h_p2, 32))
 
                             ws_details.merge_range(current_row, 0, current_row, len(headers)-1, f"🏫 國立華南高商 - {mock_name_p2}", title_format)
@@ -853,7 +846,6 @@ with tab2:
                                 ws_details.write(current_row, 5, row['單次費用'], data_format)
                                 ws_details.write(current_row, 6, row[f'應繳費用({fee_multiplier}次)'], data_format)
                                 ws_details.write(current_row, 7, '', data_format) 
-                                # 套用動態撐滿的彈性高度
                                 ws_details.set_row(current_row, data_h_p2)
                                 current_row += 1
                                 
@@ -913,7 +905,6 @@ with tab2:
                                 ws_details.set_row(current_row, memo_heights_p2[line_idx])
                                 current_row += 1
                             
-                            # 🚀 寫入分頁符號
                             page_breaks.append(current_row) 
                             
                         ws_details.set_column('A:A', 8)  
@@ -935,7 +926,6 @@ with tab2:
                         ws_details.write(current_row, 7, '', grand_format)
                         ws_details.set_row(current_row, 24)
                         
-                        # 🚀 設定水平分頁符號 (恢復一班一頁)
                         if page_breaks:
                             ws_details.set_h_pagebreaks(page_breaks)
                         
