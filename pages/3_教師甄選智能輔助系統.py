@@ -19,7 +19,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="教甄智能排程系统", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-教師甄選智能輔助系统")
-st.info("💡 終極進化：工作人員資料袋支援單場地3考科，且口試合併群組內可『自訂部分科目合併試教』，滿足極端特殊考場配置！")
+st.info("💡 終極進化：工作人員資料袋支援單場地3考科，且口試合併群組內可『自訂部分科目合併試教』，滿足極端特殊考場配置！(已修復合併試教編號歸零邏輯)")
 
 if not HAS_DOCX:
     st.error("🚨 偵測到系統未安裝 `python-docx` 套件！無法產出直出版 Word。請在 requirements.txt 中加入 `python-docx`。")
@@ -673,7 +673,6 @@ with tab2:
                             key=f"group_select_t2_{g_i}"
                         )
                         
-                        # 【重點升級】：從單一 Checkbox 進化為多選下拉，允許群組內部分科目合併試教
                         merged_teach_subjs = st.multiselect(
                             "👉 此群組中，哪些科目要【合併試教】(接力排程)？未選者將獨立計算試教序號：",
                             options=selected_for_g,
@@ -700,6 +699,7 @@ with tab2:
         st.markdown("""
         * **細緻化試教分離邏輯**：口試合併群組內，您可以自由指定哪些科目要在試教場「接力排程」，哪些科目要在試教場「獨立起跑」。
         * **絕對時間軸防撞**：合併口試採用純時間序防跳號設計，完美按時間順序填補空檔，遇到試教時間重疊會自動順延口試時段。
+        * **各科編號皆從1開始**：完美對應現場發放的考生識別牌，方便試務人員檢核。
         """)
 
     st.write("---")
@@ -771,19 +771,23 @@ with tab2:
                         n_candidates = len(candidates)
                         if n_candidates == 0: continue
                         
-                        # 檢查此科目是否屬於「合併試教」池
                         is_subject_merged_teach = subject in merged_teaching_subjs
                         
                         for i in range(n_candidates):
                             cand = candidates[i]
                             
-                            # 【重點升級】：獨立科目以自身報到序號為準，合併科目則接力遞增
-                            sort_num = global_teach_idx if is_subject_merged_teach else (i + 1)
+                            # ==========================================
+                            # 【重點修正】：將時間索引與顯示用的排序編號脫鉤
+                            # time_slot_idx: 負責對照排程表抓取時間 (合併試教會接力遞增)
+                            # display_sort_num: 負責顯示在文件上的編號 (永遠從 1 開始)
+                            # ==========================================
+                            time_slot_idx = global_teach_idx if is_subject_merged_teach else (i + 1)
+                            display_sort_num = i + 1  
                             
                             if is_practical:
-                                prep, teach = TEACH_30_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
+                                prep, teach = TEACH_30_MATRIX.get(time_slot_idx, ("請手動調整", "請手動調整"))
                             else:
-                                prep, teach = TEACH_15_MATRIX.get(sort_num, ("請手動調整", "請手動調整"))
+                                prep, teach = TEACH_15_MATRIX.get(time_slot_idx, ("請手動調整", "請手動調整"))
                             
                             if is_subject_merged_teach:
                                 global_teach_idx += 1
@@ -808,7 +812,7 @@ with tab2:
                             all_schedules.append({
                                 '報考科目': subject,
                                 '准考證號': cand['准考證號'],
-                                '排序': sort_num,
+                                '排序': display_sort_num,  # 這裡確保匯出時的編號絕對會重置為 1
                                 '準備時間': prep,
                                 '試教(實作)時間': teach,
                                 '口試時間': oral_range
