@@ -165,7 +165,7 @@ with row1_col1:
         - 🏷️ **標籤全聯動**：交叉比對配課表，一鍵合成試卷袋列印貼紙。
         """)
         st.write("")
-        st.page_link("pages/1_段考監考智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
+        st.page_link("pages/1_段考試務智能輔助系統.py", label="啟動段考排班作業 →", icon="🚀")
 
 with row1_col2:
     with st.container(border=True):
