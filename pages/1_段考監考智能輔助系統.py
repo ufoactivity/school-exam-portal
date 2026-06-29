@@ -58,7 +58,6 @@ def to_excel_bytes(df, header_df=None):
     
     final_out = final_out.fillna("")
     
-    # 【防呆修復】：將所有開頭為 "=" 或 "-" 的字串前面補一個空白，徹底避免 Excel 誤認儲存格為「公式」而產生檔案損毀警告
     for col in final_out.columns:
         final_out[col] = final_out[col].apply(lambda x: f" {x}" if isinstance(x, str) and (x.startswith("=") or x.startswith("-")) else x)
 
@@ -170,30 +169,24 @@ with tab1:
                         exam_type = selected_sheet_p1
                         count = len(group)
                         
-                        # =========================================================
                         # 📝 進階排版：建立有邊框、置中、大字體粗體的正式「標題框」
-                        # =========================================================
-                        # 利用 1x1 表格創造黑框效果，確保相容性與跑版防護
                         table = doc.add_table(rows=1, cols=1)
                         table.alignment = WD_TABLE_ALIGNMENT.CENTER
-                        table.style = 'Table Grid' # 加上標準黑色框線
+                        table.style = 'Table Grid'
                         
                         cell = table.cell(0, 0)
                         p_title = cell.paragraphs[0]
                         p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         
-                        # 標題內容設定
                         run_title = p_title.add_run(f"【{exam_type}】催繳試卷通知單")
                         run_title.bold = True
-                        run_title.font.size = Pt(20) # 設定為 20pt 大字體
+                        run_title.font.size = Pt(20) 
                         
-                        # 在標題後加入一個空段落作為間距
                         doc.add_paragraph()
-                        # =========================================================
 
-                        # 內文排版
+                        # 內文排版 (此處已加入考試類型變數)
                         doc.add_paragraph(f"{name} 老師您好:\n")
-                        doc.add_paragraph(f"試卷繳交截止日 {deadline} 已過，溫馨提醒您尚有 {count} 份試卷未繳:\n")
+                        doc.add_paragraph(f"{exam_type}試卷繳交截止日 {deadline} 已過，溫馨提醒您尚有 {count} 份試卷未繳:\n")
                         
                         for grade, grade_group in group.groupby('年級'):
                             doc.add_paragraph(f"[{grade}年級]")
