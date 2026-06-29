@@ -152,7 +152,7 @@ row1_col1, row1_col2 = st.columns(2, gap="large")
 
 with row1_col1:
     with st.container(border=True):
-        st.markdown("### 📅 段考監考智能輔助系統")
+        st.markdown("### 📅 段考試務智能輔助系統")
         st.markdown("""
         <p class="module-desc">
         整合 AI 線性規劃算法，全自動最佳化全校排班與座位分發。
