@@ -33,8 +33,12 @@ if 'results_p2' not in st.session_state:
     st.session_state['results_p2'] = None
 if 'uploader_key' not in st.session_state:
     st.session_state['uploader_key'] = 0
-if 'docx_data_p1' not in st.session_state:
-    st.session_state['docx_data_p1'] = None
+
+# [更新] 階段一雙版本記憶體
+if 'docx_data_p1_print' not in st.session_state:
+    st.session_state['docx_data_p1_print'] = None
+if 'docx_data_p1_msg' not in st.session_state:
+    st.session_state['docx_data_p1_msg'] = None
 if 'processed_p1' not in st.session_state:
     st.session_state['processed_p1'] = False
 
@@ -143,7 +147,7 @@ with tab1:
             except Exception as e:
                 st.error("無法讀取 Excel 檔案，請確認檔案是否毀損。")
 
-    if st.button("🚀 一鍵產出催繳通知單", use_container_width=True, type="primary", key="btn_p1"):
+    if st.button("🚀 一鍵產出雙版本催繳通知單", use_container_width=True, type="primary", key="btn_p1"):
         if not HAS_DOCX:
             st.error("系統缺少 python-docx 套件，無法執行。")
         elif uploaded_file_p1 is None or selected_sheet_p1 is None:
@@ -162,63 +166,98 @@ with tab1:
                     df['年級'] = df['年級'].astype(str).str.strip().replace('nan', '')
                     df = df[df['姓名'] != '']
                     
-                    doc = Document()
+                    # 建立兩個獨立的 Word 物件
+                    doc_print = Document() # 紙本列印版 (含框線與分頁)
+                    doc_msg = Document()   # 訊息通知版 (連續文字，無框線無分頁)
+                    
                     grouped = df.groupby('姓名')
                     
                     for idx, (name, group) in enumerate(grouped):
                         exam_type = selected_sheet_p1
                         count = len(group)
                         
-                        # 📝 進階排版：建立有邊框、置中、大字體粗體的正式「標題框」
-                        table = doc.add_table(rows=1, cols=1)
+                        # =========================================================
+                        # 📝 版本一：紙本列印版 (建立有邊框、置中的正式「標題框」)
+                        # =========================================================
+                        table = doc_print.add_table(rows=1, cols=1)
                         table.alignment = WD_TABLE_ALIGNMENT.CENTER
                         table.style = 'Table Grid'
                         
                         cell = table.cell(0, 0)
-                        p_title = cell.paragraphs[0]
-                        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        p_title_print = cell.paragraphs[0]
+                        p_title_print.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         
-                        run_title = p_title.add_run(f"【{exam_type}】催繳試卷通知單")
-                        run_title.bold = True
-                        run_title.font.size = Pt(20) 
+                        run_title_print = p_title_print.add_run(f"【{exam_type}】催繳試卷通知單")
+                        run_title_print.bold = True
+                        run_title_print.font.size = Pt(20) 
+                        doc_print.add_paragraph()
                         
-                        doc.add_paragraph()
+                        # =========================================================
+                        # 📝 版本二：訊息複製版 (無框線，純文字標題置中)
+                        # =========================================================
+                        p_title_msg = doc_msg.add_paragraph()
+                        p_title_msg.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        run_title_msg = p_title_msg.add_run(f"【{exam_type}】催繳試卷通知單")
+                        run_title_msg.bold = True
+                        run_title_msg.font.size = Pt(16)
+                        doc_msg.add_paragraph()
 
-                        # 內文排版 (此處已加入考試類型變數)
-                        doc.add_paragraph(f"{name} 老師您好:\n")
-                        doc.add_paragraph(f"{exam_type}試卷繳交截止日 {deadline} 已過，溫馨提醒您尚有 {count} 份試卷未繳:\n")
+                        # --- 內文排版 (兩個版本共用語法) ---
+                        for doc in [doc_print, doc_msg]:
+                            doc.add_paragraph(f"{name} 老師您好:\n")
+                            doc.add_paragraph(f"{exam_type}試卷繳交截止日 {deadline} 已過，溫馨提醒您尚有 {count} 份試卷未繳:\n")
+                            
+                            for grade, grade_group in group.groupby('年級'):
+                                doc.add_paragraph(f"[{grade}年級]")
+                                for i, (_, row) in enumerate(grade_group.iterrows(), 1):
+                                    doc.add_paragraph(f"  {i}. 科目: {row['科目名稱']}")
+                            
+                            doc.add_paragraph(f"\n{sender_name}")
                         
-                        for grade, grade_group in group.groupby('年級'):
-                            doc.add_paragraph(f"[{grade}年級]")
-                            for i, (_, row) in enumerate(grade_group.iterrows(), 1):
-                                doc.add_paragraph(f"  {i}. 科目: {row['科目名稱']}")
-                        
-                        doc.add_paragraph(f"\n{sender_name}")
-                        
+                        # --- 結尾處理 ---
                         if idx < len(grouped) - 1:
-                            doc.add_page_break()
+                            # 紙本版：換頁，準備印下一位老師
+                            doc_print.add_page_break()
+                            # 訊息版：不換頁，加入分隔線方便複製辨識
+                            doc_msg.add_paragraph("\n" + "=" * 40 + "\n")
                     
-                    out_stream = io.BytesIO()
-                    doc.save(out_stream)
-                    st.session_state['docx_data_p1'] = out_stream.getvalue()
+                    # 儲存兩個版本至 Session State
+                    out_stream_print = io.BytesIO()
+                    doc_print.save(out_stream_print)
+                    st.session_state['docx_data_p1_print'] = out_stream_print.getvalue()
+                    
+                    out_stream_msg = io.BytesIO()
+                    doc_msg.save(out_stream_msg)
+                    st.session_state['docx_data_p1_msg'] = out_stream_msg.getvalue()
+                    
                     st.session_state['processed_p1'] = True
                     
             except Exception as e:
                 st.error(f"發生未預期錯誤: {e}")
                 st.code(traceback.format_exc())
 
-    if st.session_state['processed_p1'] and st.session_state['docx_data_p1']:
-        st.success(f"✅ 完美達成！已根據「{selected_sheet_p1}」為您排版完畢，正式標題已自動置中並加框。")
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c2:
+    if st.session_state['processed_p1'] and st.session_state['docx_data_p1_print']:
+        st.success(f"✅ 完美達成！已為您同步產出【紙本列印版】與【訊息複製版】。")
+        c1, c2 = st.columns([1, 1])
+        with c1:
             st.download_button(
-                label=f"📥 點我下載：{selected_sheet_p1}催繳通知單 (Word檔)",
-                data=st.session_state['docx_data_p1'],
-                file_name=f"{selected_sheet_p1}試卷催繳通知單.docx",
+                label=f"🖨️ 點我下載：紙本列印版 (自動換頁加框線)",
+                data=st.session_state['docx_data_p1_print'],
+                file_name=f"{selected_sheet_p1}試卷催繳通知單_紙本列印版.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 use_container_width=True,
                 type="primary",
-                key="dl_btn_p1"
+                key="dl_btn_p1_print"
+            )
+        with c2:
+            st.download_button(
+                label=f"💬 點我下載：訊息複製版 (連續文字便於私訊)",
+                data=st.session_state['docx_data_p1_msg'],
+                file_name=f"{selected_sheet_p1}試卷催繳通知單_訊息複製版.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True,
+                type="secondary",
+                key="dl_btn_p1_msg"
             )
 
 
