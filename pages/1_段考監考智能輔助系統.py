@@ -10,10 +10,13 @@ import re
 from datetime import datetime
 
 # ==========================================
-# 📌 階段一所需套件 (python-docx)
+# 📌 階段一所需套件 (python-docx) 與 排版模組
 # ==========================================
 try:
     from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.shared import Pt
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False
@@ -49,7 +52,6 @@ if 'last_bind_file' not in st.session_state:
 def to_excel_bytes(df, header_df=None):
     output = io.BytesIO()
     if header_df is not None:
-        # 將標題列(header_df)與內容(df，現已包含頂部檢核區與名單)合併
         final_out = pd.concat([header_df, df], ignore_index=True)
     else:
         final_out = df
@@ -168,13 +170,35 @@ with tab1:
                         exam_type = selected_sheet_p1
                         count = len(group)
                         
-                        doc.add_paragraph(f"{name}老師您好:\n")
-                        doc.add_paragraph(f"{exam_type}試卷繳交截止日{deadline}已過，溫馨提醒您尚有{count}份試卷未繳:\n")
+                        # =========================================================
+                        # 📝 進階排版：建立有邊框、置中、大字體粗體的正式「標題框」
+                        # =========================================================
+                        # 利用 1x1 表格創造黑框效果，確保相容性與跑版防護
+                        table = doc.add_table(rows=1, cols=1)
+                        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                        table.style = 'Table Grid' # 加上標準黑色框線
+                        
+                        cell = table.cell(0, 0)
+                        p_title = cell.paragraphs[0]
+                        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        
+                        # 標題內容設定
+                        run_title = p_title.add_run(f"【{exam_type}】催繳試卷通知單")
+                        run_title.bold = True
+                        run_title.font.size = Pt(20) # 設定為 20pt 大字體
+                        
+                        # 在標題後加入一個空段落作為間距
+                        doc.add_paragraph()
+                        # =========================================================
+
+                        # 內文排版
+                        doc.add_paragraph(f"{name} 老師您好:\n")
+                        doc.add_paragraph(f"試卷繳交截止日 {deadline} 已過，溫馨提醒您尚有 {count} 份試卷未繳:\n")
                         
                         for grade, grade_group in group.groupby('年級'):
                             doc.add_paragraph(f"[{grade}年級]")
                             for i, (_, row) in enumerate(grade_group.iterrows(), 1):
-                                doc.add_paragraph(f"{i}.科目:{row['科目名稱']}")
+                                doc.add_paragraph(f"  {i}. 科目: {row['科目名稱']}")
                         
                         doc.add_paragraph(f"\n{sender_name}")
                         
@@ -191,7 +215,7 @@ with tab1:
                 st.code(traceback.format_exc())
 
     if st.session_state['processed_p1'] and st.session_state['docx_data_p1']:
-        st.success(f"✅ 完美達成！已根據「{selected_sheet_p1}」工作表為您排版完畢，每一位老師獨立一頁。")
+        st.success(f"✅ 完美達成！已根據「{selected_sheet_p1}」為您排版完畢，正式標題已自動置中並加框。")
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             st.download_button(
