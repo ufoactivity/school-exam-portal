@@ -11,7 +11,7 @@ import traceback
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：修復清除按鈕！現在按下清除，連同上傳的檔案也會一併完美清空！115.05.12更新")
+st.info("💡 修正說明：更新報表三(考程匯整表)排序邏輯，優先依「場地」分區，次依「應到人數」排序，完美支援試卷袋標籤套印！")
 
 # --- 初始化快取記憶體與清空鑰匙 ---
 if 'results' not in st.session_state:
@@ -61,7 +61,6 @@ col_files, col_opts = st.columns([1, 1], gap="large")
 
 with col_files:
     st.subheader("📂 第一步：上傳原始資料")
-    # 【修復關鍵】：加上 key，讓程式可以強制刷新這四個上傳區
     file_target = st.file_uploader("1️⃣ 補考名單.xlsx", type=['xlsx'], key=f"f1_{st.session_state['uploader_key']}")
     file_short = st.file_uploader("2️⃣ 科目簡稱.xlsx", type=['xlsx'], key=f"f2_{st.session_state['uploader_key']}")
     file_exam = st.file_uploader("3️⃣ 科目對照表.xlsx", type=['xlsx'], key=f"f3_{st.session_state['uploader_key']}")
@@ -75,7 +74,6 @@ with col_opts:
     
     st.write("")
     st.write("")
-    # 【修復關鍵】：按下清除時，讓鑰匙號碼 +1，網頁就會強制換上一組全新的、空的上傳區
     if st.button("🗑️ 清除舊資料 / 重新設定", use_container_width=True):
         st.session_state['results'] = None
         st.session_state['uploader_key'] += 1
@@ -227,15 +225,28 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     if col not in df_exam.columns: df_exam[col] = ""
 
                 df_final_exam = df_exam[final_cols].copy()
+                
+                # ==========================================
+                # ⭐ 排序核心修改區：優先排序場地與人數
+                # ==========================================
                 df_final_exam['G_W'] = df_final_exam['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
-                df_final_exam = df_final_exam.sort_values(by=['G_W', '班級', '科目簡稱', '場地', '座號'])
+                df_final_exam['L_W'] = df_final_exam['場地'].map(loc_weight).fillna(99) # 產生場地權重
+                
+                # 第一順位: 場地(L_W) / 第二順位: 應到人數(預設降冪 False，人多的卷袋排在前面)
+                df_final_exam = df_final_exam.sort_values(
+                    by=['L_W', '場地', '應到人數', 'G_W', '班級', '科目簡稱', '座號'], 
+                    ascending=[True, True, False, True, True, True, True] 
+                )
 
-                df_final_exam['GroupKey'] = df_final_exam['班級'] + "_" + df_final_exam['科目簡稱'] + "_" + df_final_exam['場地']
+                # 修改 GroupKey 的組合順序，確保與剛剛的排序邏輯相符
+                df_final_exam['GroupKey'] = df_final_exam['場地'] + "_" + df_final_exam['班級'] + "_" + df_final_exam['科目簡稱']
+                
                 grouped = [g for _, g in df_final_exam.groupby('GroupKey', sort=False)]
                 final_rows = []
                 empty = pd.DataFrame([[np.nan] * len(final_cols)], columns=final_cols)
+                
                 for i, grp in enumerate(grouped):
-                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W']))
+                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W', 'L_W'])) # 記得將運算用的輔助欄位丟掉
                     if i < len(grouped) - 1: final_rows.append(empty)
                 
                 if final_rows:
@@ -248,10 +259,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_rep4['SortKey'] = df_rep4['試卷編號'].apply(natural_sort_key)
                 df_rep4 = df_rep4.sort_values(by='SortKey').drop(columns=['SortKey'])
 
-                # ==========================================
-                # ⭐ 核心修正區：鎖定記憶體前，統一替換所有報表的欄位名稱
-                # 這樣就不會破壞原本的運算邏輯，但匯出結果能完美銜接 Word 合併列印
-                # ==========================================
+                # --- 欄位重新命名以完美銜接合併列印 ---
                 rename_mapping = {'姓名': '學生姓名', '場地': '地點'}
                 
                 df_target_out = df_target.rename(columns=rename_mapping)
@@ -259,7 +267,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_rep3_out = df_rep3_final.rename(columns=rename_mapping)
                 df_rep4_out = df_rep4.rename(columns=rename_mapping)
 
-                # 【鎖定記憶體】改用 _out 結尾的 DataFrame 轉成 Excel
+                # 【鎖定記憶體】
                 st.session_state['results'] = {
                     'venue': to_excel_bytes(df_target_out),
                     'label': to_excel_bytes(df_rep2_out),
