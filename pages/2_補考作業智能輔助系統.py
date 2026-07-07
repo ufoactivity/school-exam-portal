@@ -22,7 +22,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：新增補考範圍防呆機制！若未填寫範圍將自動補上「請詢問該科任課教師」。")
+st.info("💡 修正說明：大滿配最終版！新增【報表六：補考學生名冊】，自動遮蔽姓名保護個資，並附帶專屬考試時間與地點。")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -66,6 +66,13 @@ def to_excel_bytes(df):
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False)
     return output.getvalue()
+
+# --- 姓名遮蔽處理函數 (個資保護) ---
+def mask_name_func(name):
+    n = str(name).strip()
+    if len(n) <= 1: return n
+    if len(n) == 2: return n[0] + "〇"
+    return n[0] + "〇" + n[2:]
 
 # --- 新增：Word 獨立分頁排版引擎 ---
 def to_word_scope_bytes(df):
@@ -394,14 +401,11 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_rep5 = df_rep5.sort_values(by=['G_W', '班級', '科目'])
                 df_rep5 = df_rep5[['班級', '科目', '補考範圍']].rename(columns={'科目': '所有補考的科目'})
 
-                # ==========================================
-                # ⭐ 核心防呆修正：若範圍為空值或NaN，自動替換預設文字
-                # ==========================================
+                # 防呆：若範圍為空值，自動替換為預設文字
                 df_rep5['補考範圍'] = df_rep5['補考範圍'].apply(
                     lambda x: "請詢問該科任課教師" if str(x).strip() in ["", "nan", "None", "NaN", "<NA>"] else str(x).strip()
                 )
 
-                # 動態判斷產出 Word 還是 Excel 分頁版
                 if HAS_DOCX:
                     scope_bytes = to_word_scope_bytes(df_rep5)
                     scope_ext = "docx"
@@ -410,6 +414,27 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     scope_bytes = to_excel_scope_bytes(df_rep5)
                     scope_ext = "xlsx"
                     scope_mime = "application/vnd.ms-excel"
+
+                # ==========================================
+                # ⭐ 階段六：報表六處理 (補考學生名冊 - 個資保護版)
+                # ==========================================
+                df_rep6 = df_target[df_target['科目'] != ""].drop_duplicates(subset=['學號', '科目']).copy()
+                
+                # 套用姓名遮蔽防護
+                df_rep6['姓名'] = df_rep6['姓名'].apply(mask_name_func)
+                # 重新命名以符合您的需求
+                df_rep6 = df_rep6.rename(columns={'時間2': '補考時間', '場地': '補考地點'})
+                
+                # 挑選指定的欄位
+                cols_to_keep = ['班級', '座號', '學號', '姓名', '科目', '補考時間', '補考地點']
+                for c in cols_to_keep:
+                    if c not in df_rep6.columns: df_rep6[c] = ""
+                df_rep6 = df_rep6[cols_to_keep]
+                
+                # 排序：依序為 年級 -> 班級 -> 座號 -> 科目
+                df_rep6['G_W'] = df_rep6['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
+                df_rep6['NumSeat'] = pd.to_numeric(df_rep6['座號'], errors='coerce').fillna(999)
+                df_rep6 = df_rep6.sort_values(by=['G_W', '班級', 'NumSeat', '科目']).drop(columns=['G_W', 'NumSeat'])
 
                 # --- 欄位重新命名以完美銜接合併列印 ---
                 rename_mapping = {'姓名': '學生姓名', '場地': '地點'}
@@ -426,7 +451,8 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     'print': to_excel_bytes(df_rep4_out),
                     'scope': scope_bytes,
                     'scope_ext': scope_ext,
-                    'scope_mime': scope_mime
+                    'scope_mime': scope_mime,
+                    'student_list': to_excel_bytes(df_rep6) # 寫入第六份報表
                 }
                 st.balloons()
 
@@ -440,7 +466,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
 # ==========================================
 if st.session_state['results'] is not None:
     st.divider()
-    st.success("🎊 運算結果已鎖定，您可以逐一下載所有檔案：")
+    st.success("🎊 運算結果已鎖定，您可以逐一下載所有 6 份檔案：")
     
     res = st.session_state['results']
     d_col1, d_col2 = st.columns(2)
@@ -448,11 +474,11 @@ if st.session_state['results'] is not None:
     with d_col1:
         st.download_button("📄 下載：1.場地分配版", res['venue'], "1_場地分配版.xlsx", "application/vnd.ms-excel", use_container_width=True)
         st.download_button("📋 下載：3.考程匯整表", res['schedule'], "3_全校補考考程匯整表.xlsx", "application/vnd.ms-excel", use_container_width=True)
-        
-        # 動態變化副檔名的 第5份報表
         scope_filename = f"5_全校補考範圍表_獨立公告版.{res['scope_ext']}"
         st.download_button(f"📖 下載：5.補考範圍表 ({res['scope_ext'].upper()}分頁)", res['scope'], scope_filename, res['scope_mime'], use_container_width=True)
         
     with d_col2:
         st.download_button("🖨️ 下載：2.排座標籤", res['label'], "2_報表二_排座標籤.xlsx", "application/vnd.ms-excel", use_container_width=True)
         st.download_button("📝 下載：4.試卷印製表", res['print'], "4_試卷印製數量表.xlsx", "application/vnd.ms-excel", use_container_width=True)
+        # ⭐ 新增第六份報表的下載按鈕
+        st.download_button("🧑‍🎓 下載：6.補考學生名冊", res['student_list'], "6_補考學生名冊(去識別化).xlsx", "application/vnd.ms-excel", use_container_width=True)
