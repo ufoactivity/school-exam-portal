@@ -11,7 +11,7 @@ import traceback
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：更新報表三(考程匯整表)排序邏輯，完美支援試卷袋標籤套印！排序順位：1.年級 2.場地 3.應到人數")
+st.info("💡 修正說明：更新報表三(考程匯整表)排序邏輯！排序順位：1.年級 2.場地 3.應到人數(由小到大)")
 
 # --- 初始化快取記憶體與清空鑰匙 ---
 if 'results' not in st.session_state:
@@ -227,16 +227,16 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_final_exam = df_exam[final_cols].copy()
                 
                 # ==========================================
-                # ⭐ 排序核心修改區：完全符合您的全新排序順位！
-                # 順序：1.年級(G_W) -> 2.場地(L_W) -> 3.應到人數(降冪)
+                # ⭐ 排序核心修改區：最終定案版！
+                # 順序：1.年級(G_W) -> 2.場地(L_W) -> 3.應到人數(升冪/由小到大)
                 # ==========================================
                 df_final_exam['G_W'] = df_final_exam['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
                 df_final_exam['L_W'] = df_final_exam['場地'].map(loc_weight).fillna(99)
                 
-                # 在這裡將 G_W (年級) 拉到排序的最前面
+                # 將「應到人數」的對應 ascending 值改為 True，實現由小到大的排列
                 df_final_exam = df_final_exam.sort_values(
                     by=['G_W', 'L_W', '場地', '應到人數', '班級', '科目簡稱', '座號'], 
-                    ascending=[True, True, True, False, True, True, True] 
+                    ascending=[True, True, True, True, True, True, True] 
                 )
 
                 # 維持您原本的組別邏輯，保證同一包卷袋的資料不會散掉
