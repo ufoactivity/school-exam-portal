@@ -22,7 +22,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：第5份報表升級為【獨立分頁公告版】！完美支援 Word 直出與 Excel 自動分頁，列印公告超輕鬆！")
+st.info("💡 修正說明：新增補考範圍防呆機制！若未填寫範圍將自動補上「請詢問該科任課教師」。")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -120,7 +120,7 @@ def to_word_scope_bytes(df):
             row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
             
-        # ⭐ 核心：如果不是最後一個班級，強制插入分頁符號
+        # 強制插入分頁符號
         if i < len(classes) - 1:
             doc.add_page_break()
             
@@ -173,7 +173,7 @@ def to_excel_scope_bytes(df):
                 current_row += 1
                 
             current_row += 1 
-            # ⭐ 核心：紀錄每個班級結束的列號，準備插入水平分頁線
+            # 紀錄每個班級結束的列號，準備插入水平分頁線
             if i < len(classes) - 1:
                 h_breaks.append(current_row)
                 
@@ -394,6 +394,13 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_rep5 = df_rep5.sort_values(by=['G_W', '班級', '科目'])
                 df_rep5 = df_rep5[['班級', '科目', '補考範圍']].rename(columns={'科目': '所有補考的科目'})
 
+                # ==========================================
+                # ⭐ 核心防呆修正：若範圍為空值或NaN，自動替換預設文字
+                # ==========================================
+                df_rep5['補考範圍'] = df_rep5['補考範圍'].apply(
+                    lambda x: "請詢問該科任課教師" if str(x).strip() in ["", "nan", "None", "NaN", "<NA>"] else str(x).strip()
+                )
+
                 # 動態判斷產出 Word 還是 Excel 分頁版
                 if HAS_DOCX:
                     scope_bytes = to_word_scope_bytes(df_rep5)
@@ -442,7 +449,7 @@ if st.session_state['results'] is not None:
         st.download_button("📄 下載：1.場地分配版", res['venue'], "1_場地分配版.xlsx", "application/vnd.ms-excel", use_container_width=True)
         st.download_button("📋 下載：3.考程匯整表", res['schedule'], "3_全校補考考程匯整表.xlsx", "application/vnd.ms-excel", use_container_width=True)
         
-        # ⭐ 動態變化副檔名的 第5份報表
+        # 動態變化副檔名的 第5份報表
         scope_filename = f"5_全校補考範圍表_獨立公告版.{res['scope_ext']}"
         st.download_button(f"📖 下載：5.補考範圍表 ({res['scope_ext'].upper()}分頁)", res['scope'], scope_filename, res['scope_mime'], use_container_width=True)
         
