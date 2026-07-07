@@ -11,7 +11,7 @@ import traceback
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：更新報表三(考程匯整表)排序邏輯，優先依「場地」分區，次依「應到人數」排序，完美支援試卷袋標籤套印！")
+st.info("💡 修正說明：更新報表三(考程匯整表)排序邏輯，完美支援試卷袋標籤套印！排序順位：1.年級 2.場地 3.應到人數")
 
 # --- 初始化快取記憶體與清空鑰匙 ---
 if 'results' not in st.session_state:
@@ -227,18 +227,19 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_final_exam = df_exam[final_cols].copy()
                 
                 # ==========================================
-                # ⭐ 排序核心修改區：優先排序場地與人數
+                # ⭐ 排序核心修改區：完全符合您的全新排序順位！
+                # 順序：1.年級(G_W) -> 2.場地(L_W) -> 3.應到人數(降冪)
                 # ==========================================
                 df_final_exam['G_W'] = df_final_exam['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
-                df_final_exam['L_W'] = df_final_exam['場地'].map(loc_weight).fillna(99) # 產生場地權重
+                df_final_exam['L_W'] = df_final_exam['場地'].map(loc_weight).fillna(99)
                 
-                # 第一順位: 場地(L_W) / 第二順位: 應到人數(預設降冪 False，人多的卷袋排在前面)
+                # 在這裡將 G_W (年級) 拉到排序的最前面
                 df_final_exam = df_final_exam.sort_values(
-                    by=['L_W', '場地', '應到人數', 'G_W', '班級', '科目簡稱', '座號'], 
-                    ascending=[True, True, False, True, True, True, True] 
+                    by=['G_W', 'L_W', '場地', '應到人數', '班級', '科目簡稱', '座號'], 
+                    ascending=[True, True, True, False, True, True, True] 
                 )
 
-                # 修改 GroupKey 的組合順序，確保與剛剛的排序邏輯相符
+                # 維持您原本的組別邏輯，保證同一包卷袋的資料不會散掉
                 df_final_exam['GroupKey'] = df_final_exam['場地'] + "_" + df_final_exam['班級'] + "_" + df_final_exam['科目簡稱']
                 
                 grouped = [g for _, g in df_final_exam.groupby('GroupKey', sort=False)]
@@ -246,7 +247,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 empty = pd.DataFrame([[np.nan] * len(final_cols)], columns=final_cols)
                 
                 for i, grp in enumerate(grouped):
-                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W', 'L_W'])) # 記得將運算用的輔助欄位丟掉
+                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W', 'L_W']))
                     if i < len(grouped) - 1: final_rows.append(empty)
                 
                 if final_rows:
