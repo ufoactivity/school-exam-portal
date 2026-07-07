@@ -4,6 +4,7 @@ import numpy as np
 import io
 import re
 import traceback
+import datetime
 
 # 嘗試載入 Word 排版套件，若無安裝則使用 Excel 完美分頁備案
 try:
@@ -22,7 +23,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：大滿配最終版！新增【報表六：補考學生名冊】，自動遮蔽姓名保護個資，並附帶專屬考試時間與地點。")
+st.info("💡 修正說明：新增無試卷科目自動判斷機制！網頁可選填自行補考期限，學生名冊會自動更新時間與清空地點。")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -207,6 +208,10 @@ with col_opts:
     zhiyong_cap = st.radio("📍 致用樓4樓會議室 人數上限：", [136, 148], index=0, horizontal=True)
     st.write("") 
     separate_mode = st.toggle("🔥 開啟【多科與單科嚴格分流】功能", value=False)
+    
+    st.write("")
+    # ⭐ 新增：自行補考的期限設定功能
+    self_exam_deadline = st.date_input("📅 自行補考期限設定 (無試卷科目適用)：", datetime.date.today())
     
     st.write("")
     st.write("")
@@ -425,6 +430,14 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 # 重新命名以符合您的需求
                 df_rep6 = df_rep6.rename(columns={'時間2': '補考時間', '場地': '補考地點'})
                 
+                # ⭐ 核心：針對沒有「試卷編號」的科目，修改時間與清空地點
+                no_paper_mask = df_rep6['試卷編號'].astype(str).str.strip() == ""
+                formatted_date = self_exam_deadline.strftime("%m月%d日")
+                custom_time_msg = f"請於 {formatted_date} 前自行找老師補考"
+                
+                df_rep6.loc[no_paper_mask, '補考時間'] = custom_time_msg
+                df_rep6.loc[no_paper_mask, '補考地點'] = ""
+                
                 # 挑選指定的欄位
                 cols_to_keep = ['班級', '座號', '學號', '姓名', '科目', '補考時間', '補考地點']
                 for c in cols_to_keep:
@@ -452,7 +465,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     'scope': scope_bytes,
                     'scope_ext': scope_ext,
                     'scope_mime': scope_mime,
-                    'student_list': to_excel_bytes(df_rep6) # 寫入第六份報表
+                    'student_list': to_excel_bytes(df_rep6)
                 }
                 st.balloons()
 
@@ -480,5 +493,4 @@ if st.session_state['results'] is not None:
     with d_col2:
         st.download_button("🖨️ 下載：2.排座標籤", res['label'], "2_報表二_排座標籤.xlsx", "application/vnd.ms-excel", use_container_width=True)
         st.download_button("📝 下載：4.試卷印製表", res['print'], "4_試卷印製數量表.xlsx", "application/vnd.ms-excel", use_container_width=True)
-        # ⭐ 新增第六份報表的下載按鈕
         st.download_button("🧑‍🎓 下載：6.補考學生名冊", res['student_list'], "6_補考學生名冊(去識別化).xlsx", "application/vnd.ms-excel", use_container_width=True)
