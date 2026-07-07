@@ -11,7 +11,7 @@ import traceback
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：更新報表三(考程匯整表)排序邏輯！排序順位：1.年級 2.場地 3.應到人數(由小到大)")
+st.info("💡 修正說明：新增「報表五：全校補考範圍表」！自動抓取實際有補考的班級科目並對照出考試範圍。")
 
 # --- 初始化快取記憶體與清空鑰匙 ---
 if 'results' not in st.session_state:
@@ -125,6 +125,14 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_target['試卷編號'] = (col_opencourse + df_target['科目']).map(ex_dict).fillna((col_homeroom + df_target['科目']).map(ex_dict)).fillna("")
                 df_target['試卷編號'] = df_target['試卷編號'].apply(lambda x: str(x).replace('.0','') if str(x).endswith('.0') else str(x))
 
+                # ==========================================
+                # ⭐ 新增輔助查表邏輯：將「補考範圍」也加入字典
+                # ==========================================
+                ex_scope = get_str_col(df_exam_map, ['補考範圍', '範圍', '測驗範圍', '考試範圍'])
+                scope_dict = dict(zip(ex_cls + ex_sub, ex_scope))
+                # 把對應出來的補考範圍，存入 df_target 以供後續第五個報表使用
+                df_target['補考範圍'] = (col_opencourse + df_target['科目']).map(scope_dict).fillna((col_homeroom + df_target['科目']).map(scope_dict)).fillna("")
+
                 # 場地分配
                 df_temp = df_target.drop_duplicates(subset=['學號', '試卷編號'], keep='first')
                 v_counts = df_temp[df_temp['試卷編號'] != ""].groupby('學號').size()
@@ -226,20 +234,14 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
 
                 df_final_exam = df_exam[final_cols].copy()
                 
-                # ==========================================
-                # ⭐ 排序核心修改區：最終定案版！
-                # 順序：1.年級(G_W) -> 2.場地(L_W) -> 3.應到人數(升冪/由小到大)
-                # ==========================================
                 df_final_exam['G_W'] = df_final_exam['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
                 df_final_exam['L_W'] = df_final_exam['場地'].map(loc_weight).fillna(99)
                 
-                # 將「應到人數」的對應 ascending 值改為 True，實現由小到大的排列
                 df_final_exam = df_final_exam.sort_values(
                     by=['G_W', 'L_W', '場地', '應到人數', '班級', '科目簡稱', '座號'], 
                     ascending=[True, True, True, True, True, True, True] 
                 )
 
-                # 維持您原本的組別邏輯，保證同一包卷袋的資料不會散掉
                 df_final_exam['GroupKey'] = df_final_exam['場地'] + "_" + df_final_exam['班級'] + "_" + df_final_exam['科目簡稱']
                 
                 grouped = [g for _, g in df_final_exam.groupby('GroupKey', sort=False)]
@@ -260,6 +262,18 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_rep4['SortKey'] = df_rep4['試卷編號'].apply(natural_sort_key)
                 df_rep4 = df_rep4.sort_values(by='SortKey').drop(columns=['SortKey'])
 
+                # ==========================================
+                # ⭐ 階段五：報表五處理 (全校補考範圍表)
+                # ==========================================
+                # 只保留該班實際有學生要考的科目，剔除重複項
+                df_rep5 = df_target[df_target['科目'] != ""].drop_duplicates(subset=['班級', '科目']).copy()
+                # 幫年級加上權重以便正確排序
+                df_rep5['G_W'] = df_rep5['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
+                # 排序：1.年級、2.班級、3.科目
+                df_rep5 = df_rep5.sort_values(by=['G_W', '班級', '科目'])
+                # 只留下我們需要的欄位，並將「科目」重新命名為「所有補考的科目」以符合您的需求
+                df_rep5 = df_rep5[['班級', '科目', '補考範圍']].rename(columns={'科目': '所有補考的科目'})
+
                 # --- 欄位重新命名以完美銜接合併列印 ---
                 rename_mapping = {'姓名': '學生姓名', '場地': '地點'}
                 
@@ -273,7 +287,8 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     'venue': to_excel_bytes(df_target_out),
                     'label': to_excel_bytes(df_rep2_out),
                     'schedule': to_excel_bytes(df_rep3_out),
-                    'print': to_excel_bytes(df_rep4_out)
+                    'print': to_excel_bytes(df_rep4_out),
+                    'scope': to_excel_bytes(df_rep5) # 寫入第五份報表的檔案流
                 }
                 st.balloons()
 
@@ -294,7 +309,9 @@ if st.session_state['results'] is not None:
     
     with d_col1:
         st.download_button("📄 下載：1.場地分配版", res['venue'], "1_場地分配版.xlsx", "application/vnd.ms-excel", use_container_width=True)
-        st.download_button("🖨️ 下載：2.排座標籤", res['label'], "2_報表二_排座標籤.xlsx", "application/vnd.ms-excel", use_container_width=True)
-    with d_col2:
         st.download_button("📋 下載：3.考程匯整表", res['schedule'], "3_全校補考考程匯整表.xlsx", "application/vnd.ms-excel", use_container_width=True)
+        # ⭐ 加入第 5 份報表的下載按鈕
+        st.download_button("📖 下載：5.全校補考範圍表", res['scope'], "5_全校補考範圍表.xlsx", "application/vnd.ms-excel", use_container_width=True)
+    with d_col2:
+        st.download_button("🖨️ 下載：2.排座標籤", res['label'], "2_報表二_排座標籤.xlsx", "application/vnd.ms-excel", use_container_width=True)
         st.download_button("📝 下載：4.試卷印製表", res['print'], "4_試卷印製數量表.xlsx", "application/vnd.ms-excel", use_container_width=True)
