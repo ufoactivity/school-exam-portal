@@ -248,12 +248,23 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_rep4['SortKey'] = df_rep4['試卷編號'].apply(natural_sort_key)
                 df_rep4 = df_rep4.sort_values(by='SortKey').drop(columns=['SortKey'])
 
-                # 【鎖定記憶體】
+                # ==========================================
+                # ⭐ 核心修正區：鎖定記憶體前，統一替換所有報表的欄位名稱
+                # 這樣就不會破壞原本的運算邏輯，但匯出結果能完美銜接 Word 合併列印
+                # ==========================================
+                rename_mapping = {'姓名': '學生姓名', '場地': '地點'}
+                
+                df_target_out = df_target.rename(columns=rename_mapping)
+                df_rep2_out = df_rep2.rename(columns=rename_mapping)
+                df_rep3_out = df_rep3_final.rename(columns=rename_mapping)
+                df_rep4_out = df_rep4.rename(columns=rename_mapping)
+
+                # 【鎖定記憶體】改用 _out 結尾的 DataFrame 轉成 Excel
                 st.session_state['results'] = {
-                    'venue': to_excel_bytes(df_target),
-                    'label': to_excel_bytes(df_rep2),
-                    'schedule': to_excel_bytes(df_rep3_final),
-                    'print': to_excel_bytes(df_rep4)
+                    'venue': to_excel_bytes(df_target_out),
+                    'label': to_excel_bytes(df_rep2_out),
+                    'schedule': to_excel_bytes(df_rep3_out),
+                    'print': to_excel_bytes(df_rep4_out)
                 }
                 st.balloons()
 
