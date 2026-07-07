@@ -5,13 +5,27 @@ import io
 import re
 import traceback
 
+# 嘗試載入 Word 排版套件，若無安裝則使用 Excel 完美分頁備案
+try:
+    from docx import Document
+    from docx.shared import Pt, Cm
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.oxml.ns import qn
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
+
 # ==========================================
 # 1. 網頁頁面配置
 # ==========================================
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：新增「報表五：全校補考範圍表」！自動抓取實際有補考的班級科目並對照出考試範圍。")
+st.info("💡 修正說明：第5份報表升級為【獨立分頁公告版】！完美支援 Word 直出與 Excel 自動分頁，列印公告超輕鬆！")
+
+if not HAS_DOCX:
+    st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
 
 # --- 初始化快取記憶體與清空鑰匙 ---
 if 'results' not in st.session_state:
@@ -51,6 +65,121 @@ def to_excel_bytes(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False)
+    return output.getvalue()
+
+# --- 新增：Word 獨立分頁排版引擎 ---
+def to_word_scope_bytes(df):
+    doc = Document()
+    # 設定預設字型
+    style = doc.styles['Normal']
+    style.font.name = '微軟正黑體'
+    style.font.size = Pt(12)
+    style._element.rPr.rFonts.set(qn('w:eastAsia'), '微軟正黑體')
+    
+    # 設定邊界
+    for section in doc.sections:
+        section.top_margin = Cm(2)
+        section.bottom_margin = Cm(2)
+        section.left_margin = Cm(2)
+        section.right_margin = Cm(2)
+
+    classes = df['班級'].unique()
+    for i, cls in enumerate(classes):
+        # 插入標題
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(f"【{cls}】補考科目及範圍公告")
+        run.font.size = Pt(18)
+        run.font.bold = True
+        doc.add_paragraph() # 空行
+
+        # 建立表格
+        sub_df = df[df['班級'] == cls]
+        table = doc.add_table(rows=1, cols=2)
+        table.style = 'Table Grid'
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = '補考科目'
+        hdr_cells[1].text = '補考範圍'
+        
+        # 標題格式化
+        for cell in hdr_cells:
+            for paragraph in cell.paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in paragraph.runs:
+                    run.font.bold = True
+                    run.font.size = Pt(12)
+                    
+        # 填入資料
+        for _, row in sub_df.iterrows():
+            row_cells = table.add_row().cells
+            row_cells[0].text = str(row['所有補考的科目'])
+            row_cells[1].text = str(row['補考範圍'])
+            
+            row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+            
+        # ⭐ 核心：如果不是最後一個班級，強制插入分頁符號
+        if i < len(classes) - 1:
+            doc.add_page_break()
+            
+    output = io.BytesIO()
+    doc.save(output)
+    return output.getvalue()
+
+# --- 新增：Excel 完美分頁排版引擎 (防呆備案) ---
+def to_excel_scope_bytes(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        workbook = writer.book
+        worksheet = workbook.add_worksheet('列印公告用')
+        
+        # 格式設定
+        title_fmt = workbook.add_format({'bold': True, 'font_size': 18, 'align': 'center', 'valign': 'vcenter'})
+        hdr_fmt = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#D9D9D9', 'font_size': 12})
+        subj_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 12})
+        cell_fmt = workbook.add_format({'border': 1, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'font_size': 12})
+        
+        # 欄寬與列印版面設定
+        worksheet.set_column('A:A', 20)
+        worksheet.set_column('B:B', 70)
+        worksheet.set_margins(left=0.5, right=0.5, top=0.8, bottom=0.8)
+        worksheet.fit_to_pages(1, 0)
+        
+        current_row = 0
+        classes = df['班級'].unique()
+        h_breaks = []
+        
+        for i, cls in enumerate(classes):
+            sub_df = df[df['班級'] == cls]
+            
+            worksheet.merge_range(current_row, 0, current_row, 1, f"【{cls}】補考科目及範圍公告", title_fmt)
+            worksheet.set_row(current_row, 30)
+            current_row += 1
+            
+            worksheet.write(current_row, 0, "補考科目", hdr_fmt)
+            worksheet.write(current_row, 1, "補考範圍", hdr_fmt)
+            worksheet.set_row(current_row, 20)
+            current_row += 1
+            
+            for _, row in sub_df.iterrows():
+                worksheet.write(current_row, 0, str(row['所有補考的科目']), subj_fmt)
+                worksheet.write(current_row, 1, str(row['補考範圍']), cell_fmt)
+                
+                text_len = len(str(row['補考範圍']))
+                lines = str(row['補考範圍']).count('\n') + (text_len // 40) + 1
+                worksheet.set_row(current_row, max(25, lines * 18))
+                current_row += 1
+                
+            current_row += 1 
+            # ⭐ 核心：紀錄每個班級結束的列號，準備插入水平分頁線
+            if i < len(classes) - 1:
+                h_breaks.append(current_row)
+                
+        # 強制插入 Excel 列印分頁
+        worksheet.set_h_pagebreaks(h_breaks)
+        
     return output.getvalue()
 
 # ==========================================
@@ -125,12 +254,9 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_target['試卷編號'] = (col_opencourse + df_target['科目']).map(ex_dict).fillna((col_homeroom + df_target['科目']).map(ex_dict)).fillna("")
                 df_target['試卷編號'] = df_target['試卷編號'].apply(lambda x: str(x).replace('.0','') if str(x).endswith('.0') else str(x))
 
-                # ==========================================
-                # ⭐ 新增輔助查表邏輯：將「補考範圍」也加入字典
-                # ==========================================
+                # 將「補考範圍」存入 df_target 以供後續報表五使用
                 ex_scope = get_str_col(df_exam_map, ['補考範圍', '範圍', '測驗範圍', '考試範圍'])
                 scope_dict = dict(zip(ex_cls + ex_sub, ex_scope))
-                # 把對應出來的補考範圍，存入 df_target 以供後續第五個報表使用
                 df_target['補考範圍'] = (col_opencourse + df_target['科目']).map(scope_dict).fillna((col_homeroom + df_target['科目']).map(scope_dict)).fillna("")
 
                 # 場地分配
@@ -262,21 +388,24 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_rep4['SortKey'] = df_rep4['試卷編號'].apply(natural_sort_key)
                 df_rep4 = df_rep4.sort_values(by='SortKey').drop(columns=['SortKey'])
 
-                # ==========================================
-                # ⭐ 階段五：報表五處理 (全校補考範圍表)
-                # ==========================================
-                # 只保留該班實際有學生要考的科目，剔除重複項
+                # --- 階段五：報表五處理 (全校補考範圍表) ---
                 df_rep5 = df_target[df_target['科目'] != ""].drop_duplicates(subset=['班級', '科目']).copy()
-                # 幫年級加上權重以便正確排序
                 df_rep5['G_W'] = df_rep5['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
-                # 排序：1.年級、2.班級、3.科目
                 df_rep5 = df_rep5.sort_values(by=['G_W', '班級', '科目'])
-                # 只留下我們需要的欄位，並將「科目」重新命名為「所有補考的科目」以符合您的需求
                 df_rep5 = df_rep5[['班級', '科目', '補考範圍']].rename(columns={'科目': '所有補考的科目'})
+
+                # 動態判斷產出 Word 還是 Excel 分頁版
+                if HAS_DOCX:
+                    scope_bytes = to_word_scope_bytes(df_rep5)
+                    scope_ext = "docx"
+                    scope_mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                else:
+                    scope_bytes = to_excel_scope_bytes(df_rep5)
+                    scope_ext = "xlsx"
+                    scope_mime = "application/vnd.ms-excel"
 
                 # --- 欄位重新命名以完美銜接合併列印 ---
                 rename_mapping = {'姓名': '學生姓名', '場地': '地點'}
-                
                 df_target_out = df_target.rename(columns=rename_mapping)
                 df_rep2_out = df_rep2.rename(columns=rename_mapping)
                 df_rep3_out = df_rep3_final.rename(columns=rename_mapping)
@@ -288,7 +417,9 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     'label': to_excel_bytes(df_rep2_out),
                     'schedule': to_excel_bytes(df_rep3_out),
                     'print': to_excel_bytes(df_rep4_out),
-                    'scope': to_excel_bytes(df_rep5) # 寫入第五份報表的檔案流
+                    'scope': scope_bytes,
+                    'scope_ext': scope_ext,
+                    'scope_mime': scope_mime
                 }
                 st.balloons()
 
@@ -310,8 +441,11 @@ if st.session_state['results'] is not None:
     with d_col1:
         st.download_button("📄 下載：1.場地分配版", res['venue'], "1_場地分配版.xlsx", "application/vnd.ms-excel", use_container_width=True)
         st.download_button("📋 下載：3.考程匯整表", res['schedule'], "3_全校補考考程匯整表.xlsx", "application/vnd.ms-excel", use_container_width=True)
-        # ⭐ 加入第 5 份報表的下載按鈕
-        st.download_button("📖 下載：5.全校補考範圍表", res['scope'], "5_全校補考範圍表.xlsx", "application/vnd.ms-excel", use_container_width=True)
+        
+        # ⭐ 動態變化副檔名的 第5份報表
+        scope_filename = f"5_全校補考範圍表_獨立公告版.{res['scope_ext']}"
+        st.download_button(f"📖 下載：5.補考範圍表 ({res['scope_ext'].upper()}分頁)", res['scope'], scope_filename, res['scope_mime'], use_container_width=True)
+        
     with d_col2:
         st.download_button("🖨️ 下載：2.排座標籤", res['label'], "2_報表二_排座標籤.xlsx", "application/vnd.ms-excel", use_container_width=True)
         st.download_button("📝 下載：4.試卷印製表", res['print'], "4_試卷印製數量表.xlsx", "application/vnd.ms-excel", use_container_width=True)
