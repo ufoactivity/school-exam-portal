@@ -23,7 +23,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：新增學年度與日期設定，報表六(學生名冊)升級為精美排版版，自動帶入表頭與注意事項！")
+st.info("💡 修正說明：新增單日/雙日補考勾選切換功能！學生名冊表頭日期將根據您的勾選自動智慧套印。")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -183,8 +183,8 @@ def to_excel_scope_bytes(df):
         
     return output.getvalue()
 
-# --- ⭐ 新增：報表六 (學生名冊) 專屬精美排版匯出引擎 ---
-def to_excel_student_list_bytes(df, school_year, date1, date2):
+# --- ⭐ 新增：報表六 (學生名冊) 專屬精美排版匯出引擎 (支援單日判斷) ---
+def to_excel_student_list_bytes(df, school_year, date1, date2=None):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
@@ -196,16 +196,20 @@ def to_excel_student_list_bytes(df, school_year, date1, date2):
         hdr_fmt = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#D9D9D9', 'font_size': 12})
         cell_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 12})
         
-        # 日期轉換為民國年格式
+        # 智慧判斷單日或雙日，並轉換為民國年格式
         date_str1 = format_tw_date(date1)
-        date_str2 = format_tw_date(date2)
+        if date2 is not None:
+            date_str2 = format_tw_date(date2)
+            date_display_text = f"補考日期：{date_str1}、{date_str2}"
+        else:
+            date_display_text = f"補考日期：{date_str1}"
         
         # 寫入標題
         worksheet.merge_range(0, 0, 0, 6, f"{school_year}學年 全校補考名冊", title_fmt)
         worksheet.set_row(0, 25)
         
         # 寫入時間與地點資訊
-        worksheet.write(2, 0, f"補考日期：{date_str1}、{date_str2}", info_fmt)
+        worksheet.write(2, 0, date_display_text, info_fmt)
         worksheet.write(3, 0, "補考時間：上午場 統一 八點十分開始；下午場 統一 一點十分開始", info_fmt)
         worksheet.write(4, 0, "補考地點：致用樓四樓會議室、圖書館三樓自修教室", info_fmt)
         
@@ -273,11 +277,17 @@ with col_opts:
     st.subheader("🗓️ 第三步：報表參數設定 (名冊公告用)")
     school_year_input = st.text_input("🎓 學年度 (例如：112-2)：", "112-2")
     
+    # ⭐ 新增：單雙日切換功能
+    is_two_days = st.checkbox("🗓️ 本次補考包含「第二天」", value=True)
+    
     d_col1, d_col2 = st.columns(2)
     with d_col1:
         exam_date_1 = st.date_input("📅 補考日期(第一天)：", datetime.date.today())
     with d_col2:
-        exam_date_2 = st.date_input("📅 補考日期(第二天)：", datetime.date.today() + datetime.timedelta(days=1))
+        if is_two_days:
+            exam_date_2 = st.date_input("📅 補考日期(第二天)：", datetime.date.today() + datetime.timedelta(days=1))
+        else:
+            exam_date_2 = None
         
     self_exam_deadline = st.date_input("📅 自行補考期限設定 (無試卷科目適用)：", datetime.date.today() + datetime.timedelta(days=7))
 
@@ -513,7 +523,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_rep6['NumSeat'] = pd.to_numeric(df_rep6['座號'], errors='coerce').fillna(999)
                 df_rep6 = df_rep6.sort_values(by=['G_W', '班級', 'NumSeat', '科目']).drop(columns=['G_W', 'NumSeat'])
 
-                # ⭐ 套用自訂的表頭排版匯出 (帶入學年度與日期)
+                # ⭐ 套用自訂的表頭排版匯出 (帶入學年度與日期，單日雙日皆支援)
                 student_list_bytes = to_excel_student_list_bytes(df_rep6, school_year_input, exam_date_1, exam_date_2)
 
                 # --- 欄位重新命名以完美銜接合併列印 ---
