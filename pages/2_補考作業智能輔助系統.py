@@ -23,7 +23,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：新增無試卷科目自動判斷機制！網頁可選填自行補考期限，學生名冊會自動更新時間與清空地點。")
+st.info("💡 修正說明：新增學年度與日期設定，報表六(學生名冊)升級為精美排版版，自動帶入表頭與注意事項！")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -75,16 +75,21 @@ def mask_name_func(name):
     if len(n) == 2: return n[0] + "〇"
     return n[0] + "〇" + n[2:]
 
+# --- 日期轉換函數 (轉換為 民國年與星期) ---
+def format_tw_date(d):
+    tw_year = d.year - 1911
+    weekdays = ["一", "二", "三", "四", "五", "六", "日"]
+    weekday_str = weekdays[d.weekday()]
+    return f"{tw_year}年{d.month:02d}月{d.day:02d}日(星期{weekday_str})"
+
 # --- 新增：Word 獨立分頁排版引擎 ---
 def to_word_scope_bytes(df):
     doc = Document()
-    # 設定預設字型
     style = doc.styles['Normal']
     style.font.name = '微軟正黑體'
     style.font.size = Pt(12)
     style._element.rPr.rFonts.set(qn('w:eastAsia'), '微軟正黑體')
     
-    # 設定邊界
     for section in doc.sections:
         section.top_margin = Cm(2)
         section.bottom_margin = Cm(2)
@@ -93,15 +98,13 @@ def to_word_scope_bytes(df):
 
     classes = df['班級'].unique()
     for i, cls in enumerate(classes):
-        # 插入標題
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.add_run(f"【{cls}】補考科目及範圍公告")
         run.font.size = Pt(18)
         run.font.bold = True
-        doc.add_paragraph() # 空行
+        doc.add_paragraph()
 
-        # 建立表格
         sub_df = df[df['班級'] == cls]
         table = doc.add_table(rows=1, cols=2)
         table.style = 'Table Grid'
@@ -111,7 +114,6 @@ def to_word_scope_bytes(df):
         hdr_cells[0].text = '補考科目'
         hdr_cells[1].text = '補考範圍'
         
-        # 標題格式化
         for cell in hdr_cells:
             for paragraph in cell.paragraphs:
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -119,16 +121,13 @@ def to_word_scope_bytes(df):
                     run.font.bold = True
                     run.font.size = Pt(12)
                     
-        # 填入資料
         for _, row in sub_df.iterrows():
             row_cells = table.add_row().cells
             row_cells[0].text = str(row['所有補考的科目'])
             row_cells[1].text = str(row['補考範圍'])
-            
             row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
             
-        # 強制插入分頁符號
         if i < len(classes) - 1:
             doc.add_page_break()
             
@@ -143,13 +142,11 @@ def to_excel_scope_bytes(df):
         workbook = writer.book
         worksheet = workbook.add_worksheet('列印公告用')
         
-        # 格式設定
         title_fmt = workbook.add_format({'bold': True, 'font_size': 18, 'align': 'center', 'valign': 'vcenter'})
         hdr_fmt = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#D9D9D9', 'font_size': 12})
         subj_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 12})
         cell_fmt = workbook.add_format({'border': 1, 'align': 'left', 'valign': 'vcenter', 'text_wrap': True, 'font_size': 12})
         
-        # 欄寬與列印版面設定
         worksheet.set_column('A:A', 20)
         worksheet.set_column('B:B', 70)
         worksheet.set_margins(left=0.5, right=0.5, top=0.8, bottom=0.8)
@@ -161,7 +158,6 @@ def to_excel_scope_bytes(df):
         
         for i, cls in enumerate(classes):
             sub_df = df[df['班級'] == cls]
-            
             worksheet.merge_range(current_row, 0, current_row, 1, f"【{cls}】補考科目及範圍公告", title_fmt)
             worksheet.set_row(current_row, 30)
             current_row += 1
@@ -174,19 +170,83 @@ def to_excel_scope_bytes(df):
             for _, row in sub_df.iterrows():
                 worksheet.write(current_row, 0, str(row['所有補考的科目']), subj_fmt)
                 worksheet.write(current_row, 1, str(row['補考範圍']), cell_fmt)
-                
                 text_len = len(str(row['補考範圍']))
                 lines = str(row['補考範圍']).count('\n') + (text_len // 40) + 1
                 worksheet.set_row(current_row, max(25, lines * 18))
                 current_row += 1
                 
             current_row += 1 
-            # 紀錄每個班級結束的列號，準備插入水平分頁線
             if i < len(classes) - 1:
                 h_breaks.append(current_row)
                 
-        # 強制插入 Excel 列印分頁
         worksheet.set_h_pagebreaks(h_breaks)
+        
+    return output.getvalue()
+
+# --- ⭐ 新增：報表六 (學生名冊) 專屬精美排版匯出引擎 ---
+def to_excel_student_list_bytes(df, school_year, date1, date2):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        workbook = writer.book
+        worksheet = workbook.add_worksheet('補考名冊公告')
+        
+        # 設定格式
+        title_fmt = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter'})
+        info_fmt = workbook.add_format({'font_size': 12, 'align': 'left', 'valign': 'vcenter'})
+        hdr_fmt = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#D9D9D9', 'font_size': 12})
+        cell_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 12})
+        
+        # 日期轉換為民國年格式
+        date_str1 = format_tw_date(date1)
+        date_str2 = format_tw_date(date2)
+        
+        # 寫入標題
+        worksheet.merge_range(0, 0, 0, 6, f"{school_year}學年 全校補考名冊", title_fmt)
+        worksheet.set_row(0, 25)
+        
+        # 寫入時間與地點資訊
+        worksheet.write(2, 0, f"補考日期：{date_str1}、{date_str2}", info_fmt)
+        worksheet.write(3, 0, "補考時間：上午場 統一 八點十分開始；下午場 統一 一點十分開始", info_fmt)
+        worksheet.write(4, 0, "補考地點：致用樓四樓會議室、圖書館三樓自修教室", info_fmt)
+        
+        # 寫入注意事項
+        notes = [
+            "注意事項：",
+            "1.請同學穿著全套校服、攜帶學生證(或身分證)，準時應考。未符合前述規定者，不得補考。",
+            "2.遲到15分鐘者不得入場，開始30分鐘後始能繳卷離場。",
+            "3.入考場時，僅能攜帶證件、考試用文具，不得攜帶手機或任何電子設備。",
+            "4.若有任何違規情事發生，將依本校考試規則辦理。",
+            "5.如有問題請電洽教務處 試務組(分機164)。"
+        ]
+        
+        row_idx = 6
+        for note in notes:
+            worksheet.write(row_idx, 0, note, info_fmt)
+            row_idx += 1
+            
+        row_idx += 1  # 留一行空白
+        start_row = row_idx
+        
+        # 寫入表格標題
+        for col_num, col_name in enumerate(df.columns):
+            worksheet.write(start_row, col_num, col_name, hdr_fmt)
+            
+        # 寫入表格內容
+        for r_idx, r_data in enumerate(df.values):
+            for c_idx, val in enumerate(r_data):
+                worksheet.write(start_row + 1 + r_idx, c_idx, str(val), cell_fmt)
+                
+        # 調整列印版面與欄寬，讓報表美觀
+        worksheet.set_column(0, 0, 12) # 班級
+        worksheet.set_column(1, 1, 8)  # 座號
+        worksheet.set_column(2, 2, 12) # 學號
+        worksheet.set_column(3, 3, 12) # 姓名
+        worksheet.set_column(4, 4, 30) # 科目
+        worksheet.set_column(5, 5, 30) # 補考時間
+        worksheet.set_column(6, 6, 20) # 補考地點
+        
+        worksheet.set_margins(left=0.5, right=0.5, top=0.8, bottom=0.8)
+        worksheet.fit_to_pages(1, 0)
         
     return output.getvalue()
 
@@ -209,11 +269,18 @@ with col_opts:
     st.write("") 
     separate_mode = st.toggle("🔥 開啟【多科與單科嚴格分流】功能", value=False)
     
-    st.write("")
-    # ⭐ 新增：自行補考的期限設定功能
-    self_exam_deadline = st.date_input("📅 自行補考期限設定 (無試卷科目適用)：", datetime.date.today())
+    st.divider()
+    st.subheader("🗓️ 第三步：報表參數設定 (名冊公告用)")
+    school_year_input = st.text_input("🎓 學年度 (例如：112-2)：", "112-2")
     
-    st.write("")
+    d_col1, d_col2 = st.columns(2)
+    with d_col1:
+        exam_date_1 = st.date_input("📅 補考日期(第一天)：", datetime.date.today())
+    with d_col2:
+        exam_date_2 = st.date_input("📅 補考日期(第二天)：", datetime.date.today() + datetime.timedelta(days=1))
+        
+    self_exam_deadline = st.date_input("📅 自行補考期限設定 (無試卷科目適用)：", datetime.date.today() + datetime.timedelta(days=7))
+
     st.write("")
     if st.button("🗑️ 清除舊資料 / 重新設定", use_container_width=True):
         st.session_state['results'] = None
@@ -406,7 +473,6 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_rep5 = df_rep5.sort_values(by=['G_W', '班級', '科目'])
                 df_rep5 = df_rep5[['班級', '科目', '補考範圍']].rename(columns={'科目': '所有補考的科目'})
 
-                # 防呆：若範圍為空值，自動替換為預設文字
                 df_rep5['補考範圍'] = df_rep5['補考範圍'].apply(
                     lambda x: "請詢問該科任課教師" if str(x).strip() in ["", "nan", "None", "NaN", "<NA>"] else str(x).strip()
                 )
@@ -421,33 +487,34 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     scope_mime = "application/vnd.ms-excel"
 
                 # ==========================================
-                # ⭐ 階段六：報表六處理 (補考學生名冊 - 個資保護版)
+                # ⭐ 階段六：報表六處理 (補考學生名冊 - 排版版)
                 # ==========================================
                 df_rep6 = df_target[df_target['科目'] != ""].drop_duplicates(subset=['學號', '科目']).copy()
                 
                 # 套用姓名遮蔽防護
                 df_rep6['姓名'] = df_rep6['姓名'].apply(mask_name_func)
-                # 重新命名以符合您的需求
                 df_rep6 = df_rep6.rename(columns={'時間2': '補考時間', '場地': '補考地點'})
                 
-                # ⭐ 核心：針對沒有「試卷編號」的科目，修改時間與清空地點
+                # 針對沒有「試卷編號」的科目，修改時間與清空地點
                 no_paper_mask = df_rep6['試卷編號'].astype(str).str.strip() == ""
-                formatted_date = self_exam_deadline.strftime("%m月%d日")
+                formatted_date = f"{self_exam_deadline.month}月{self_exam_deadline.day}日"
                 custom_time_msg = f"請於 {formatted_date} 前自行找老師補考"
                 
                 df_rep6.loc[no_paper_mask, '補考時間'] = custom_time_msg
                 df_rep6.loc[no_paper_mask, '補考地點'] = ""
                 
-                # 挑選指定的欄位
+                # 挑選指定欄位與排序
                 cols_to_keep = ['班級', '座號', '學號', '姓名', '科目', '補考時間', '補考地點']
                 for c in cols_to_keep:
                     if c not in df_rep6.columns: df_rep6[c] = ""
                 df_rep6 = df_rep6[cols_to_keep]
                 
-                # 排序：依序為 年級 -> 班級 -> 座號 -> 科目
                 df_rep6['G_W'] = df_rep6['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
                 df_rep6['NumSeat'] = pd.to_numeric(df_rep6['座號'], errors='coerce').fillna(999)
                 df_rep6 = df_rep6.sort_values(by=['G_W', '班級', 'NumSeat', '科目']).drop(columns=['G_W', 'NumSeat'])
+
+                # ⭐ 套用自訂的表頭排版匯出 (帶入學年度與日期)
+                student_list_bytes = to_excel_student_list_bytes(df_rep6, school_year_input, exam_date_1, exam_date_2)
 
                 # --- 欄位重新命名以完美銜接合併列印 ---
                 rename_mapping = {'姓名': '學生姓名', '場地': '地點'}
@@ -465,7 +532,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     'scope': scope_bytes,
                     'scope_ext': scope_ext,
                     'scope_mime': scope_mime,
-                    'student_list': to_excel_bytes(df_rep6)
+                    'student_list': student_list_bytes
                 }
                 st.balloons()
 
@@ -493,4 +560,4 @@ if st.session_state['results'] is not None:
     with d_col2:
         st.download_button("🖨️ 下載：2.排座標籤", res['label'], "2_報表二_排座標籤.xlsx", "application/vnd.ms-excel", use_container_width=True)
         st.download_button("📝 下載：4.試卷印製表", res['print'], "4_試卷印製數量表.xlsx", "application/vnd.ms-excel", use_container_width=True)
-        st.download_button("🧑‍🎓 下載：6.補考學生名冊", res['student_list'], "6_補考學生名冊(去識別化).xlsx", "application/vnd.ms-excel", use_container_width=True)
+        st.download_button("🧑‍🎓 下載：6.補考學生名冊", res['student_list'], "6_補考學生名冊(含注意事項版).xlsx", "application/vnd.ms-excel", use_container_width=True)
