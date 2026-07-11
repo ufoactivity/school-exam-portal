@@ -23,7 +23,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：新增單日/雙日補考勾選切換功能！學生名冊表頭日期將根據您的勾選自動智慧套印。新增「缺漏科目簡稱自動彙整」功能！")
+st.info("💡 修正說明：新增單日/雙日補考勾選切換功能！學生名冊表頭日期將根據您的勾選自動智慧套印。新增「缺漏科目簡稱自動彙整」功能（已排除無試卷編號之科目）！")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -321,22 +321,12 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_target['班級'] = col_homeroom
                 df_target['年級'] = df_target['班級'].apply(grade_to_chinese)
 
+                # 1. 映射科目簡稱
                 col_a_s, col_b_s = df_short_map.columns[0], df_short_map.columns[1]
                 short_dict = dict(zip(df_short_map[col_a_s].astype(str).str.strip(), df_short_map[col_b_s].astype(str).str.strip()))
                 df_target['科目簡稱'] = df_target['科目'].map(short_dict).fillna("")
                 
-                # ⭐ 新增模組：自動抓出在字典找不到對應簡稱的科目
-                df_missing_short = df_target[(df_target['科目'].str.strip() != "") & (df_target['科目簡稱'] == "")].copy()
-                if not df_missing_short.empty:
-                    # 去除重複，只保留獨立的科目名稱
-                    df_missing_short_out = df_missing_short.drop_duplicates(subset=['科目'])[['科目']]
-                    df_missing_short_out = df_missing_short_out.rename(columns={'科目': '系統找不到簡稱的科目(請複製至簡稱表)'})
-                else:
-                    # 若全部都找到，產出恭喜訊息檔案
-                    df_missing_short_out = pd.DataFrame(columns=['系統找不到簡稱的科目(請複製至簡稱表)'])
-                    df_missing_short_out.loc[0] = ['恭喜老師！所有科目皆已完美對應簡稱！']
-                missing_short_bytes = to_excel_bytes(df_missing_short_out)
-                
+                # 2. 映射試卷編號
                 ex_cls = get_str_col(df_exam_map, ['班級', '開課班'])
                 ex_sub = get_str_col(df_exam_map, ['科目', '考科'])
                 ex_pap = get_str_col(df_exam_map, ['試卷編號', '代碼'])
@@ -345,6 +335,21 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 
                 df_target['試卷編號'] = (col_opencourse + df_target['科目']).map(ex_dict).fillna((col_homeroom + df_target['科目']).map(ex_dict)).fillna("")
                 df_target['試卷編號'] = df_target['試卷編號'].apply(lambda x: str(x).replace('.0','') if str(x).endswith('.0') else str(x))
+
+                # ⭐ 修正：自動抓出「有試卷編號」但在字典找不到對應簡稱的科目 (移至此處執行)
+                df_missing_short = df_target[(df_target['科目'].str.strip() != "") & 
+                                             (df_target['科目簡稱'] == "") & 
+                                             (df_target['試卷編號'] != "")].copy()
+                
+                if not df_missing_short.empty:
+                    # 去除重複，只保留獨立的科目名稱
+                    df_missing_short_out = df_missing_short.drop_duplicates(subset=['科目'])[['科目']]
+                    df_missing_short_out = df_missing_short_out.rename(columns={'科目': '有試卷編號但找不到簡稱的科目(請複製至簡稱表)'})
+                else:
+                    # 若全部都找到，產出恭喜訊息檔案
+                    df_missing_short_out = pd.DataFrame(columns=['有試卷編號但找不到簡稱的科目(請複製至簡稱表)'])
+                    df_missing_short_out.loc[0] = ['恭喜老師！所有需「紙筆測驗（有試卷編號）」的科目皆已完美對應簡稱！']
+                missing_short_bytes = to_excel_bytes(df_missing_short_out)
 
                 ex_scope = get_str_col(df_exam_map, ['補考範圍', '範圍', '測驗範圍', '考試範圍'])
                 scope_dict = dict(zip(ex_cls + ex_sub, ex_scope))
@@ -450,23 +455,15 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     if col not in df_exam.columns: df_exam[col] = ""
 
                 df_final_exam = df_exam[final_cols].copy()
-                
                 df_final_exam['G_W'] = df_final_exam['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
-                df_final_exam['L_W'] = df_final_exam['場地'].map(loc_weight).fillna(99)
-                
-                df_final_exam = df_final_exam.sort_values(
-                    by=['G_W', 'L_W', '場地', '應到人數', '班級', '科目簡稱', '座號'], 
-                    ascending=[True, True, True, True, True, True, True] 
-                )
+                df_final_exam = df_final_exam.sort_values(by=['G_W', '班級', '科目簡稱', '場地', '座號'])
 
-                df_final_exam['GroupKey'] = df_final_exam['場地'] + "_" + df_final_exam['班級'] + "_" + df_final_exam['科目簡稱']
-                
+                df_final_exam['GroupKey'] = df_final_exam['班級'] + "_" + df_final_exam['科目簡稱'] + "_" + df_final_exam['場地']
                 grouped = [g for _, g in df_final_exam.groupby('GroupKey', sort=False)]
                 final_rows = []
                 empty = pd.DataFrame([[np.nan] * len(final_cols)], columns=final_cols)
-                
                 for i, grp in enumerate(grouped):
-                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W', 'L_W']))
+                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W']))
                     if i < len(grouped) - 1: final_rows.append(empty)
                 
                 if final_rows:
@@ -529,7 +526,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_rep3_out = df_rep3_final.rename(columns=rename_mapping)
                 df_rep4_out = df_rep4.rename(columns=rename_mapping)
 
-                # 【鎖定記憶體】⭐ 將缺漏科目清單一併加入 session 存檔
+                # 【鎖定記憶體】
                 st.session_state['results'] = {
                     'venue': to_excel_bytes(df_target_out),
                     'label': to_excel_bytes(df_rep2_out),
@@ -539,7 +536,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     'scope_ext': scope_ext,
                     'scope_mime': scope_mime,
                     'student_list': student_list_bytes,
-                    'missing_short': missing_short_bytes  # ⭐ 存入缺漏科目檔案
+                    'missing_short': missing_short_bytes
                 }
                 st.balloons()
 
@@ -564,7 +561,6 @@ if st.session_state['results'] is not None:
         scope_filename = f"5_全校補考範圍表_獨立公告版.{res['scope_ext']}"
         st.download_button(f"📖 下載：5.補考範圍表 ({res['scope_ext'].upper()}分頁)", res['scope'], scope_filename, res['scope_mime'], use_container_width=True)
         
-        # ⭐ 新增獨立的下載按鈕，讓老師快速下載缺漏清單去更新
         st.download_button("⚠️ 下載：7.缺漏科目簡稱清單 (請依此更新簡稱表)", res['missing_short'], "7_缺漏科目簡稱清單.xlsx", "application/vnd.ms-excel", use_container_width=True)
         
     with d_col2:
