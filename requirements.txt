@@ -1,7 +1,7 @@
 streamlit
-pandas
+pandas<2.2.0
+numpy<2.0.0
+python-docx
 pulp
 openpyxl
 xlsxwriter
-python-docx
-xlrd
