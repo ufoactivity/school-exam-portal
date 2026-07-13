@@ -14,7 +14,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="段考監考終極自動化", page_icon="🏫", layout="wide")
 st.title("🏫 試務組-段考監考全自動化系統 (終極完全體)")
-st.info("💡 終極修復：已為 AI 排班引擎加上「運算時間與單執行緒限制」，徹底解決雲端 Segmentation fault 記憶體超載崩潰問題！")
+st.info("💡 終極防護版：已加上全域錯誤攔截網，並強制套用 AI 單執行緒運算鎖，徹底杜絕記憶體崩潰！")
 
 # --- 初始化狀態 ---
 if 'results' not in st.session_state:
@@ -107,8 +107,7 @@ with col2:
     with c_d2: d2_date = st.date_input("📅 預備日期2：", datetime.now())
     
     force_run = st.checkbox("⚠️ 忽略健檢警告，強制執行")
-    # 【UI 修正】：將即將被淘汰的 use_container_width=True 更新為 width="stretch" (適用於最新版 Streamlit)
-    if st.button("🗑️ 清除所有設定", width="stretch"):
+    if st.button("🗑️ 清除所有設定", use_container_width=True):
         st.session_state['results'] = None
         st.session_state['uploader_key'] += 1
         st.rerun()
@@ -118,12 +117,12 @@ with col2:
 # ==========================================
 st.divider()
 
-# 【UI 修正】：將即將被淘汰的 use_container_width=True 更新為 width="stretch"
-if st.button("🚀 啟動終極全自動排班系統", type="primary", width="stretch"):
+if st.button("🚀 啟動終極全自動排班系統", type="primary", use_container_width=True):
     if not all([file_quota, file_list, file_type, file_assign]):
         st.error("🚨 請確認必要排考基礎檔案【1, 2, 3, 5】皆已上傳！")
     else:
         try:
+            # --- 1. 動態偵測 名單與一覽表 的 AI 節次欄位 ---
             df_list_raw = pd.read_excel(file_list, header=None).fillna("")
             df_assign_temp = pd.read_excel(file_assign, header=None).fillna("")
 
@@ -144,6 +143,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", width="st
             list_cols, list_header_r = find_ai_10_cols(df_list_raw)
             assign_cols, assign_periods_r = find_ai_10_cols(df_assign_temp)
 
+            # --- 2. 讀取並建立數學模型限制 ---
             df_quota = pd.read_excel(file_quota, sheet_name=selected_sheet).fillna("")
             quota_dict = dict(zip(df_quota.iloc[:, 0].astype(str).str.strip(), pd.to_numeric(df_quota.iloc[:, 1], errors='coerce').fillna(0)))
 
@@ -154,6 +154,7 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", width="st
                 if r_name in ['△', '※']:
                     req_matrix[r_name] = pd.to_numeric(df_type.iloc[i, 1:11], errors='coerce').fillna(0).astype(int).tolist()
 
+            # --- 3. 精準識別一覽表班級列 ---
             assign_start_idx = -1
             class_keywords = ['商', '國', '電', '資', '廣', '美', '應', '觀', '高', '普', '體']
             for r in range(len(df_assign_temp)):
@@ -166,10 +167,10 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", width="st
             norm_class_names = [clean_str(c) for c in class_names_raw]
             assign_map = {name: idx for idx, name in enumerate(norm_class_names)}
 
-            # --- 4. PuLP AI 排班運算 (加上資源保護) ---
+            # --- 4. PuLP AI 排班運算 ---
             teachers = [str(x).strip() for x in df_list_raw.iloc[list_header_r+1:, 1] if str(x).strip()]
             
-            with st.spinner("🧠 AI 演算法執行中，已啟動資源保護鎖..."):
+            with st.spinner("🧠 AI 演算法執行中，已啟動防崩潰資源保護鎖..."):
                 prob = pulp.LpProblem("Exam_Scheduling", pulp.LpMinimize)
                 vX = pulp.LpVariable.dicts("X", (range(len(teachers)), range(10)), cat='Binary')
                 vY = pulp.LpVariable.dicts("Y", (range(len(teachers)), range(10)), cat='Binary')
@@ -192,12 +193,11 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", width="st
                     prob += pulp.lpSum([vY[i][j] for i in range(len(teachers))]) == req_matrix['※'][j]
                 prob += penalty
                 
-                # 【核心防崩潰修正】：
-                # 1. 限制求解時間為最高 45 秒 (timeLimit=45)，超時就回傳當前最佳解。
-                # 2. 強制單執行緒 (threads=1)，避免雲端主機因為多執行緒同時搶佔記憶體而發生 Segmentation fault。
+                # 【重點防護】：強制限制運算時間與單執行緒，防止雲端主機記憶體超載崩潰
                 solver = pulp.PULP_CBC_CMD(timeLimit=45, msg=False, threads=1)
                 prob.solve(solver)
 
+            # 寫入有 AI 符號的監考總表
             df_out_master = df_list_raw.copy()
             schedule_dict = {}
             for i, t in enumerate(teachers):
@@ -256,123 +256,126 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", width="st
                 wb_assign.save(out_assign)
                 assign_bytes = out_assign.getvalue()
 
-            # --- 6. 公布版套印 ---
+            # --- 6. 公布版套印 (自動對位) ---
             pub_bytes = None
             if file_pub:
-                wb_pub = openpyxl.load_workbook(file_pub)
-                ws_pub = wb_pub.active
-                pub_periods_row = -1
-                for r in range(1, min(20, ws_pub.max_row + 1)):
-                    r_vals = [str(ws_pub.cell(row=r, column=c).value).strip().split('.')[0] for c in range(1, ws_pub.max_column + 1)]
-                    if '1' in r_vals and '2' in r_vals and '3' in r_vals:
-                        pub_periods_row = r; break
-                
-                if pub_periods_row != -1:
-                    pub_target_cols = []
-                    cursor = 1
-                    d1_c, d2_c = [], []
-                    for c in range(1, ws_pub.max_column + 1):
-                        val = str(ws_pub.cell(row=pub_periods_row, column=c).value).strip().split('.')[0]
-                        if val in ['1', '2', '3', '4', '5']:
-                            if val == '1' and len(d1_c) >= 5: cursor = 2
-                            if cursor == 1: d1_c.append(c)
-                            else: d2_c.append(c)
-                    pub_target_cols = d1_c[:5] + d2_c[:5]
+                with st.spinner("🖨️ 正在無縫套印公布版..."):
+                    wb_pub = openpyxl.load_workbook(file_pub)
+                    ws_pub = wb_pub.active
                     
-                    h_row = -1; t_cols = []
+                    pub_periods_row = -1
                     for r in range(1, min(20, ws_pub.max_row + 1)):
-                        for c in range(1, ws_pub.max_column + 1):
-                            if "教師" in str(ws_pub.cell(row=r, column=c).value): h_row = r; t_cols.append(c)
-                        if h_row != -1: break
+                        r_vals = [str(ws_pub.cell(row=r, column=c).value).strip().split('.')[0] for c in range(1, ws_pub.max_column + 1)]
+                        if '1' in r_vals and '2' in r_vals and '3' in r_vals:
+                            pub_periods_row = r; break
                     
-                    if h_row != -1 and len(pub_target_cols) >= 10:
-                        for c in t_cols:
-                            for r in range(h_row+1, ws_pub.max_row + 1):
-                                t_val = ws_pub.cell(row=r, column=c).value
-                                if t_val and str(t_val).strip() in schedule_dict:
-                                    name = str(t_val).strip()
-                                    for j in range(10):
-                                        cw = ws_pub.cell(row=r, column=pub_target_cols[j])
-                                        if type(cw).__name__ != 'MergedCell': cw.value = schedule_dict[name][j]
-                out_pub = io.BytesIO()
-                wb_pub.save(out_pub)
-                pub_bytes = out_pub.getvalue()
+                    if pub_periods_row != -1:
+                        pub_target_cols = []
+                        cursor = 1
+                        d1_c, d2_c = [], []
+                        for c in range(1, ws_pub.max_column + 1):
+                            val = str(ws_pub.cell(row=pub_periods_row, column=c).value).strip().split('.')[0]
+                            if val in ['1', '2', '3', '4', '5']:
+                                if val == '1' and len(d1_c) >= 5: cursor = 2
+                                if cursor == 1: d1_c.append(c)
+                                else: d2_c.append(c)
+                        pub_target_cols = d1_c[:5] + d2_c[:5]
+                        
+                        h_row = -1; t_cols = []
+                        for r in range(1, min(20, ws_pub.max_row + 1)):
+                            for c in range(1, ws_pub.max_column + 1):
+                                if "教師" in str(ws_pub.cell(row=r, column=c).value): h_row = r; t_cols.append(c)
+                            if h_row != -1: break
+                        
+                        if h_row != -1 and len(pub_target_cols) >= 10:
+                            for c in t_cols:
+                                for r in range(h_row+1, ws_pub.max_row + 1):
+                                    t_val = ws_pub.cell(row=r, column=c).value
+                                    if t_val and str(t_val).strip() in schedule_dict:
+                                        name = str(t_val).strip()
+                                        for j in range(10):
+                                            cw = ws_pub.cell(row=r, column=pub_target_cols[j])
+                                            if type(cw).__name__ != 'MergedCell': cw.value = schedule_dict[name][j]
+                    out_pub = io.BytesIO()
+                    wb_pub.save(out_pub)
+                    pub_bytes = out_pub.getvalue()
 
-            # --- 7. 試卷袋標籤合成 ---
+            # --- 7. 試卷袋標籤合成 (智慧日期匹配 + 手排100%複製) ---
             label_bytes = None
             if file_course and file_label:
-                course_dict = {}
-                xls_course = pd.ExcelFile(file_course)
-                for sheet in xls_course.sheet_names:
-                    df_c = pd.read_excel(file_course, sheet_name=sheet, header=None).fillna("")
-                    h_idx = 0
-                    for r in range(min(5, len(df_c))):
-                        row_str = "".join(str(x) for x in df_c.iloc[r, :])
-                        if "科目" in row_str or "一1" in row_str: h_idx = r; break
-                    clss = [clean_str(x) for x in df_c.iloc[h_idx, :]]
-                    for r in range(h_idx + 1, len(df_c)):
-                        subj = normalize_subject(df_c.iloc[r, 0])
-                        for c_i in range(1, len(clss)):
-                            if df_c.iloc[r, c_i]: course_dict[(clss[c_i], subj)] = clean_str(df_c.iloc[r, c_i])
-                
-                date_row_idx = max(0, assign_periods_r - 1)
-                detected_month = "05"
-                for c in range(1, ws_assign.max_column + 1):
-                    d_v = str(ws_assign.cell(row=date_row_idx + 1, column=c).value)
-                    m_idx = re.search(r'(\d{1,2})[-/月]', d_v)
-                    if m_idx: detected_month = m_idx.group(1); break
-
-                schedule_col_map = {}
-                curr_d = ""
-                for c in range(1, ws_assign.max_column + 1):
-                    d_val = ws_assign.cell(row=date_row_idx + 1, column=c).value
-                    p_val = ws_assign.cell(row=assign_periods_r + 1, column=c).value
-                    if d_val is not None and str(d_val).strip() not in ["", "None"]:
-                        m = extract_mm_dd(d_val, default_month=detected_month)
-                        if m: curr_d = m
-                    if curr_d and p_val is not None and str(p_val).strip() not in ["", "None"]:
-                        p_str = str(p_val).strip().split('.')[0]
-                        schedule_col_map[(curr_d, p_str)] = c
-
-                wb_label = openpyxl.load_workbook(file_label)
-                ws_label = wb_label.active
-                col_map = {}
-                for c in range(1, ws_label.max_column + 1):
-                    val = clean_str(ws_label.cell(row=1, column=c).value)
-                    if val: col_map[val] = c
-                col_teacher = col_map.get('任課教師', 6)  
-                col_proctor = col_map.get('監考老師', 8)  
-
-                for r in range(2, ws_label.max_row + 1):
-                    val_A = str(ws_label.cell(row=r, column=1).value or "").strip()
-                    val_B = ws_label.cell(row=r, column=2).value
-                    val_D = str(ws_label.cell(row=r, column=4).value or "").strip()
-                    val_E = str(ws_label.cell(row=r, column=5).value or "").strip()
+                with st.spinner("🏷️ 啟動【所見即所得】標籤精準合成..."):
+                    course_dict = {}
+                    xls_course = pd.ExcelFile(file_course)
+                    for sheet in xls_course.sheet_names:
+                        df_c = pd.read_excel(file_course, sheet_name=sheet, header=None).fillna("")
+                        h_idx = 0
+                        for r in range(min(5, len(df_c))):
+                            row_str = "".join(str(x) for x in df_c.iloc[r, :])
+                            if "科目" in row_str or "一1" in row_str: h_idx = r; break
+                        clss = [clean_str(x) for x in df_c.iloc[h_idx, :]]
+                        for r in range(h_idx + 1, len(df_c)):
+                            subj = normalize_subject(df_c.iloc[r, 0])
+                            for c_i in range(1, len(clss)):
+                                if df_c.iloc[r, c_i]: course_dict[(clss[c_i], subj)] = clean_str(df_c.iloc[r, c_i])
                     
-                    if not val_D: continue
-                    cls, subj = clean_str(val_D), normalize_subject(val_E)
-                    
-                    teacher = get_teacher_fuzzy(cls, subj, course_dict)
-                    if teacher:
-                        t_c = ws_label.cell(row=r, column=col_teacher)
-                        if type(t_c).__name__ != 'MergedCell': t_c.value = teacher
-                    
-                    try: p_val_str = str(int(float(val_A)))
-                    except: p_val_str = ""
-                    l_date = val_B.strftime('%m-%d') if isinstance(val_B, datetime) else extract_mm_dd(str(val_B), default_month=detected_month)
-                    
-                    if cls in assign_map and l_date and p_val_str:
-                        target_c = schedule_col_map.get((l_date, p_val_str))
-                        if target_c:
-                            target_r = assign_start_idx + assign_map[cls] + 1
-                            proctor = ws_assign.cell(row=target_r, column=target_c).value
-                            if proctor and str(proctor).strip() != 'None':
-                                p_c = ws_label.cell(row=r, column=col_proctor)
-                                if type(p_c).__name__ != 'MergedCell': p_c.value = str(proctor)
+                    date_row_idx = max(0, assign_periods_r - 1)
+                    detected_month = "05"
+                    for c in range(1, ws_assign.max_column + 1):
+                        d_v = str(ws_assign.cell(row=date_row_idx + 1, column=c).value)
+                        m_idx = re.search(r'(\d{1,2})[-/月]', d_v)
+                        if m_idx: detected_month = m_idx.group(1); break
 
-                out_label = io.BytesIO()
-                wb_label.save(out_label)
-                label_bytes = out_label.getvalue()
+                    schedule_col_map = {}
+                    curr_d = ""
+                    for c in range(1, ws_assign.max_column + 1):
+                        d_val = ws_assign.cell(row=date_row_idx + 1, column=c).value
+                        p_val = ws_assign.cell(row=assign_periods_r + 1, column=c).value
+                        if d_val is not None and str(d_val).strip() not in ["", "None"]:
+                            m = extract_mm_dd(d_val, default_month=detected_month)
+                            if m: curr_d = m
+                        if curr_d and p_val is not None and str(p_val).strip() not in ["", "None"]:
+                            p_str = str(p_val).strip().split('.')[0]
+                            schedule_col_map[(curr_d, p_str)] = c
+
+                    wb_label = openpyxl.load_workbook(file_label)
+                    ws_label = wb_label.active
+                    col_map = {}
+                    for c in range(1, ws_label.max_column + 1):
+                        val = clean_str(ws_label.cell(row=1, column=c).value)
+                        if val: col_map[val] = c
+                    col_teacher = col_map.get('任課教師', 6)  
+                    col_proctor = col_map.get('監考老師', 8)  
+
+                    for r in range(2, ws_label.max_row + 1):
+                        val_A = str(ws_label.cell(row=r, column=1).value or "").strip()
+                        val_B = ws_label.cell(row=r, column=2).value
+                        val_D = str(ws_label.cell(row=r, column=4).value or "").strip()
+                        val_E = str(ws_label.cell(row=r, column=5).value or "").strip()
+                        
+                        if not val_D: continue
+                        cls, subj = clean_str(val_D), normalize_subject(val_E)
+                        
+                        teacher = get_teacher_fuzzy(cls, subj, course_dict)
+                        if teacher:
+                            t_c = ws_label.cell(row=r, column=col_teacher)
+                            if type(t_c).__name__ != 'MergedCell': t_c.value = teacher
+                        
+                        try: p_val_str = str(int(float(val_A)))
+                        except: p_val_str = ""
+                        l_date = val_B.strftime('%m-%d') if isinstance(val_B, datetime) else extract_mm_dd(str(val_B), default_month=detected_month)
+                        
+                        if cls in assign_map and l_date and p_val_str:
+                            target_c = schedule_col_map.get((l_date, p_val_str))
+                            if target_c:
+                                target_r = assign_start_idx + assign_map[cls] + 1
+                                proctor = ws_assign.cell(row=target_r, column=target_c).value
+                                if proctor and str(proctor).strip() != 'None':
+                                    p_c = ws_label.cell(row=r, column=col_proctor)
+                                    if type(p_c).__name__ != 'MergedCell': p_c.value = str(proctor)
+
+                    out_label = io.BytesIO()
+                    wb_label.save(out_label)
+                    label_bytes = out_label.getvalue()
 
             st.balloons()
             st.session_state['results'] = {
@@ -384,7 +387,9 @@ if st.button("🚀 啟動終極全自動排班系統", type="primary", width="st
             st.success("🎉 完美防護版排班完成！已順利產出所有格式。")
 
         except Exception as e:
-            st.error(f"發生錯誤: {e}"); st.code(traceback.format_exc())
+            st.error("🚨 **系統攔截到未預期的中斷！**")
+            st.warning("請將下方的「工程診斷報告」截圖或複製給您的 AI 工程師，我們馬上來修復：")
+            st.code(traceback.format_exc(), language="python")
 
 # ==========================================
 # 5. 下載區
@@ -393,14 +398,13 @@ if st.session_state['results']:
     st.divider()
     res = st.session_state['results']
     c1, c2, c3, c4 = st.columns(4)
-    # 【UI 修正】：按鈕排版寬度更新
     with c1: 
-        st.download_button("📥 1. 監考總表", res['orig'], "監考總表.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch")
+        st.download_button("📥 1. 監考總表", res['orig'], "監考總表.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     with c2: 
-        st.download_button("📥 2. 監考一覽表", res['assign'], "監考一覽表_分配完成.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", type="primary")
+        st.download_button("📥 2. 監考一覽表", res['assign'], "監考一覽表_分配完成.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
     with c3: 
         if res.get('pub'): 
-            st.download_button("📥 3. 公布版套印", res['pub'], "公布版總表.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch")
+            st.download_button("📥 3. 公布版套印", res['pub'], "公布版總表.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     with c4:
         if res.get('label'): 
-            st.download_button("📥 4. 標籤列印", res['label'], "標籤列印_完整版.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch", type="primary")
+            st.download_button("📥 4. 標籤列印", res['label'], "標籤列印_完整版.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, type="primary")
