@@ -5,6 +5,7 @@ import io
 import re
 import traceback
 import datetime
+import gc  # ⭐ 新增：Python 內建記憶體垃圾回收套件
 
 # 嘗試載入 Word 排版套件，若無安裝則使用 Excel 完美分頁備案
 try:
@@ -23,7 +24,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：新增單日/雙日補考切換功能；新增「缺漏科目簡稱彙整」功能（排除無試卷編號科目）；已完美還原報表三「年級>場地>應到人數(小到大)」嚴格排序。")
+st.info("💡 終極修正：已實裝「記憶體幽靈數據殺手」，解決上傳檔案導致電腦當機、記憶體飆升 97% 的問題！(包含報表三嚴格排序與報表七均完整保留)")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -37,6 +38,13 @@ if 'uploader_key' not in st.session_state:
 # ==========================================
 # 2. 輔助功能定義
 # ==========================================
+# ⭐ 新增：幽靈數據清除函數 (拯救記憶體的核心)
+def clean_phantom_data(df):
+    """清除 Excel 中因人為格式設定導致的無效百萬空白列與欄"""
+    df = df.dropna(axis=0, how='all') # 斬除全空的列
+    df = df.dropna(axis=1, how='all') # 斬除全空的欄
+    return df
+
 def get_str_col(df, keywords):
     if isinstance(keywords, str): keywords = [keywords]
     for kw in keywords:
@@ -286,6 +294,8 @@ with col_opts:
     if st.button("🗑️ 清除舊資料 / 重新設定", use_container_width=True):
         st.session_state['results'] = None
         st.session_state['uploader_key'] += 1
+        # ⭐ 強制釋放記憶體，避免舊的垃圾檔案殘留
+        gc.collect() 
         st.rerun()
 
 # ==========================================
@@ -297,13 +307,13 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
     if not all([file_target, file_short, file_exam, file_teacher]):
         st.error("🚨 錯誤：請確認上方【4個檔案】皆已上傳完畢！")
     else:
-        with st.spinner("系統正在執行智慧運算中..."):
+        with st.spinner("系統正在執行智慧運算中... (同步執行記憶體優化保護)"):
             try:
-                # 讀取 Excel
-                df_short_map = pd.read_excel(file_short)
-                df_exam_map = pd.read_excel(file_exam)
-                df_target = pd.read_excel(file_target)
-                df_teacher = pd.read_excel(file_teacher)
+                # ⭐ 讀取 Excel 的同時，立刻套用記憶體急救函數，剔除百萬行幽靈數據
+                df_short_map = clean_phantom_data(pd.read_excel(file_short))
+                df_exam_map = clean_phantom_data(pd.read_excel(file_exam))
+                df_target = clean_phantom_data(pd.read_excel(file_target))
+                df_teacher = clean_phantom_data(pd.read_excel(file_teacher))
 
                 grade_weight = {'一': 1, '二': 2, '三': 3}
                 loc_weight = {'致用樓四樓會議室': 1, '圖書館三樓自修教室': 2, '電腦教室401': 3}
@@ -336,7 +346,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_target['試卷編號'] = (col_opencourse + df_target['科目']).map(ex_dict).fillna((col_homeroom + df_target['科目']).map(ex_dict)).fillna("")
                 df_target['試卷編號'] = df_target['試卷編號'].apply(lambda x: str(x).replace('.0','') if str(x).endswith('.0') else str(x))
 
-                # ⭐ 自動抓出「有試卷編號」但在字典找不到對應簡稱的科目
+                # 自動抓出「有試卷編號」但在字典找不到對應簡稱的科目
                 df_missing_short = df_target[(df_target['科目'].str.strip() != "") & 
                                              (df_target['科目簡稱'] == "") & 
                                              (df_target['試卷編號'] != "")].copy()
@@ -435,7 +445,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_exam['比對場地'] = df_exam['場地'].apply(extract_loc_short) 
                 df_teacher['比對場地'] = df_teacher['場地'].apply(extract_loc_short)
                 
-                # ⭐ 應到人數計算 (排序依據)
+                # 應到人數計算 (報表三關鍵排序依據)
                 df_exam['應到人數'] = df_exam.groupby(['場地', '班級', '科目簡稱'])['學號'].transform('count')
                 
                 valid_locs_exam = df_exam[df_exam['比對場地'].isin(['致用', '圖書', '電腦'])]
@@ -457,7 +467,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
 
                 df_final_exam = df_exam[final_cols].copy()
                 
-                # ⭐ 重新定義排序用的權重與嚴格排序機制
+                # 定義排序用的權重與嚴格排序機制
                 df_final_exam['G_W'] = df_final_exam['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
                 df_final_exam['L_W'] = df_final_exam['場地'].map(loc_weight).fillna(99)
                 
@@ -473,7 +483,6 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 empty = pd.DataFrame([[np.nan] * len(final_cols)], columns=final_cols)
                 
                 for i, grp in enumerate(grouped):
-                    # 確保產出欄位乾淨不留輔助權重欄
                     final_rows.append(grp.drop(columns=['GroupKey', 'G_W', 'L_W']))
                     if i < len(grouped) - 1: final_rows.append(empty)
                 
@@ -549,6 +558,12 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     'student_list': student_list_bytes,
                     'missing_short': missing_short_bytes
                 }
+                
+                # ⭐ 運算結束後，強制清空過程變數與記憶體
+                del df_target, df_short_map, df_exam_map, df_teacher
+                del df_exam, df_students, df_rep2, df_rep3_final, df_rep4, df_rep5, df_rep6
+                gc.collect()
+                
                 st.balloons()
 
             except Exception as e:
