@@ -26,7 +26,7 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="段考試務全能系統", page_icon="🏫", layout="wide")
 st.title("🏫 教務處試務組 - 段考試務全能系統 (旗艦整合版)")
-st.info("💡 系統已升級為「兩階段作業模式」。請利用下方頁籤切換【階段一：試卷催繳】與【階段二：監考排定】。兩階段獨立運作，互不干擾！115.06.06增修")
+st.info("💡 雲端防護升級：已實裝「Excel 幽靈空白列淨化」與「AI 單執行緒限制」，確保雙階段作業在雲端執行不當機！")
 
 # --- 狀態記憶體初始化 (Session State) ---
 if 'results_p2' not in st.session_state:
@@ -154,7 +154,8 @@ with tab1:
             st.warning("⚠️ 老師，請先上傳名單檔案，並選擇要處理的工作表喔！")
         else:
             try:
-                df = pd.read_excel(uploaded_file_p1, sheet_name=selected_sheet_p1)
+                # 【記憶體防護】：加上 dropna
+                df = pd.read_excel(uploaded_file_p1, sheet_name=selected_sheet_p1).dropna(how='all')
                 required_cols = ['年級', '科目名稱', '姓名']
                 missing_cols = [col for col in required_cols if col not in df.columns]
                 
@@ -166,9 +167,8 @@ with tab1:
                     df['年級'] = df['年級'].astype(str).str.strip().replace('nan', '')
                     df = df[df['姓名'] != '']
                     
-                    # 建立兩個獨立的 Word 物件
-                    doc_print = Document() # 紙本列印版 (含框線與分頁)
-                    doc_msg = Document()   # 訊息通知版 (連續文字，無框線無分頁)
+                    doc_print = Document()
+                    doc_msg = Document()
                     
                     grouped = df.groupby('姓名')
                     
@@ -176,9 +176,6 @@ with tab1:
                         exam_type = selected_sheet_p1
                         count = len(group)
                         
-                        # =========================================================
-                        # 📝 版本一：紙本列印版 (建立有邊框、置中的正式「標題框」)
-                        # =========================================================
                         table = doc_print.add_table(rows=1, cols=1)
                         table.alignment = WD_TABLE_ALIGNMENT.CENTER
                         table.style = 'Table Grid'
@@ -192,9 +189,6 @@ with tab1:
                         run_title_print.font.size = Pt(20) 
                         doc_print.add_paragraph()
                         
-                        # =========================================================
-                        # 📝 版本二：訊息複製版 (無框線，純文字標題置中)
-                        # =========================================================
                         p_title_msg = doc_msg.add_paragraph()
                         p_title_msg.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         run_title_msg = p_title_msg.add_run(f"【{exam_type}】催繳試卷通知單")
@@ -202,7 +196,6 @@ with tab1:
                         run_title_msg.font.size = Pt(16)
                         doc_msg.add_paragraph()
 
-                        # --- 內文排版 (兩個版本共用語法) ---
                         for doc in [doc_print, doc_msg]:
                             doc.add_paragraph(f"{name} 老師您好:\n")
                             doc.add_paragraph(f"{exam_type}試卷繳交截止日 {deadline} 已過，溫馨提醒您尚有 {count} 份試卷未繳:\n")
@@ -214,14 +207,10 @@ with tab1:
                             
                             doc.add_paragraph(f"\n{sender_name}")
                         
-                        # --- 結尾處理 ---
                         if idx < len(grouped) - 1:
-                            # 紙本版：換頁，準備印下一位老師
                             doc_print.add_page_break()
-                            # 訊息版：不換頁，加入分隔線方便複製辨識
                             doc_msg.add_paragraph("\n" + "=" * 40 + "\n")
                     
-                    # 儲存兩個版本至 Session State
                     out_stream_print = io.BytesIO()
                     doc_print.save(out_stream_print)
                     st.session_state['docx_data_p1_print'] = out_stream_print.getvalue()
@@ -291,7 +280,8 @@ with tab2:
         flex_names = []
         teacher_list = []
         if file_list:
-            temp_df = pd.read_excel(file_list, header=None).fillna("")
+            # 【記憶體防護】：讀取名單時加上 dropna，過濾幽靈空白列
+            temp_df = pd.read_excel(file_list, header=None).dropna(how='all').fillna("")
             for c in range(5):
                 try:
                     lst = temp_df.iloc[2:, c].astype(str).str.strip().tolist()
@@ -303,7 +293,8 @@ with tab2:
 
         class_list = []
         if file_assign:
-            df_assign_temp = pd.read_excel(file_assign, header=None).fillna("")
+            # 【記憶體防護】：讀取一覽表時加上 dropna
+            df_assign_temp = pd.read_excel(file_assign, header=None).dropna(how='all').fillna("")
             raw_list = df_assign_temp.iloc[:, 0].astype(str).str.strip().tolist()
             class_names_raw = [x for x in raw_list if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考", "註"])]
             class_list = [normalize_cls(c) for c in class_names_raw]
@@ -340,7 +331,7 @@ with tab2:
         file_bind = st.file_uploader("📥 [選填] 匯入既有綁定名單 (.xlsx)", type=['xlsx'], key=f"f_bind_{st.session_state['uploader_key']}")
         if file_bind and st.session_state.last_bind_file != file_bind.name:
             try:
-                df_bind_up = pd.read_excel(file_bind)
+                df_bind_up = pd.read_excel(file_bind).dropna(how='all')
                 if "老師" in df_bind_up.columns and "班級" in df_bind_up.columns:
                     st.session_state.bind_rules = df_bind_up[["老師", "班級"]]
                     st.session_state.last_bind_file = file_bind.name
@@ -395,7 +386,8 @@ with tab2:
         else:
             try:
                 # --- 1. 讀取配額與名單 ---
-                df_quota = pd.read_excel(file_quota, sheet_name=selected_sheet).fillna("")
+                # 【記憶體防護】：加上 dropna
+                df_quota = pd.read_excel(file_quota, sheet_name=selected_sheet).dropna(how='all').fillna("")
                 quota_dict = {}
                 for r in range(df_quota.shape[0]):
                     name = str(df_quota.iloc[r, 0]).strip()
@@ -403,7 +395,8 @@ with tab2:
                     except: q = 0
                     if name: quota_dict[name] = q
                 
-                df_list_raw = pd.read_excel(file_list, header=None).fillna("")
+                # 【記憶體防護】：加上 dropna
+                df_list_raw = pd.read_excel(file_list, header=None).dropna(how='all').fillna("")
                 
                 header_row_idx = 1
                 for r in range(min(5, df_list_raw.shape[0])):
@@ -449,7 +442,8 @@ with tab2:
                 for j in range(1, ai_periods):
                     if ai_period_nums[j] <= ai_period_nums[j-1]: day_starts.append(j)
 
-                df_type = pd.read_excel(file_type, header=None).fillna("")
+                # 【記憶體防護】：加上 dropna
+                df_type = pd.read_excel(file_type, header=None).dropna(how='all').fillna("")
                 req_matrix = {'△': [0]*ai_periods, '※': [0]*ai_periods}
                 for i in range(len(df_type)):
                     row_name = str(df_type.iloc[i, 0]).strip()
@@ -477,7 +471,8 @@ with tab2:
                     header_df.iloc[date_row_idx, ai_period_cols[j]] = get_ai_date_str(j, day_starts, ai_date_strs)
                 
                 df_list = df_list_raw.iloc[header_row_idx+1:].copy()
-                teachers = df_list.iloc[:, teacher_col_idx].astype(str).str.strip().tolist()
+                # 【記憶體防護】：過濾名單中空字串與 NaN
+                teachers = [str(x).strip() for x in df_list.iloc[:, teacher_col_idx] if pd.notna(x) and str(x).strip() != "" and str(x).strip() != "nan"]
 
                 time_constraints = {}
                 for _, row in edited_time_df.iterrows():
@@ -489,7 +484,7 @@ with tab2:
                         time_constraints[t_name] = {'day': d_limit, 'periods': p_limits}
 
                 # --- 2. PuLP 運算 ---
-                with st.spinner(f"🧠 實裝 8 大規則運算中 (偵測到 AI 需排班 {ai_periods} 節)..."):
+                with st.spinner(f"🧠 實裝 8 大規則運算中 (已過濾幽靈資料，鎖定 {len(teachers)} 位有效教師)..."):
                     prob = pulp.LpProblem("Scheduling", pulp.LpMinimize)
                     vX = {}; vY = {}
                     for i in range(len(teachers)):
@@ -562,7 +557,10 @@ with tab2:
                         penalty += (slk_s_pos + slk_s_neg) * 10000
                         
                     prob += penalty
-                    prob.solve()
+                    
+                    # 【防崩潰保險】：強制套用單執行緒限制與時限
+                    solver = pulp.PULP_CBC_CMD(timeLimit=45, msg=False, threads=1)
+                    prob.solve(solver)
 
                     schedule_dict = {}
                     df_out_master = df_list.copy()
@@ -590,7 +588,7 @@ with tab2:
                             df_out_master.iloc[i, ai_period_cols[j]] = val
                         schedule_dict[t] = res
 
-                # ======== 👇 檢核區移至最上方 ========
+                # ======== 👇 檢核區 ========
                 discrepancies = []
                 empty_row = {c: "" for c in df_out_master.columns}
                 row_act_d, row_req_d = empty_row.copy(), empty_row.copy()
@@ -630,13 +628,12 @@ with tab2:
                 empty_row_spacer = {c: "" for c in df_out_master.columns}
                 summary_df = pd.DataFrame([empty_row, row_act_d, row_req_d, row_act_s, row_req_s, row_diff, empty_row_spacer])
                 
-                # 將檢核區放在名單最上方
                 df_out_master = pd.concat([summary_df, df_out_master], ignore_index=True)
-                # ======== 👆 移至最上方修改結束 ========
 
                 # --- 3. 監考一覽表分配邏輯 ---
                 with st.spinner("🎯 執行班級自動分配..."):
-                    df_assign_calc = pd.read_excel(file_assign, header=None).fillna("")
+                    # 【記憶體防護】：加上 dropna
+                    df_assign_calc = pd.read_excel(file_assign, header=None).dropna(how='all').fillna("")
                     raw_list = df_assign_calc.iloc[:, 0].astype(str).str.strip().tolist()
                     class_names_raw = [x for x in raw_list if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考", "註"])]
                     
@@ -833,7 +830,8 @@ with tab2:
                         course_dict = {}
                         xls_course = pd.ExcelFile(file_course)
                         for sheet in xls_course.sheet_names:
-                            df_c = pd.read_excel(file_course, sheet_name=sheet).fillna("")
+                            # 【記憶體防護】：加上 dropna
+                            df_c = pd.read_excel(file_course, sheet_name=sheet).dropna(how='all').fillna("")
                             for r_idx, row in df_c.iterrows():
                                 subj_raw = str(row.iloc[0]).strip()
                                 if not subj_raw: continue
@@ -862,7 +860,9 @@ with tab2:
 
                         d1_ymd, d1_short, d1_slash = d1_date.strftime('%Y-%m-%d'), d1_date.strftime('%m-%d'), d1_date.strftime('%Y/%m/%d')
                         d2_ymd, d2_short, d2_slash = d2_date.strftime('%Y-%m-%d'), d2_date.strftime('%m-%d'), d2_date.strftime('%Y/%m/%d')
-                        
+                        if has_manual and d0_date:
+                            d0_ymd, d0_short, d0_slash = d0_date.strftime('%Y-%m-%d'), d0_date.strftime('%m-%d'), d0_date.strftime('%Y/%m/%d')
+
                         day_p_val_to_ai_col = {}
                         curr_day_idx = 0
                         for j in range(ai_periods):
@@ -897,13 +897,11 @@ with tab2:
                             except: p_val = -1
                             
                             if '監考老師' in col_map:
-                                is_manual_day = False
-                                if has_manual and d0_date and matches_date(date_str, d0_date):
-                                    is_manual_day = True
-                                    if cls in manual_proctors and p_val in manual_proctors[cls]:
-                                        ws_label.cell(row=r, column=col_map['監考老師']).value = manual_proctors[cls][p_val]
+                                if has_manual and d0_date and any(d in date_str for d in [d0_ymd, d0_short, d0_slash]):
+                                    if cls in manual_day0_proctors:
+                                        ws_label.cell(row=r, column=col_map['監考老師']).value = manual_day0_proctors[cls]
                                 
-                                if not is_manual_day and cls in class_proctor_schedule and p_val != -1:
+                                elif cls in class_proctor_schedule and p_val != -1:
                                     day_idx = -1
                                     if any(d in date_str for d in [d1_ymd, d1_short, d1_slash]): day_idx = 0
                                     elif any(d in date_str for d in [d2_ymd, d2_short, d2_slash]): day_idx = 1
@@ -934,8 +932,9 @@ with tab2:
                     st.info("💡 下載出來的「1. 監考總表.xlsx」檔案最上方，也有為您附上完整的對帳明細喔！")
 
             except Exception as e:
-                st.error(f"發生錯誤: {e}")
-                st.code(traceback.format_exc())
+                st.error("🚨 **系統攔截到未預期的中斷！**")
+                st.warning("請將下方的「工程診斷報告」截圖或複製給您的 AI 工程師：")
+                st.code(traceback.format_exc(), language="python")
 
     # ==========================================
     # 5. 下載區 (供階段二使用)
