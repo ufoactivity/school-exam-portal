@@ -23,7 +23,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 修正說明：新增單日/雙日補考勾選切換功能！學生名冊表頭日期將根據您的勾選自動智慧套印。新增「缺漏科目簡稱自動彙整」功能（已排除無試卷編號之科目）！")
+st.info("💡 修正說明：新增單日/雙日補考切換功能；新增「缺漏科目簡稱彙整」功能（排除無試卷編號科目）；已完美還原報表三「年級>場地>應到人數(小到大)」嚴格排序。")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -82,7 +82,7 @@ def format_tw_date(d):
     weekday_str = weekdays[d.weekday()]
     return f"{tw_year}年{d.month:02d}月{d.day:02d}日(星期{weekday_str})"
 
-# --- 新增：Word 獨立分頁排版引擎 ---
+# --- Word 獨立分頁排版引擎 ---
 def to_word_scope_bytes(df):
     doc = Document()
     style = doc.styles['Normal']
@@ -135,7 +135,7 @@ def to_word_scope_bytes(df):
     doc.save(output)
     return output.getvalue()
 
-# --- 新增：Excel 完美分頁排版引擎 (防呆備案) ---
+# --- Excel 完美分頁排版引擎 (防呆備案) ---
 def to_excel_scope_bytes(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -183,7 +183,7 @@ def to_excel_scope_bytes(df):
         
     return output.getvalue()
 
-# --- 新增：報表六 (學生名冊) 專屬精美排版匯出引擎 ---
+# --- 報表六 (學生名冊) 專屬精美排版匯出引擎 ---
 def to_excel_student_list_bytes(df, school_year, date1, date2=None):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -336,21 +336,20 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_target['試卷編號'] = (col_opencourse + df_target['科目']).map(ex_dict).fillna((col_homeroom + df_target['科目']).map(ex_dict)).fillna("")
                 df_target['試卷編號'] = df_target['試卷編號'].apply(lambda x: str(x).replace('.0','') if str(x).endswith('.0') else str(x))
 
-                # ⭐ 修正：自動抓出「有試卷編號」但在字典找不到對應簡稱的科目 (移至此處執行)
+                # ⭐ 自動抓出「有試卷編號」但在字典找不到對應簡稱的科目
                 df_missing_short = df_target[(df_target['科目'].str.strip() != "") & 
                                              (df_target['科目簡稱'] == "") & 
                                              (df_target['試卷編號'] != "")].copy()
                 
                 if not df_missing_short.empty:
-                    # 去除重複，只保留獨立的科目名稱
                     df_missing_short_out = df_missing_short.drop_duplicates(subset=['科目'])[['科目']]
                     df_missing_short_out = df_missing_short_out.rename(columns={'科目': '有試卷編號但找不到簡稱的科目(請複製至簡稱表)'})
                 else:
-                    # 若全部都找到，產出恭喜訊息檔案
                     df_missing_short_out = pd.DataFrame(columns=['有試卷編號但找不到簡稱的科目(請複製至簡稱表)'])
                     df_missing_short_out.loc[0] = ['恭喜老師！所有需「紙筆測驗（有試卷編號）」的科目皆已完美對應簡稱！']
                 missing_short_bytes = to_excel_bytes(df_missing_short_out)
 
+                # 映射補考範圍
                 ex_scope = get_str_col(df_exam_map, ['補考範圍', '範圍', '測驗範圍', '考試範圍'])
                 scope_dict = dict(zip(ex_cls + ex_sub, ex_scope))
                 df_target['補考範圍'] = (col_opencourse + df_target['科目']).map(scope_dict).fillna((col_homeroom + df_target['科目']).map(scope_dict)).fillna("")
@@ -435,6 +434,8 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
 
                 df_exam['比對場地'] = df_exam['場地'].apply(extract_loc_short) 
                 df_teacher['比對場地'] = df_teacher['場地'].apply(extract_loc_short)
+                
+                # ⭐ 應到人數計算 (排序依據)
                 df_exam['應到人數'] = df_exam.groupby(['場地', '班級', '科目簡稱'])['學號'].transform('count')
                 
                 valid_locs_exam = df_exam[df_exam['比對場地'].isin(['致用', '圖書', '電腦'])]
@@ -455,15 +456,25 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     if col not in df_exam.columns: df_exam[col] = ""
 
                 df_final_exam = df_exam[final_cols].copy()
+                
+                # ⭐ 重新定義排序用的權重與嚴格排序機制
                 df_final_exam['G_W'] = df_final_exam['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
-                df_final_exam = df_final_exam.sort_values(by=['G_W', '班級', '科目簡稱', '場地', '座號'])
+                df_final_exam['L_W'] = df_final_exam['場地'].map(loc_weight).fillna(99)
+                
+                # 嚴格遵守：1.年級 -> 2.場地 -> 3.應到人數(由小到大) -> 4.班級 -> 5.科目 -> 6.座號
+                df_final_exam = df_final_exam.sort_values(
+                    by=['G_W', 'L_W', '應到人數', '班級', '科目簡稱', '座號'], 
+                    ascending=[True, True, True, True, True, True] 
+                )
 
-                df_final_exam['GroupKey'] = df_final_exam['班級'] + "_" + df_final_exam['科目簡稱'] + "_" + df_final_exam['場地']
+                df_final_exam['GroupKey'] = df_final_exam['場地'] + "_" + df_final_exam['班級'] + "_" + df_final_exam['科目簡稱']
                 grouped = [g for _, g in df_final_exam.groupby('GroupKey', sort=False)]
                 final_rows = []
                 empty = pd.DataFrame([[np.nan] * len(final_cols)], columns=final_cols)
+                
                 for i, grp in enumerate(grouped):
-                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W']))
+                    # 確保產出欄位乾淨不留輔助權重欄
+                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W', 'L_W']))
                     if i < len(grouped) - 1: final_rows.append(empty)
                 
                 if final_rows:
