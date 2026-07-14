@@ -1,0 +1,15 @@
+# 檔案位置： .streamlit/config.toml
+
+[server]
+# 關閉跨網域請求檢查 (CORS)，防止學校 Proxy 竄改標頭導致連線失敗
+enableCORS = false
+
+# 關閉跨站請求偽造防護 (XSRF)，這是最常導致「檔案上傳轉圈圈」的元凶！
+enableXsrfProtection = false
+
+# 限制上傳大小為 50MB (避免大檔傳輸逾時)，預設為 200MB
+maxUploadSize = 50
+
+[browser]
+# 關閉瀏覽器與伺服器之間的資料收集機制
+gatherUsageStats = false
