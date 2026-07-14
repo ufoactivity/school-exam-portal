@@ -291,7 +291,8 @@ with col_opts:
     self_exam_deadline = st.date_input("📅 自行補考期限設定 (無試卷科目適用)：", datetime.date.today() + datetime.timedelta(days=7))
 
     st.write("")
-    if st.button("🗑️ 清除舊資料 / 重新設定", use_container_width=True):
+    # 📌 【重點修復】：按鈕寬度屬性更新為 width='stretch'
+    if st.button("🗑️ 清除舊資料 / 重新設定", width='stretch'):
         st.session_state['results'] = None
         st.session_state['uploader_key'] += 1
         # ⭐ 強制釋放記憶體，避免舊的垃圾檔案殘留
@@ -303,7 +304,8 @@ with col_opts:
 # ==========================================
 st.divider()
 
-if st.button("🚀 開始智慧排考運算", type="primary", use_container_width=True):
+# 📌 【重點修復】：執行按鈕屬性更新為 width='stretch'
+if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
     if not all([file_target, file_short, file_exam, file_teacher]):
         st.error("🚨 錯誤：請確認上方【4個檔案】皆已上傳完畢！")
     else:
@@ -581,15 +583,16 @@ if st.session_state['results'] is not None:
     res = st.session_state['results']
     d_col1, d_col2 = st.columns(2)
     
+    # 📌 【重點修復】：所有下載按鈕的參數更新為 width='stretch'
     with d_col1:
-        st.download_button("📄 下載：1.場地分配版", res['venue'], "1_場地分配版.xlsx", "application/vnd.ms-excel", use_container_width=True)
-        st.download_button("📋 下載：3.考程匯整表", res['schedule'], "3_全校補考考程匯整表.xlsx", "application/vnd.ms-excel", use_container_width=True)
+        st.download_button("📄 下載：1.場地分配版", res['venue'], "1_場地分配版.xlsx", "application/vnd.ms-excel", width='stretch')
+        st.download_button("📋 下載：3.考程匯整表", res['schedule'], "3_全校補考考程匯整表.xlsx", "application/vnd.ms-excel", width='stretch')
         scope_filename = f"5_全校補考範圍表_獨立公告版.{res['scope_ext']}"
-        st.download_button(f"📖 下載：5.補考範圍表 ({res['scope_ext'].upper()}分頁)", res['scope'], scope_filename, res['scope_mime'], use_container_width=True)
+        st.download_button(f"📖 下載：5.補考範圍表 ({res['scope_ext'].upper()}分頁)", res['scope'], scope_filename, res['scope_mime'], width='stretch')
         
-        st.download_button("⚠️ 下載：7.缺漏科目簡稱清單 (請依此更新簡稱表)", res['missing_short'], "7_缺漏科目簡稱清單.xlsx", "application/vnd.ms-excel", use_container_width=True)
+        st.download_button("⚠️ 下載：7.缺漏科目簡稱清單 (請依此更新簡稱表)", res['missing_short'], "7_缺漏科目簡稱清單.xlsx", "application/vnd.ms-excel", width='stretch')
         
     with d_col2:
-        st.download_button("🖨️ 下載：2.排座標籤", res['label'], "2_報表二_排座標籤.xlsx", "application/vnd.ms-excel", use_container_width=True)
-        st.download_button("📝 下載：4.試卷印製表", res['print'], "4_試卷印製數量表.xlsx", "application/vnd.ms-excel", use_container_width=True)
-        st.download_button("🧑‍🎓 下載：6.補考學生名冊", res['student_list'], "6_補考學生名冊(含注意事項版).xlsx", "application/vnd.ms-excel", use_container_width=True)
+        st.download_button("🖨️ 下載：2.排座標籤", res['label'], "2_報表二_排座標籤.xlsx", "application/vnd.ms-excel", width='stretch')
+        st.download_button("📝 下載：4.試卷印製表", res['print'], "4_試卷印製數量表.xlsx", "application/vnd.ms-excel", width='stretch')
+        st.download_button("🧑‍🎓 下載：6.補考學生名冊", res['student_list'], "6_補考學生名冊(含注意事項版).xlsx", "application/vnd.ms-excel", width='stretch')
