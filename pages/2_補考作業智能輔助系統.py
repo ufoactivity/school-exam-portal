@@ -440,7 +440,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
                 df_target['場地'] = df_target['學號'].map(venue_map).fillna("")
                 
                 df_teacher['監考教師'] = get_str_col(df_teacher, ['監考教師', '監考老師', '教師姓名', '老師'])
-                df_teacher['場地'] = get_str_col(df_teacher, ['場地', '地点', '考場', '場點'])
+                df_teacher['場地'] = get_str_col(df_teacher, ['場地', '地點', '考場', '場點'])
                 df_teacher['比對年級'] = get_str_col(df_teacher, ['監考年級', '年級']).apply(grade_to_chinese)
                 t_map = df_teacher.drop_duplicates(subset=['比對年級']).set_index('比對年級')[get_str_col(df_teacher, ['時間']).name].to_dict()
                 df_target['時間2'] = df_target['年級'].map(t_map).fillna("")
