@@ -24,7 +24,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 終極進化：報表 8 (共用試卷編號清單) 已實裝「是否同一班級」自動判斷，並加入「同位學生印卷自動合併」的節省數量提示！")
+st.info("💡 終極進化：報表 8 (共用試卷編號清單) 已新增「是否同一班級」自動判斷欄位，跨班共用試卷一目了然！")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
