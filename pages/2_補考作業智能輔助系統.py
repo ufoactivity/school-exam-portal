@@ -24,7 +24,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 終極進化：報表 8 (共用試卷編號清單) 已新增「是否同一班級」自動判斷欄位，跨班共用試卷一目了然！")
+st.info("💡 終極進化：報表 8 (共用試卷編號清單) 已實裝「是否同一班級」自動判斷，並加入「同位學生印卷自動合併」的節省數量提示！")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -349,35 +349,38 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
                 df_target['試卷編號'] = df_target['試卷編號'].apply(lambda x: str(x).replace('.0','') if str(x).endswith('.0') else str(x))
 
                 # ========================================================
-                # ⭐ 新增與修正：報表8 - 共用試卷編號健檢分析 (加入是否同一班級判斷)
+                # ⭐ 終極進化：報表8 - 改由「補考名單(df_target)」進行交叉比對
+                #    這能同時揪出「跨班共用」並驗證「同位學生合併印卷」！
                 # ========================================================
-                df_paper_check = pd.DataFrame({
-                    '班級': ex_cls,
-                    '科目': ex_sub,
-                    '試卷編號': ex_pap
-                })
-                # 過濾掉沒有試卷編號的空白資料
-                df_paper_check = df_paper_check[df_paper_check['試卷編號'].str.strip() != ""]
+                valid_papers = df_target[df_target['試卷編號'].str.strip() != ""].copy()
                 
-                # 根據試卷編號群組，計算有哪些科目，以及「班級的獨立數量」
-                df_shared = df_paper_check.groupby('試卷編號').agg(
-                    共用科目=('科目', lambda x: '、'.join(sorted(set([str(i) for i in x if str(i).strip()])))),
-                    科目數量=('科目', 'nunique'),
-                    相關班級=('班級', lambda x: '、'.join(sorted(set([str(i) for i in x if str(i).strip()])))),
-                    班級數量=('班級', 'nunique') # ⭐ 抓取班級數量，作為判斷的基準
-                ).reset_index()
-                
-                # 篩選出「科目數量 > 1」的試卷編號
-                df_shared = df_shared[df_shared['科目數量'] > 1].sort_values(by='科目數量', ascending=False)
-                
-                # 防呆：如果沒有共用試卷的情形，給予友善提示
-                if df_shared.empty:
-                    df_shared = pd.DataFrame({'診斷結果': ['✅ 恭喜老師！目前對照表中，沒有發現「不同科目共用同一組試卷編號」的狀況。']})
+                if not valid_papers.empty:
+                    df_shared = valid_papers.groupby('試卷編號').agg(
+                        共用科目=('科目', lambda x: '、'.join(sorted(set([str(i) for i in x if str(i).strip()])))),
+                        科目數量=('科目', 'nunique'),
+                        相關班級=('班級', lambda x: '、'.join(sorted(set([str(i) for i in x if str(i).strip()])))),
+                        班級數量=('班級', 'nunique'),
+                        應考總人次=('學號', 'count'), # 計算有幾筆補考紀錄
+                        實際印卷數=('學號', 'nunique') # 計算有幾個獨立的學生 (同位學生只算1次)
+                    ).reset_index()
+                    
+                    # 篩選出「科目數量 > 1」的共用試卷編號
+                    df_shared = df_shared[df_shared['科目數量'] > 1].sort_values(by='科目數量', ascending=False)
+                    
+                    if df_shared.empty:
+                        df_shared = pd.DataFrame({'診斷結果': ['✅ 恭喜老師！目前名單中，沒有發現「不同科目共用同一組試卷編號」的狀況。']})
+                    else:
+                        # 判斷是否跨班
+                        df_shared['是否同一班級'] = df_shared['班級數量'].apply(lambda x: '✅ 是' if x == 1 else '❌ 否 (跨班)')
+                        
+                        # 判斷系統是否為同位學生節省了重複印卷的數量
+                        df_shared['印卷節省'] = (df_shared['應考總人次'] - df_shared['實際印卷數']).apply(
+                            lambda x: f"✨ 系統已省下 {x} 份 (同位學生自動合併為1份)" if x > 0 else "無重疊學生"
+                        )
+                        
+                        df_shared = df_shared[['試卷編號', '是否同一班級', '相關班級', '共用科目', '科目數量', '應考總人次', '實際印卷數', '印卷節省']]
                 else:
-                    # ⭐ 判斷邏輯：如果班級數量等於 1，代表是同一班；大於 1 則代表跨班
-                    df_shared['是否同一班級'] = df_shared['班級數量'].apply(lambda x: '✅ 是' if x == 1 else '❌ 否')
-                    # 重新排列直欄順序，並把暫存的「班級數量」隱藏丟棄
-                    df_shared = df_shared[['試卷編號', '共用科目', '科目數量', '相關班級', '是否同一班級']]
+                    df_shared = pd.DataFrame({'診斷結果': ['⚠️ 尚未偵測到任何試卷編號資料']})
                     
                 shared_paper_bytes = to_excel_bytes(df_shared)
                 # ========================================================
@@ -517,6 +520,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
                     df_rep3_final = pd.DataFrame(columns=final_cols)
 
                 # --- 階段四：報表四處理 (印卷) ---
+                # ⭐ 這裡的 drop_duplicates(subset=['學號', '試卷編號']) 就是確保同位學生只算1張卷子的核心演算法！
                 df_rep4 = df_target[df_target['試卷編號'] != ""].drop_duplicates(subset=['學號', '試卷編號']).groupby('試卷編號').size().reset_index(name='試卷數量')
                 df_rep4['SortKey'] = df_rep4['試卷編號'].apply(natural_sort_key)
                 df_rep4 = df_rep4.sort_values(by='SortKey').drop(columns=['SortKey'])
@@ -586,7 +590,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
                 }
                 
                 # ⭐ 運算結束後，強制清空過程變數與記憶體
-                del df_target, df_short_map, df_exam_map, df_teacher, df_paper_check, df_shared
+                del df_target, df_short_map, df_exam_map, df_teacher, valid_papers, df_shared
                 del df_exam, df_students, df_rep2, df_rep3_final, df_rep4, df_rep5, df_rep6
                 gc.collect()
                 
