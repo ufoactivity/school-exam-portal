@@ -24,7 +24,7 @@ except ImportError:
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
 st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 終極進化：除了記憶體幽靈殺手，本次新增「報表8：共用試卷編號清單」，一鍵掃描不同科目卻共用相同考卷的防呆報表！")
+st.info("💡 終極進化：報表 8 (共用試卷編號清單) 已新增「是否同一班級」自動判斷欄位，跨班共用試卷一目了然！")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -348,7 +348,9 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
                 df_target['試卷編號'] = (col_opencourse + df_target['科目']).map(ex_dict).fillna((col_homeroom + df_target['科目']).map(ex_dict)).fillna("")
                 df_target['試卷編號'] = df_target['試卷編號'].apply(lambda x: str(x).replace('.0','') if str(x).endswith('.0') else str(x))
 
-                # ⭐ 新增：報表8 - 共用試卷編號健檢分析
+                # ========================================================
+                # ⭐ 新增與修正：報表8 - 共用試卷編號健檢分析 (加入是否同一班級判斷)
+                # ========================================================
                 df_paper_check = pd.DataFrame({
                     '班級': ex_cls,
                     '科目': ex_sub,
@@ -357,11 +359,12 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
                 # 過濾掉沒有試卷編號的空白資料
                 df_paper_check = df_paper_check[df_paper_check['試卷編號'].str.strip() != ""]
                 
-                # 根據試卷編號群組，計算有哪些科目
+                # 根據試卷編號群組，計算有哪些科目，以及「班級的獨立數量」
                 df_shared = df_paper_check.groupby('試卷編號').agg(
                     共用科目=('科目', lambda x: '、'.join(sorted(set([str(i) for i in x if str(i).strip()])))),
                     科目數量=('科目', 'nunique'),
-                    相關班級=('班級', lambda x: '、'.join(sorted(set([str(i) for i in x if str(i).strip()]))))
+                    相關班級=('班級', lambda x: '、'.join(sorted(set([str(i) for i in x if str(i).strip()])))),
+                    班級數量=('班級', 'nunique') # ⭐ 抓取班級數量，作為判斷的基準
                 ).reset_index()
                 
                 # 篩選出「科目數量 > 1」的試卷編號
@@ -370,8 +373,14 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
                 # 防呆：如果沒有共用試卷的情形，給予友善提示
                 if df_shared.empty:
                     df_shared = pd.DataFrame({'診斷結果': ['✅ 恭喜老師！目前對照表中，沒有發現「不同科目共用同一組試卷編號」的狀況。']})
+                else:
+                    # ⭐ 判斷邏輯：如果班級數量等於 1，代表是同一班；大於 1 則代表跨班
+                    df_shared['是否同一班級'] = df_shared['班級數量'].apply(lambda x: '✅ 是' if x == 1 else '❌ 否')
+                    # 重新排列直欄順序，並把暫存的「班級數量」隱藏丟棄
+                    df_shared = df_shared[['試卷編號', '共用科目', '科目數量', '相關班級', '是否同一班級']]
                     
                 shared_paper_bytes = to_excel_bytes(df_shared)
+                # ========================================================
 
                 # 自動抓出「有試卷編號」但在字典找不到對應簡稱的科目
                 df_missing_short = df_target[(df_target['科目'].str.strip() != "") & 
@@ -491,24 +500,15 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
                     if col not in df_exam.columns: df_exam[col] = ""
 
                 df_final_exam = df_exam[final_cols].copy()
-                
-                # 定義排序用的權重與嚴格排序機制
                 df_final_exam['G_W'] = df_final_exam['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
-                df_final_exam['L_W'] = df_final_exam['場地'].map(loc_weight).fillna(99)
-                
-                # 嚴格遵守：1.年級 -> 2.場地 -> 3.應到人數(由小到大) -> 4.班級 -> 5.科目 -> 6.座號
-                df_final_exam = df_final_exam.sort_values(
-                    by=['G_W', 'L_W', '應到人數', '班級', '科目簡稱', '座號'], 
-                    ascending=[True, True, True, True, True, True] 
-                )
+                df_final_exam = df_final_exam.sort_values(by=['G_W', '班級', '科目簡稱', '場地', '座號'])
 
-                df_final_exam['GroupKey'] = df_final_exam['場地'] + "_" + df_final_exam['班級'] + "_" + df_final_exam['科目簡稱']
+                df_final_exam['GroupKey'] = df_final_exam['班級'] + "_" + df_final_exam['科目簡稱'] + "_" + df_final_exam['場地']
                 grouped = [g for _, g in df_final_exam.groupby('GroupKey', sort=False)]
                 final_rows = []
                 empty = pd.DataFrame([[np.nan] * len(final_cols)], columns=final_cols)
-                
                 for i, grp in enumerate(grouped):
-                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W', 'L_W']))
+                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W']))
                     if i < len(grouped) - 1: final_rows.append(empty)
                 
                 if final_rows:
@@ -582,7 +582,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
                     'scope_mime': scope_mime,
                     'student_list': student_list_bytes,
                     'missing_short': missing_short_bytes,
-                    'shared_paper': shared_paper_bytes # ⭐ 新增共用試卷編號
+                    'shared_paper': shared_paper_bytes # ⭐ 共用試卷編號結果
                 }
                 
                 # ⭐ 運算結束後，強制清空過程變數與記憶體
