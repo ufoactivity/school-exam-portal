@@ -23,8 +23,8 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="補考自動化神器-頂規網頁版", page_icon="🏫", layout="wide")
 
-st.title("📝 試務組-補考作業智能輔助系統")
-st.info("💡 終極進化：報表 8 已重寫核心演算法！報表 3 已加入「座號純數字大小」完美排序！並且修復所有清除暫存與下載檔案不齊全的問題！")
+st.title("📝 試務組-補考作業智能輔助系統 (8大報表滿血旗艦版)")
+st.info("💡 終極進化：8 大報表已全數滿血歸位！報表 3 已全面升級為「場地 ➔ 班級 ➔ 應到人數」大排序，群組間並保留完美空白列隔開！")
 
 if not HAS_DOCX:
     st.warning("💡 溫馨提醒：系統偵測未安裝 `python-docx`，已自動為您產出「Excel 列印分頁版」公告。若未來需要產出更精美的 Word 版，請在系統終端機輸入 `pip install python-docx` 後重啟網頁即可。")
@@ -38,11 +38,10 @@ if 'uploader_key' not in st.session_state:
 # ==========================================
 # 2. 輔助功能定義
 # ==========================================
-# ⭐ 幽靈數據清除函數 (拯救記憶體的核心)
 def clean_phantom_data(df):
     """清除 Excel 中因人為格式設定導致的無效百萬空白列與欄"""
-    df = df.dropna(axis=0, how='all') # 斬除全空的列
-    df = df.dropna(axis=1, how='all') # 斬除全空的欄
+    df = df.dropna(axis=0, how='all')
+    df = df.dropna(axis=1, how='all')
     return df
 
 def get_str_col(df, keywords):
@@ -76,21 +75,18 @@ def to_excel_bytes(df):
         df.to_excel(writer, index=False)
     return output.getvalue()
 
-# --- 姓名遮蔽處理函數 (個資保護) ---
 def mask_name_func(name):
     n = str(name).strip()
     if len(n) <= 1: return n
     if len(n) == 2: return n[0] + "〇"
     return n[0] + "〇" + n[2:]
 
-# --- 日期轉換函數 (轉換為 民國年與星期) ---
 def format_tw_date(d):
     tw_year = d.year - 1911
     weekdays = ["一", "二", "三", "四", "五", "六", "日"]
     weekday_str = weekdays[d.weekday()]
     return f"{tw_year}年{d.month:02d}月{d.day:02d}日(星期{weekday_str})"
 
-# --- Word 獨立分頁排版引擎 ---
 def to_word_scope_bytes(df):
     doc = Document()
     style = doc.styles['Normal']
@@ -143,7 +139,6 @@ def to_word_scope_bytes(df):
     doc.save(output)
     return output.getvalue()
 
-# --- Excel 完美分頁排版引擎 (防呆備案) ---
 def to_excel_scope_bytes(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -188,10 +183,8 @@ def to_excel_scope_bytes(df):
                 h_breaks.append(current_row)
                 
         worksheet.set_h_pagebreaks(h_breaks)
-        
     return output.getvalue()
 
-# --- 報表六 (學生名冊) 專屬精美排版匯出引擎 ---
 def to_excel_student_list_bytes(df, school_year, date1, date2=None):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -251,7 +244,6 @@ def to_excel_student_list_bytes(df, school_year, date1, date2=None):
         
         worksheet.set_margins(left=0.5, right=0.5, top=0.8, bottom=0.8)
         worksheet.fit_to_pages(1, 0)
-        
     return output.getvalue()
 
 # ==========================================
@@ -349,7 +341,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                 df_target['試卷編號'] = df_target['試卷編號'].apply(lambda x: str(x).replace('.0','') if str(x).endswith('.0') else str(x))
 
                 # ========================================================
-                # ⭐ 終極進化：報表8 - 精準判斷「同班內共用」與「純跨班共用」
+                # ⭐ 報表 8：精準判斷「同班內共用」與「純跨班共用」
                 # ========================================================
                 valid_papers = df_target[df_target['試卷編號'].str.strip() != ""].copy()
                 
@@ -362,39 +354,31 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                         實際印卷數=('學號', 'nunique') 
                     ).reset_index()
                     
-                    # 篩選出「科目數量 > 1」的共用試卷編號
                     df_shared = df_shared[df_shared['科目數量'] > 1].sort_values(by='科目數量', ascending=False)
                     
                     if df_shared.empty:
                         df_shared = pd.DataFrame({'診斷結果': ['✅ 恭喜老師！目前名單中，沒有發現「不同科目共用同一組試卷編號」的狀況。']})
                     else:
-                        # ⭐ 核心修正演算法：精準掃描「單一班級內」是否發生共用
                         def check_same_class_overlap(paper_id):
                             sub_df = valid_papers[valid_papers['試卷編號'] == paper_id]
-                            # 統計每個班級在這個試卷下，考了幾種不同的科目
                             class_subj_counts = sub_df.groupby('班級')['科目'].nunique()
-                            # 只要有任何一個班級，在這份考卷對應了 >1 科，就是同班內共用
                             overlap_classes = class_subj_counts[class_subj_counts > 1].index.tolist()
-                            if overlap_classes:
-                                return f"✅ 是 (發生於: {'、'.join(overlap_classes)})"
-                            else:
-                                return "❌ 否 (純跨班共用)"
+                            if overlap_classes: return f"✅ 是 (發生於: {'、'.join(overlap_classes)})"
+                            else: return "❌ 否 (純跨班共用)"
                                 
                         df_shared['同班內是否有共用'] = df_shared['試卷編號'].apply(check_same_class_overlap)
-                        
-                        # 判斷系統是否為同位學生節省了重複印卷的數量
                         df_shared['印卷節省'] = (df_shared['應考總人次'] - df_shared['實際印卷數']).apply(
                             lambda x: f"✨ 系統已省下 {x} 份" if x > 0 else "無重疊學生"
                         )
-                        
                         df_shared = df_shared[['試卷編號', '同班內是否有共用', '共用科目', '科目數量', '相關班級', '應考總人次', '實際印卷數', '印卷節省']]
                 else:
                     df_shared = pd.DataFrame({'診斷結果': ['⚠️ 尚未偵測到任何試卷編號資料']})
                     
                 shared_paper_bytes = to_excel_bytes(df_shared)
-                # ========================================================
 
-                # 自動抓出「有試卷編號」但在字典找不到對應簡稱的科目
+                # ========================================================
+                # ⭐ 報表 7：缺漏科目簡稱清單
+                # ========================================================
                 df_missing_short = df_target[(df_target['科目'].str.strip() != "") & 
                                              (df_target['科目簡稱'] == "") & 
                                              (df_target['試卷編號'] != "")].copy()
@@ -407,7 +391,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     df_missing_short_out.loc[0] = ['恭喜老師！所有需「紙筆測驗（有試卷編號）」的科目皆已完美對應簡稱！']
                 missing_short_bytes = to_excel_bytes(df_missing_short_out)
 
-                # 映射補考範圍
+                # 映射補考範圍 (報表5用)
                 ex_scope = get_str_col(df_exam_map, ['補考範圍', '範圍', '測驗範圍', '考試範圍'])
                 scope_dict = dict(zip(ex_cls + ex_sub, ex_scope))
                 df_target['補考範圍'] = (col_opencourse + df_target['科目']).map(scope_dict).fillna((col_homeroom + df_target['科目']).map(scope_dict)).fillna("")
@@ -479,7 +463,9 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     if col not in df_rep2.columns: df_rep2[col] = ""
                 df_rep2 = df_rep2[label_cols]
 
-                # --- 階段三：報表三處理 (考程) ---
+                # ========================================================
+                # ⭐ 階段三：報表三處理 (考程匯整表) - 【終極排序優化區】
+                # ========================================================
                 df_exam = df_target.drop_duplicates(subset=['學號', '試卷編號'], keep='first').copy()
 
                 if '試卷編號' in df_exam.columns:
@@ -513,37 +499,39 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
 
                 df_final_exam = df_exam[final_cols].copy()
                 df_final_exam['G_W'] = df_final_exam['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
-                
-                # ========================================================
-                # ⭐ 關鍵修正區塊：建立輔助數字化座號欄位，確保群組內嚴格依照數字大小排序！
-                # ========================================================
                 df_final_exam['NumSeat'] = pd.to_numeric(df_final_exam['座號'], errors='coerce').fillna(999)
                 
-                # 排序邏輯：同群組內 (班級 -> 科目 -> 場地) 加上 NumSeat (確保 1,2,3...10 順序正確)
-                df_final_exam = df_final_exam.sort_values(by=['G_W', '班級', '科目簡稱', '場地', 'NumSeat'], ascending=[True, True, True, True, True])
+                # ⭐ 核心修正邏輯：各群組依「場地 ➔ 班級 ➔ 應到人數」進行全局優先級排列，群組內再依「座號」排序[cite: 1]
+                df_final_exam = df_final_exam.sort_values(
+                    by=['場地', 'G_W', '班級', '應到人數', 'NumSeat'], 
+                    ascending=[True, True, True, False, True] # 應到人數設定為降序 (人多的群組排前面)，座號升序
+                )
 
-                df_final_exam['GroupKey'] = df_final_exam['班級'] + "_" + df_final_exam['科目簡稱'] + "_" + df_final_exam['場地']
+                df_final_exam['GroupKey'] = df_final_exam['場地'] + "_" + df_final_exam['班級'] + "_" + df_final_exam['科目簡稱']
                 grouped = [g for _, g in df_final_exam.groupby('GroupKey', sort=False)]
+                
                 final_rows = []
                 empty = pd.DataFrame([[np.nan] * len(final_cols)], columns=final_cols)
                 
                 for i, grp in enumerate(grouped):
-                    # 丟棄輔助排序的 GroupKey, G_W, 以及我們新增的 NumSeat，保持原報表純淨
                     final_rows.append(grp.drop(columns=['GroupKey', 'G_W', 'NumSeat']))
-                    if i < len(grouped) - 1: final_rows.append(empty) # 插入空白列隔開
+                    if i < len(grouped) - 1: final_rows.append(empty) # 保留空白列完美隔開群組
                 
                 if final_rows:
                     df_rep3_final = pd.concat(final_rows, ignore_index=True).fillna("")
                 else:
                     df_rep3_final = pd.DataFrame(columns=final_cols)
-                # ========================================================
 
-                # --- 階段四：報表四處理 (印卷) ---
+                # ========================================================
+                # ⭐ 報表 4：試卷印製表
+                # ========================================================
                 df_rep4 = df_target[df_target['試卷編號'] != ""].drop_duplicates(subset=['學號', '試卷編號']).groupby('試卷編號').size().reset_index(name='試卷數量')
                 df_rep4['SortKey'] = df_rep4['試卷編號'].apply(natural_sort_key)
                 df_rep4 = df_rep4.sort_values(by='SortKey').drop(columns=['SortKey'])
 
-                # --- 階段五：報表五處理 (全校補考範圍表) ---
+                # ========================================================
+                # ⭐ 報表 5：全校補考範圍表
+                # ========================================================
                 df_rep5 = df_target[df_target['科目'] != ""].drop_duplicates(subset=['班級', '科目']).copy()
                 df_rep5['G_W'] = df_rep5['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
                 df_rep5 = df_rep5.sort_values(by=['G_W', '班級', '科目'])
@@ -562,9 +550,10 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     scope_ext = "xlsx"
                     scope_mime = "application/vnd.ms-excel"
 
-                # --- 階段六：報表六處理 (補考學生名冊 - 排版版) ---
+                # ========================================================
+                # ⭐ 報表 6：補考學生名冊 (排版公告版)
+                # ========================================================
                 df_rep6 = df_target[df_target['科目'] != ""].drop_duplicates(subset=['學號', '科目']).copy()
-                
                 df_rep6['姓名'] = df_rep6['姓名'].apply(mask_name_func)
                 df_rep6 = df_rep6.rename(columns={'時間2': '補考時間', '場地': '補考地點'})
                 
@@ -586,14 +575,14 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
 
                 student_list_bytes = to_excel_student_list_bytes(df_rep6, school_year_input, exam_date_1, exam_date_2)
 
-                # --- 欄位重新命名以完美銜接合併列印 ---
+                # --- 欄位重新命名以完美銜接 ---
                 rename_mapping = {'姓名': '學生姓名', '場地': '地點'}
                 df_target_out = df_target.rename(columns=rename_mapping)
                 df_rep2_out = df_rep2.rename(columns=rename_mapping)
                 df_rep3_out = df_rep3_final.rename(columns=rename_mapping)
                 df_rep4_out = df_rep4.rename(columns=rename_mapping)
 
-                # 【鎖定記憶體：完整保留 8 個檔案】
+                # 【鎖定記憶體：8 份實體檔案完整就位】
                 st.session_state['results'] = {
                     'venue': to_excel_bytes(df_target_out),
                     'label': to_excel_bytes(df_rep2_out),
@@ -604,7 +593,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", use_container_widt
                     'scope_mime': scope_mime,
                     'student_list': student_list_bytes,
                     'missing_short': missing_short_bytes,
-                    'shared_paper': shared_paper_bytes 
+                    'shared_paper': shared_paper_bytes
                 }
                 
                 # ⭐ 運算結束後，強制清空過程變數與記憶體
