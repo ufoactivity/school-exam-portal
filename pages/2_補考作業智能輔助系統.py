@@ -490,7 +490,7 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
                 def extract_loc_short(loc):
                     l = str(loc); return '致用' if '致用' in l else '圖書' if '圖書' in l else '電腦' if '電腦' in l else l
 
-                df_exam['比對場地'] = df_exam['場地'].apply(extract_loc_short) 
+                df_exam['比對場地'] = df_exam['場地'].apply(extract_loc_short)[cite: 3]
                 df_teacher['比對場地'] = df_teacher['場地'].apply(extract_loc_short)
                 df_exam['應到人數'] = df_exam.groupby(['場地', '班級', '科目簡稱'])['學號'].transform('count')
                 
@@ -513,20 +513,30 @@ if st.button("🚀 開始智慧排考運算", type="primary", width='stretch'):
 
                 df_final_exam = df_exam[final_cols].copy()
                 df_final_exam['G_W'] = df_final_exam['班級'].apply(grade_to_chinese).map(grade_weight).fillna(99)
-                df_final_exam = df_final_exam.sort_values(by=['G_W', '班級', '科目簡稱', '場地', '座號'])
+                
+                # ========================================================
+                # ⭐ 關鍵修正區塊：建立輔助數字化座號欄位，確保群組內嚴格照數字大小排序
+                # ========================================================
+                df_final_exam['NumSeat'] = pd.to_numeric(df_final_exam['座號'], errors='coerce').fillna(999)
+                
+                # 排序邏輯：同群組內 (班級 -> 科目 -> 場地) 加上 NumSeat (確保 1,2,3...10 順序正確)
+                df_final_exam = df_final_exam.sort_values(by=['G_W', '班級', '科目簡稱', '場地', 'NumSeat'], ascending=[True, True, True, True, True])
 
                 df_final_exam['GroupKey'] = df_final_exam['班級'] + "_" + df_final_exam['科目簡稱'] + "_" + df_final_exam['場地']
                 grouped = [g for _, g in df_final_exam.groupby('GroupKey', sort=False)]
                 final_rows = []
                 empty = pd.DataFrame([[np.nan] * len(final_cols)], columns=final_cols)
+                
                 for i, grp in enumerate(grouped):
-                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W']))
-                    if i < len(grouped) - 1: final_rows.append(empty)
+                    # 丟棄輔助排序的 GroupKey, G_W, 以及我們新增的 NumSeat，保持原報表純淨
+                    final_rows.append(grp.drop(columns=['GroupKey', 'G_W', 'NumSeat']))
+                    if i < len(grouped) - 1: final_rows.append(empty) # 插入空白列隔開
                 
                 if final_rows:
                     df_rep3_final = pd.concat(final_rows, ignore_index=True).fillna("")
                 else:
                     df_rep3_final = pd.DataFrame(columns=final_cols)
+                # ========================================================
 
                 # --- 階段四：報表四處理 (印卷) ---
                 df_rep4 = df_target[df_target['試卷編號'] != ""].drop_duplicates(subset=['學號', '試卷編號']).groupby('試卷編號').size().reset_index(name='試卷數量')
