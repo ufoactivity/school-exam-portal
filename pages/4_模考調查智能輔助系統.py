@@ -10,12 +10,11 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 試務組-模考調查智能輔助系統")
-st.info("💡 試務組終極進化：已恢復【一班一頁】正常分頁功能，並結合「AI彈性列高引擎」，大班級自動微縮保證單頁不溢出！且報表年度已會隨時間自動更新！")
+st.info("💡 試務組終極進化：已導入「多維度檔案透視引擎」，專剋校務系統 TSV/HTML 偽裝 XLS 檔，免轉檔直接吃！")
 
 # --- 新增：自動計算當前學年度邏輯 ---
 current_time = datetime.now()
 roc_year = current_time.year - 1911
-# 若在 8 月前，算是前一學年度；8 月後為新學年度
 academic_year = roc_year if current_time.month >= 8 else roc_year - 1
 
 # --- 初始化系統記憶體 (防重整閃退) ---
@@ -37,6 +36,61 @@ if 'template_excel_data' not in st.session_state:
 # ==========================================
 # 2. 輔助功能定義 (防呆與髒數據處理)
 # ==========================================
+def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
+    """
+    💡 核心修正區：多維度檔案透視引擎
+    專治校務系統匯出的「假 Excel」(實際上是 TSV 或 HTML 偽裝)
+    """
+    if file_uploader is None: 
+        return pd.DataFrame()
+    
+    file_uploader.seek(0)
+    raw_bytes = file_uploader.read()
+    file_uploader.seek(0)
+    
+    # 0. 攔截真實 CSV
+    if file_uploader.name.endswith('.csv'):
+        try:
+            return pd.read_csv(io.BytesIO(raw_bytes), header=header).fillna("")
+        except:
+            pass
+
+    # 1. 嘗試標準 Excel 解析 (正常 .xlsx 或真 .xls)
+    try:
+        target_sheet = 0 if sheet_name == "[校務系統相容模式]" else sheet_name
+        return pd.read_excel(io.BytesIO(raw_bytes), sheet_name=target_sheet, header=header).fillna("")
+    except Exception:
+        pass
+        
+    # 2. 嘗試解析 TSV (Tab-Separated Values) 偽裝檔 (WebHR 等常見)
+    for enc in ['big5', 'utf-8', 'utf-16', 'cp950']:
+        try:
+            df = pd.read_csv(io.BytesIO(raw_bytes), sep='\t', encoding=enc, header=header)
+            if df.shape[1] > 2:  # 確認有成功分割欄位
+                return df.fillna("")
+        except Exception:
+            pass
+            
+    # 3. 嘗試解析 HTML 表格偽裝檔
+    for enc in ['big5', 'utf-8', 'cp950']:
+        try:
+            html_str = raw_bytes.decode(enc, errors='ignore')
+            dfs = pd.read_html(io.StringIO(html_str))
+            if len(dfs) > 0:
+                df_res = dfs[0].fillna("")
+                # 若呼叫端要求不要 header，但 read_html 自動吸了第一列，需將表頭壓回資料列
+                if header is None:
+                    new_row = pd.DataFrame([df_res.columns.tolist()], columns=df_res.columns)
+                    df_res = pd.concat([new_row, df_res], ignore_index=True)
+                    df_res.columns = range(df_res.shape[1])
+                return df_res
+        except Exception:
+            pass
+            
+    # 若全部攔截失敗
+    raise ValueError(f"檔案結構徹底損毀，請於 Excel 中開啟此檔後『另存新檔為 .xlsx』再重新上傳。")
+
+
 def get_str_col(df, keywords):
     if isinstance(keywords, str): keywords = [keywords]
     for kw in keywords:
@@ -55,7 +109,6 @@ def clean_class_name(c):
     s = s.translate(str.maketrans('１２３４５６７８９０', '1234567890'))
     return s
 
-# 統測標準20群類 + 51~56 代碼表
 STANDARD_MAPPING_VOC = {
     '1': '機械群', '2': '動力機械群', '3': '電機與電子群(電機類)', '4': '電機與電子群(資電類)',
     '5': '化工群', '6': '土木與建築群', '7': '設計群', '8': '工程與管理類',
@@ -66,7 +119,6 @@ STANDARD_MAPPING_VOC = {
     '54': '商管外語群(2)-(9+16類)', '55': '商管外語群(3)-(15+16類)', '56': '商管外語群(4)-(9+15+16類)'
 }
 
-# 學測常見考科組合代碼表
 STANDARD_MAPPING_GEN = {
     '1': '社會組(國英數B社)',
     '2': '自然組(國英數A自)',
@@ -95,6 +147,7 @@ with tab1:
         selected_roster_sheet = 0
         if file_roster and not file_roster.name.endswith('.csv'):
             try:
+                file_roster.seek(0) 
                 xls_roster = pd.ExcelFile(file_roster)
                 sheet_names = xls_roster.sheet_names
                 if len(sheet_names) > 1:
@@ -102,13 +155,17 @@ with tab1:
                 else:
                     selected_roster_sheet = sheet_names[0]
             except Exception as e:
-                st.warning("無法解析名單工作表，將預設讀取第一個。")
+                # 💡 攔截校務系統特殊檔案 (改交由 smart_read_excel 處理)
+                sheet_names = ["[校務系統相容模式]"]
+                selected_roster_sheet = sheet_names[0]
+                st.success("✅ 已啟動校務系統專屬相容模式，成功鎖定名單！")
 
         file_preset = st.file_uploader("📥 2. 上傳【多工作表預設考科檔】 (選填)", type=['xlsx', 'xls'], key="preset_uploader")
         
         selected_preset_sheet = None
         if file_preset:
             try:
+                file_preset.seek(0)
                 xls_preset = pd.ExcelFile(file_preset)
                 p_sheet_names = xls_preset.sheet_names
                 if len(p_sheet_names) > 1:
@@ -123,7 +180,6 @@ with tab1:
         school_type = st.radio("🏫 選擇產出的學制類型：", ["技高 (統測群類)", "普高 (學測考科)"], horizontal=True)
         
     with col2_t1:
-        # --- 修改點：將預設標題的 "114" 替換為動態變數 academic_year ---
         default_title = f"{academic_year}學年度國立華南高商統測模擬考 報考類組調查表" if "技高" in school_type else f"{academic_year}學年度國立華南高商學測模擬考 報考考科調查表"
         template_name = st.text_input("🎯 擬定表單大標題", value=default_title)
         default_price = st.number_input("💰 預設單次費用 (無對照檔或查無資料時套用，可留 0)", min_value=0, max_value=2000, value=0, step=10)
@@ -141,16 +197,15 @@ with tab1:
                     fee_map = {}
                     
                     if file_preset:
+                        file_preset.seek(0)
                         xls = pd.ExcelFile(file_preset)
                         df_preset_dept = pd.read_excel(xls, sheet_name=0).fillna("")
                         
                         if selected_preset_sheet:
                             df_preset_fee = pd.read_excel(xls, sheet_name=selected_preset_sheet).fillna("")
-                            
                             f_code = get_str_col(df_preset_fee, ['代碼', '類別', '群別', '類組', '代號'])
                             f_name = get_str_col(df_preset_fee, ['名稱', '考科', '組合', '類組名稱', '類別名稱'])
                             f_fee = get_str_col(df_preset_fee, ['費用', '金額', '單價', '單次費用'])
-                            
                             for c_val, n_val, f_val in zip(f_code, f_name, f_fee):
                                 c_str = str(c_val).strip().split('.')[0]
                                 n_str = str(n_val).strip()
@@ -170,20 +225,17 @@ with tab1:
 
                         s_key = get_str_col(df_preset_dept, ['科別', '班級', '字首'])
                         s_code = get_str_col(df_preset_dept, ['代碼', '類組', '預設'])
-                        
                         for k, c in zip(s_key, s_code):
                             k_str = str(k).strip()
                             c_str = str(c).strip().split('.')[0]
-                            if k_str:
-                                preset_mapping[k_str] = {
-                                    'code': c_str,
-                                    'fee': fee_map.get(c_str, "")
-                                }
+                            if k_str: preset_mapping[k_str] = {'code': c_str, 'fee': fee_map.get(c_str, "")}
 
-                    if file_roster.name.endswith('.csv'):
-                        df_roster = pd.read_csv(file_roster).fillna("")
-                    else:
-                        df_roster = pd.read_excel(file_roster, sheet_name=selected_roster_sheet).fillna("")
+                    # 💡 透過 smart_read_excel 完美讀取所有惡意偽裝檔
+                    try:
+                        df_roster = smart_read_excel(file_roster, sheet_name=selected_roster_sheet)
+                    except ValueError as ve:
+                        st.error(f"🚨 {ve}")
+                        st.stop()
                         
                     df_temp = pd.DataFrame()
                     df_temp['班級'] = get_str_col(df_roster, ['班級', '科別'])
@@ -207,8 +259,7 @@ with tab1:
                         if not matched:
                             for k, v in preset_mapping.items():
                                 if k in cls_name or cls_name.startswith(k):
-                                    matched = v
-                                    break
+                                    matched = v; break
                         if matched:
                             if matched['code']: df_temp.at[idx, '報考類組'] = matched['code']
                             if matched['fee']: df_temp.at[idx, '單次費用'] = matched['fee']
@@ -251,12 +302,10 @@ with tab1:
                         current_row = 0
                         page_breaks = []
                         unique_classes = df_temp['班級'].unique()
-                        
                         is_gen_hs = "普高" in school_type
                         
                         for cls in unique_classes:
                             df_cls = df_temp[df_temp['班級'] == cls]
-                            
                             merge_end_col = 6 if is_gen_hs else 9
                             rows_needed = len(df_cls) if is_gen_hs else max(len(df_cls), len(target_mapping))
                             
@@ -305,26 +354,20 @@ with tab1:
                             memo_h_sum = 0
                             for line_idx, rich_parts in enumerate(memo_lines):
                                 text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
-                                if line_idx == 0:
-                                    h = 38 if text_length > 60 else 30
-                                elif line_idx == len(memo_lines) - 1:
-                                    h = 28
-                                else:
-                                    h = 18
-                                memo_heights.append(h)
-                                memo_h_sum += h
+                                if line_idx == 0: h = 38 if text_length > 60 else 30
+                                elif line_idx == len(memo_lines) - 1: h = 28
+                                else: h = 18
+                                memo_heights.append(h); memo_h_sum += h
                             
                             fixed_h = 25 + 20 + 10 + 35 + 15 + memo_h_sum
-                            if is_gen_hs:
-                                fixed_h += 20 + (len(target_mapping) * 18) + 10
+                            if is_gen_hs: fixed_h += 20 + (len(target_mapping) * 18) + 10
                             
                             target_page_h = 780
                             calculated_data_h = (target_page_h - fixed_h) / max(1, rows_needed)
                             data_h = max(14.5, min(calculated_data_h, 30))
                             
                             worksheet.merge_range(current_row, 0, current_row, merge_end_col, template_name, title_format)
-                            worksheet.set_row(current_row, 25)
-                            current_row += 1
+                            worksheet.set_row(current_row, 25); current_row += 1
                             
                             for col_num, header in enumerate(headers):
                                 worksheet.write(current_row, col_num, header, header_format)
@@ -333,9 +376,7 @@ with tab1:
                                 worksheet.write(current_row, 8, "代碼", mapping_head_format)
                                 worksheet.write(current_row, 9, "類別", mapping_head_format)
                                 
-                            worksheet.set_row(current_row, 20)
-                            current_row += 1
-                            
+                            worksheet.set_row(current_row, 20); current_row += 1
                             start_data_row = current_row
                             
                             for i in range(rows_needed):
@@ -349,78 +390,53 @@ with tab1:
                                     worksheet.write(start_data_row + i, 5, str(row_data['報考類組']), data_format)
                                     worksheet.write(start_data_row + i, 6, "", data_format)
                                 else:
-                                    for c in range(7):
-                                        worksheet.write(start_data_row + i, c, "", data_format)
+                                    for c in range(7): worksheet.write(start_data_row + i, c, "", data_format)
                                         
                                 if not is_gen_hs:
                                     if i < len(target_mapping):
                                         code, name, _ = target_mapping[i]
                                         worksheet.write(start_data_row + i, 8, code, mapping_data_format)
                                         worksheet.write(start_data_row + i, 9, name, mapping_data_format)
-                                
                                 worksheet.set_row(start_data_row + i, data_h)
                                 
                             current_row = start_data_row + rows_needed
-                            
-                            worksheet.set_row(current_row, 10) 
-                            current_row += 1
+                            worksheet.set_row(current_row, 10); current_row += 1
                             worksheet.merge_range(current_row, 0, current_row, merge_end_col, "導師確認簽章：________________________", signature_format)
-                            worksheet.set_row(current_row, 35) 
-                            current_row += 1
-                            
-                            worksheet.set_row(current_row, 15) 
-                            current_row += 1
+                            worksheet.set_row(current_row, 35); current_row += 1
+                            worksheet.set_row(current_row, 15); current_row += 1
                             
                             if is_gen_hs:
                                 worksheet.write(current_row, 0, "代碼", mapping_head_format)
                                 worksheet.merge_range(current_row, 1, current_row, 4, "考科組合", mapping_head_format)
                                 worksheet.merge_range(current_row, 5, current_row, 6, "單次費用", mapping_head_format)
-                                worksheet.set_row(current_row, 20)
-                                current_row += 1
+                                worksheet.set_row(current_row, 20); current_row += 1
                                 
                                 for code, name, fee in target_mapping:
                                     worksheet.write(current_row, 0, code, mapping_data_format)
                                     worksheet.merge_range(current_row, 1, current_row, 4, name, mapping_data_format)
                                     worksheet.merge_range(current_row, 5, current_row, 6, fee, mapping_data_format)
-                                    worksheet.set_row(current_row, 18)
-                                    current_row += 1
-                                
-                                worksheet.set_row(current_row, 10) 
-                                current_row += 1
+                                    worksheet.set_row(current_row, 18); current_row += 1
+                                worksheet.set_row(current_row, 10); current_row += 1
 
                             for line_idx, rich_parts in enumerate(memo_lines):
-                                if len(memo_lines) == 1:
-                                    fmt = note_format_single
-                                elif line_idx == 0:
-                                    fmt = note_format_top
-                                elif line_idx == len(memo_lines) - 1:
-                                    fmt = note_format_bottom
-                                else:
-                                    fmt = note_format_middle
+                                if len(memo_lines) == 1: fmt = note_format_single
+                                elif line_idx == 0: fmt = note_format_top
+                                elif line_idx == len(memo_lines) - 1: fmt = note_format_bottom
+                                else: fmt = note_format_middle
                                     
                                 worksheet.merge_range(current_row, 0, current_row, merge_end_col, "", fmt)
-                                
                                 has_format = any(type(x) != str for x in rich_parts)
-                                if has_format:
-                                    worksheet.write_rich_string(current_row, 0, *rich_parts, fmt)
-                                else:
-                                    worksheet.write(current_row, 0, rich_parts[0], fmt)
-                                    
-                                worksheet.set_row(current_row, memo_heights[line_idx])
-                                current_row += 1
+                                if has_format: worksheet.write_rich_string(current_row, 0, *rich_parts, fmt)
+                                else: worksheet.write(current_row, 0, rich_parts[0], fmt)
+                                worksheet.set_row(current_row, memo_heights[line_idx]); current_row += 1
 
                             page_breaks.append(current_row)
                             
-                        worksheet.set_column('A:B', 8)
-                        worksheet.set_column('C:D', 10)
-                        worksheet.set_column('E:F', 11) 
-                        worksheet.set_column('G:G', 22) 
-                        worksheet.set_column('H:H', 2) 
-                        worksheet.set_column('I:I', 8) 
-                        worksheet.set_column('J:J', 28) 
+                        worksheet.set_column('A:B', 8); worksheet.set_column('C:D', 10)
+                        worksheet.set_column('E:F', 11); worksheet.set_column('G:G', 22) 
+                        worksheet.set_column('H:H', 2); worksheet.set_column('I:I', 8); worksheet.set_column('J:J', 28) 
                         
-                        if page_breaks:
-                            worksheet.set_h_pagebreaks(page_breaks)
+                        if page_breaks: worksheet.set_h_pagebreaks(page_breaks)
                             
                     st.session_state.template_excel_data = output_template.getvalue()
                     st.session_state.template_processed = True
@@ -460,86 +476,60 @@ with tab2:
 
         if file_survey:
             try:
-                file_survey.seek(0)
-                if file_survey.name.endswith('.csv'):
-                    df_preload = pd.read_csv(file_survey, header=None).fillna("")
-                else:
-                    df_preload = pd.read_excel(file_survey, header=None).fillna("")
+                # 💡 在第二階段也引入多維度引擎，處理表單回收端可能的格式異常
+                df_preload = smart_read_excel(file_survey, header=None)
                 
                 for r in range(len(df_preload)):
                     row_vals = [str(x).strip() for x in df_preload.iloc[r].tolist()]
-                    
                     c_idx = -1
                     for i, val in enumerate(row_vals):
-                        if val == '代碼':
-                            c_idx = i
-                            break
-                    
+                        if val == '代碼': c_idx = i; break
                     if c_idx != -1:
                         n_idx = -1
                         for i in range(c_idx + 1, len(row_vals)):
                             if any(k in row_vals[i] for k in ['類別', '考科', '組合', '名稱', '類群']):
-                                n_idx = i
-                                break
-                        
+                                n_idx = i; break
                         f_idx = -1
                         for i in range(c_idx + 1, len(row_vals)):
                             if '費用' in row_vals[i] or '金額' in row_vals[i] or '單價' in row_vals[i]:
-                                f_idx = i
-                                break
-                        
+                                f_idx = i; break
                         if n_idx != -1:
                             for sub_r in range(r + 1, min(r + 40, len(df_preload))):
                                 sub_row = [str(x).strip() for x in df_preload.iloc[sub_r].tolist()]
                                 if len(sub_row) <= max(c_idx, n_idx): continue
-                                
                                 cv = sub_row[c_idx].split('.')[0]
                                 nv = sub_row[n_idx]
-                                
-                                if any(k in cv for k in ['導師', '1.', '2.', '3.', '4.', '備註', '說明', '小計', '總計']):
-                                    break
-                                    
+                                if any(k in cv for k in ['導師', '1.', '2.', '3.', '4.', '備註', '說明', '小計', '總計']): break
                                 if cv and nv and cv != 'nan' and nv != 'nan':
                                     preload_mapping[cv] = nv
                                     if f_idx != -1 and len(sub_row) > f_idx:
                                         fv = sub_row[f_idx]
                                         if fv and fv != 'nan':
-                                            try:
-                                                extracted_fees[nv] = int(float(fv))
-                                            except:
-                                                pass
+                                            try: extracted_fees[nv] = int(float(fv))
+                                            except: pass
 
                 h_idx = None
                 for r in range(min(15, len(df_preload))):
                     row_vals = [str(x).strip() for x in df_preload.iloc[r].tolist()]
                     if '班級' in row_vals or '座號' in row_vals or '姓名' in row_vals:
-                        h_idx = r
-                        break
+                        h_idx = r; break
                         
                 if h_idx is not None:
                     df_headers = [str(x).strip() for x in df_preload.iloc[h_idx].tolist()]
                     df_data_preload = df_preload.iloc[h_idx+1:].copy()
                     df_data_preload.columns = df_headers
-                    
                     raw_cat_series = get_str_col(df_data_preload, ['報考', '類群', '科目', '組別', '類組'])
                     raw_name_series = get_str_col(df_data_preload, ['姓名', '學生姓名'])
                     
                     unique_cats = set()
                     for cat_val, name_val in zip(raw_cat_series, raw_name_series):
-                        if str(name_val).strip() == "" or str(name_val).strip() == "nan": 
-                            continue
-                            
+                        if str(name_val).strip() == "" or str(name_val).strip() == "nan": continue
                         cv = str(cat_val).strip().split('.')[0]
                         cat_name = ""
-                        
-                        if cv in preload_mapping:
-                            cat_name = preload_mapping[cv]
+                        if cv in preload_mapping: cat_name = preload_mapping[cv]
                         elif cv and cv not in ["", "報考類組", "不升學", "休學", "重讀", "長期未到校", "否", "nan"] and not str(cat_val).startswith('*'):
                             cat_name = str(cat_val).strip()
-                            
-                        if cat_name:
-                            unique_cats.add(cat_name)
-                                
+                        if cat_name: unique_cats.add(cat_name)
                     detected_categories = sorted(list(unique_cats))
             except Exception as e:
                 st.error(f"預讀取檔案進行群別與費用分析時發生錯誤: {e}")
@@ -549,10 +539,8 @@ with tab2:
 
     with col2:
         st.subheader("⚙️ 2. 收費檢核與測驗設定")
-        
         school_type_p2 = st.radio("🏫 選擇本表單學制類型：", ["技高 (全學年5次合併收費)", "普高 (依次數彈性收費)"], horizontal=True, key="school_type_p2")
         
-        # --- 修改點：將階段二的預設標題 "114" 也替換為動態變數 academic_year ---
         if "普高" in school_type_p2:
             fee_mode = st.radio("🔄 普高本次收費模式：", ["收 1 次費用 (如：第一、二次模考)", "收 2 次費用 (如：第三、四次合併)"], horizontal=True)
             fee_multiplier = 1 if "1 次" in fee_mode else 2
@@ -570,26 +558,16 @@ with tab2:
         if file_survey and detected_categories:
             st.markdown("### 💰 各類群單次費用檢核表")
             st.caption("💡 系統已自動將您上傳表單中的金額帶入，請檢核。")
-            
-            default_fees = []
-            for cat in detected_categories:
-                default_fees.append(extracted_fees.get(cat, base_fee_p2)) 
+            default_fees = [extracted_fees.get(cat, base_fee_p2) for cat in detected_categories]
                 
-            fee_df = pd.DataFrame({
-                '報考類群': detected_categories,
-                '單次費用 (元)': default_fees
-            })
-            
+            fee_df = pd.DataFrame({'報考類群': detected_categories, '單次費用 (元)': default_fees})
             edited_fee_df = st.data_editor(
                 fee_df,
                 column_config={
                     '報考類群': st.column_config.TextColumn("報考類群", disabled=True),
                     '單次費用 (元)': st.column_config.NumberColumn("單次費用 (元)", min_value=0, max_value=2000, step=10)
                 },
-                disabled=["報考類群"],
-                hide_index=True,
-                use_container_width=True,
-                key="fee_editor"
+                disabled=["報考類群"], hide_index=True, use_container_width=True, key="fee_editor"
             )
             special_fee_dict = dict(zip(edited_fee_df['報考類群'], edited_fee_df['單次費用 (元)']))
 
@@ -600,9 +578,6 @@ with tab2:
             st.session_state.mock_uploader_key += 1
             st.rerun()
 
-    # ==========================================
-    # 核心排程與生成演算法
-    # ==========================================
     st.divider()
 
     if st.button("🚀 啟動智能分流與結算", type="primary", use_container_width=True, key="btn_run_phase2"):
@@ -611,11 +586,8 @@ with tab2:
         else:
             with st.spinner("系統正在高速進行結算與【含學號版 A4 壓縮排版】統計中..."):
                 try:
-                    file_survey.seek(0)
-                    if file_survey.name.endswith('.csv'):
-                        df_raw_full = pd.read_csv(file_survey, header=None).fillna("")
-                    else:
-                        df_raw_full = pd.read_excel(file_survey, header=None).fillna("")
+                    # 💡 結算階段同步替換為 smart_read_excel
+                    df_raw_full = smart_read_excel(file_survey, header=None)
 
                     mapping_dict = {}
                     for r in range(len(df_raw_full)):
@@ -634,15 +606,13 @@ with tab2:
                                     cv = sub_row[c_idx].split('.')[0]
                                     nv = sub_row[n_idx]
                                     if any(k in cv for k in ['導師', '1.', '2.', '3.', '4.', '備註', '小計', '總計']): break
-                                    if cv and nv and cv != 'nan' and nv != 'nan':
-                                        mapping_dict[cv] = nv
+                                    if cv and nv and cv != 'nan' and nv != 'nan': mapping_dict[cv] = nv
 
                     header_row_idx = None
                     for r in range(min(15, len(df_raw_full))):
                         row_vals = [str(x).strip() for x in df_raw_full.iloc[r].tolist()]
                         if '班級' in row_vals or '座號' in row_vals or '姓名' in row_vals:
-                            header_row_idx = r
-                            break
+                            header_row_idx = r; break
                     
                     if header_row_idx is not None:
                         new_columns = [str(x).strip() for x in df_raw_full.iloc[header_row_idx].tolist()]
@@ -661,8 +631,7 @@ with tab2:
                     df_all['班級_Clean'] = df_all['班級_Raw'].apply(clean_class_name)
                     
                     def is_valid_student(row):
-                        c = str(row['班級_Clean'])
-                        n = str(row['姓名'])
+                        c, n = str(row['班級_Clean']), str(row['姓名'])
                         if not c or not n or c == 'nan' or n == 'nan': return False
                         if c in ['代碼', '班級', '姓名']: return False
                         if any(c.startswith(k) for k in ['1.', '2.', '3.', '4.', '導師']): return False
@@ -673,34 +642,26 @@ with tab2:
 
                     def determine_status_or_cat(row):
                         raw = str(row['原始報考']).strip().split('.')[0]
-                        if raw in mapping_dict:
-                            return "VALID", mapping_dict[raw]
-                        elif raw in ["不升學", "休學", "重讀", "長期未到校"]:
-                            return "UNREPORTED", raw
-                        elif raw in ["", "nan", "否", "0", "None"]:
-                            return "UNREPORTED", "未填寫/未報考"
-                        elif raw in ["報考類組", "類組", "科目"]:
-                            return "IGNORE", ""
-                        else:
-                            return "UNREPORTED", str(row['原始報考']).strip()
+                        if raw in mapping_dict: return "VALID", mapping_dict[raw]
+                        elif raw in ["不升學", "休學", "重讀", "長期未到校"]: return "UNREPORTED", raw
+                        elif raw in ["", "nan", "否", "0", "None"]: return "UNREPORTED", "未填寫/未報考"
+                        elif raw in ["報考類組", "類組", "科目"]: return "IGNORE", ""
+                        else: return "UNREPORTED", str(row['原始報考']).strip()
 
-                    statuses = []
-                    cats = []
+                    statuses, cats = [], []
                     for _, row in df_students_only.iterrows():
                         st_type, cat_v = determine_status_or_cat(row)
-                        statuses.append(st_type)
-                        cats.append(cat_v)
+                        statuses.append(st_type); cats.append(cat_v)
 
                     df_students_only['狀態類型'] = statuses
                     df_students_only['解析結果'] = cats
-
                     df_unreported = df_students_only[df_students_only['狀態類型'] == "UNREPORTED"].copy()
+                    
                     if not df_unreported.empty:
                         df_reason_by_class = df_unreported.groupby(['班級_Clean', '解析結果']).size().unstack(fill_value=0)
                         df_reason_by_class['未報考小計'] = df_reason_by_class.sum(axis=1)
                         df_reason_by_class.index.name = '班級'
                         df_reason_by_class = df_reason_by_class.reset_index()
-                        
                         total_dict = {'班級': '總計 (Total)'}
                         for col in df_reason_by_class.columns:
                             if col != '班級': total_dict[col] = df_reason_by_class[col].sum()
@@ -718,39 +679,27 @@ with tab2:
 
                     df_clean['單次應繳費用'] = df_clean['報考類群'].apply(lambda x: special_fee_dict.get(x, base_fee_p2))
                     df_clean['總繳費金額'] = df_clean['單次應繳費用'] * fee_multiplier
-                    
                     df_clean['座號_Num'] = pd.to_numeric(df_clean['座號'], errors='coerce').fillna(999)
                     df_clean = df_clean.sort_values(by=['班級', '座號_Num']).drop(columns=['座號_Num'])
 
                     df_details_raw = df_clean[['班級', '座號', '學號', '姓名', '報考類群', '單次應繳費用', '總繳費金額']].copy()
                     df_details_raw = df_details_raw.rename(columns={'單次應繳費用': '單次費用', '總繳費金額': f'應繳費用({fee_multiplier}次)'})
                     
-                    df_class_summary = df_clean.groupby('班級').agg(
-                        報考人數=('姓名', 'count'),
-                        應收總金額=('總繳費金額', 'sum')
-                    ).reset_index()
-                    
-                    total_row = pd.DataFrame({
-                        '班級': ['總計 (Total)'],
-                        '報考人數': [df_class_summary['報考人數'].sum()],
-                        '應收總金額': [df_class_summary['應收總金額'].sum()]
-                    })
+                    df_class_summary = df_clean.groupby('班級').agg(報考人數=('姓名', 'count'), 應收總金額=('總繳費金額', 'sum')).reset_index()
+                    total_row = pd.DataFrame({'班級': ['總計 (Total)'], '報考人數': [df_class_summary['報考人數'].sum()], '應收總金額': [df_class_summary['應收總金額'].sum()]})
                     df_class_summary = pd.concat([df_class_summary, total_row], ignore_index=True)
                     df_class_summary = df_class_summary.rename(columns={'應收總金額': f'{fee_multiplier}次應收總金額'})
 
-                    df_publisher = df_clean.groupby('報考類群').agg(
-                        需求卷數=('姓名', 'count')
-                    ).reset_index()
+                    df_publisher = df_clean.groupby('報考類群').agg(需求卷數=('姓名', 'count')).reset_index()
                     df_publisher = df_publisher.sort_values('需求卷數', ascending=False)
                     total_pub_row = pd.DataFrame({'報考類群': ['總計 (Total)'], '需求卷數': [df_publisher['需求卷數'].sum()]})
                     df_publisher = pd.concat([df_publisher, total_pub_row], ignore_index=True)
 
                     # ==========================================
-                    # 5. 【流式 Excel 直出封裝引擎 - 列印極限壓縮排版】
+                    # 5. 【流式 Excel 直出封裝引擎】
                     # ==========================================
                     output_excel = io.BytesIO()
                     with pd.ExcelWriter(output_excel, engine='xlsxwriter') as writer:
-                        
                         sheet1_name = f'1_班級{fee_multiplier}次收費總表'
                         sheet2_name = f'2_各班繳費明細({fee_multiplier}次總額)'
                         
@@ -766,10 +715,7 @@ with tab2:
                         
                         ws_details = workbook.add_worksheet(sheet2_name)
                         writer.sheets[sheet2_name] = ws_details 
-                        
-                        ws_details.set_paper(9)
-                        ws_details.fit_to_pages(1, 0)
-                        ws_details.center_horizontally()
+                        ws_details.set_paper(9); ws_details.fit_to_pages(1, 0); ws_details.center_horizontally()
                         ws_details.set_margins(left=0.3, right=0.3, top=0.4, bottom=0.4) 
                         
                         title_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#F2F2F2', 'border': 1})
@@ -787,19 +733,14 @@ with tab2:
                         red_alert_format_p2 = workbook.add_format({'font_color': '#D32F2F', 'bold': True, 'font_size': 9})
 
                         headers = ['班級', '座號', '學號', '姓名', '報考類群', '單次費用', f'應繳費用({fee_multiplier}次)', '學生簽名']
+                        current_row = 0; page_breaks = []
                         
-                        current_row = 0
-                        page_breaks = []
-                        unique_classes = df_details_raw['班級'].unique()
-                        
-                        for cls_name in unique_classes:
+                        for cls_name in df_details_raw['班級'].unique():
                             df_cls = df_details_raw[df_details_raw['班級'] == cls_name]
                             cls_count = len(df_cls)
                             
                             if "普高" in school_type_p2:
-                                memo_lines_p2 = [
-                                    ["\n1.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至教務處試務組。\n"]
-                                ]
+                                memo_lines_p2 = [["\n1.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至教務處試務組。\n"]]
                             else:
                                 memo_lines_p2 = [
                                     ["\n1.上下學期總共參加5次模擬考。"],
@@ -807,35 +748,23 @@ with tab2:
                                     ["3.請學藝股長於 ", red_alert_format_p2, f"{deadline_str_p2} 完成收費！", "費用請繳至總務處出納組，此張單子請繳回到教務處試務組。\n"]
                                 ]
 
-                            memo_heights_p2 = []
-                            memo_h_sum_p2 = 0
+                            memo_heights_p2 = []; memo_h_sum_p2 = 0
                             for line_idx, rich_parts in enumerate(memo_lines_p2):
                                 text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
-                                if line_idx == 0:
-                                    h = 36 if text_length > 60 else 30
-                                elif line_idx == len(memo_lines_p2) - 1:
-                                    h = 28
-                                else:
-                                    h = 18
-                                memo_heights_p2.append(h)
-                                memo_h_sum_p2 += h
+                                if line_idx == 0: h = 36 if text_length > 60 else 30
+                                elif line_idx == len(memo_lines_p2) - 1: h = 28
+                                else: h = 18
+                                memo_heights_p2.append(h); memo_h_sum_p2 += h
                             
                             cls_fee_info = df_cls[['報考類群', '單次費用']].drop_duplicates().sort_values('報考類群')
-                            
                             fixed_h_p2 = 24 + 18 + 26 + 18 + (len(cls_fee_info) * 16) + 15 + 35 + 15 + memo_h_sum_p2
-                            
                             target_page_h_p2 = 780
-                            calculated_data_h_p2 = (target_page_h_p2 - fixed_h_p2) / max(1, cls_count)
-                            data_h_p2 = max(14.5, min(calculated_data_h_p2, 32))
+                            data_h_p2 = max(14.5, min((target_page_h_p2 - fixed_h_p2) / max(1, cls_count), 32))
 
                             ws_details.merge_range(current_row, 0, current_row, len(headers)-1, f"🏫 國立華南高商 - {mock_name_p2}", title_format)
-                            ws_details.set_row(current_row, 24) 
-                            current_row += 1
-                            
-                            for col_num, header in enumerate(headers):
-                                ws_details.write(current_row, col_num, header, header_format)
-                            ws_details.set_row(current_row, 18)
-                            current_row += 1
+                            ws_details.set_row(current_row, 24); current_row += 1
+                            for col_num, header in enumerate(headers): ws_details.write(current_row, col_num, header, header_format)
+                            ws_details.set_row(current_row, 18); current_row += 1
                             
                             for _, row in df_cls.iterrows():
                                 ws_details.write(current_row, 0, str(row['班級']), data_format)
@@ -846,88 +775,54 @@ with tab2:
                                 ws_details.write(current_row, 5, row['單次費用'], data_format)
                                 ws_details.write(current_row, 6, row[f'應繳費用({fee_multiplier}次)'], data_format)
                                 ws_details.write(current_row, 7, '', data_format) 
-                                ws_details.set_row(current_row, data_h_p2)
-                                current_row += 1
+                                ws_details.set_row(current_row, data_h_p2); current_row += 1
                                 
-                            cls_total_amt = df_cls[f'應繳費用({fee_multiplier}次)'].sum()
-                            
                             ws_details.write(current_row, 0, f'{cls_name} 小計', total_format)
                             ws_details.write(current_row, 1, f'共 {cls_count} 人', total_format)
-                            ws_details.write(current_row, 2, '', total_format)
-                            ws_details.write(current_row, 3, '', total_format)
-                            ws_details.write(current_row, 4, '', total_format)
-                            ws_details.write(current_row, 5, '', total_format)
-                            ws_details.write(current_row, 6, cls_total_amt, total_format)
+                            for i in range(2, 6): ws_details.write(current_row, i, '', total_format)
+                            ws_details.write(current_row, 6, df_cls[f'應繳費用({fee_multiplier}次)'].sum(), total_format)
                             ws_details.write(current_row, 7, '', total_format) 
-                            ws_details.set_row(current_row, 26) 
-                            current_row += 1
+                            ws_details.set_row(current_row, 26); current_row += 1
                             
-                            memo_title = f"💡 【本班單次報名費參考】 (※ 應繳總額 = 單次費用 × {fee_multiplier}次)："
-                            ws_details.merge_range(current_row, 0, current_row, len(headers)-1, memo_title, memo_format)
-                            ws_details.set_row(current_row, 18)
-                            current_row += 1
+                            ws_details.merge_range(current_row, 0, current_row, len(headers)-1, f"💡 【本班單次報名費參考】 (※ 應繳總額 = 單次費用 × {fee_multiplier}次)：", memo_format)
+                            ws_details.set_row(current_row, 18); current_row += 1
                             
                             for _, r in cls_fee_info.iterrows():
-                                bullet_text = f"      ▪ {r['報考類群']}：單次 {r['單次費用']} 元"
-                                ws_details.merge_range(current_row, 0, current_row, len(headers)-1, bullet_text, memo_format)
-                                ws_details.set_row(current_row, 16)
-                                current_row += 1
+                                ws_details.merge_range(current_row, 0, current_row, len(headers)-1, f"      ▪ {r['報考類群']}：單次 {r['單次費用']} 元", memo_format)
+                                ws_details.set_row(current_row, 16); current_row += 1
                                 
-                            ws_details.set_row(current_row, 15) 
-                            current_row += 1
-                            
+                            ws_details.set_row(current_row, 15); current_row += 1
                             signature_format_p2 = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'right', 'valign': 'vcenter'})
                             ws_details.merge_range(current_row, 0, current_row, len(headers)-1, "導師確認簽章：________________________", signature_format_p2)
-                            ws_details.set_row(current_row, 35) 
-                            current_row += 1
-
-                            ws_details.set_row(current_row, 15) 
-                            current_row += 1
+                            ws_details.set_row(current_row, 35); current_row += 1
+                            ws_details.set_row(current_row, 15); current_row += 1
 
                             for line_idx, rich_parts in enumerate(memo_lines_p2):
-                                if len(memo_lines_p2) == 1:
-                                    fmt = note_format_single_p2
-                                elif line_idx == 0:
-                                    fmt = note_format_top_p2
-                                elif line_idx == len(memo_lines_p2) - 1:
-                                    fmt = note_format_bottom_p2
-                                else:
-                                    fmt = note_format_middle_p2
+                                if len(memo_lines_p2) == 1: fmt = note_format_single_p2
+                                elif line_idx == 0: fmt = note_format_top_p2
+                                elif line_idx == len(memo_lines_p2) - 1: fmt = note_format_bottom_p2
+                                else: fmt = note_format_middle_p2
                                     
                                 ws_details.merge_range(current_row, 0, current_row, len(headers)-1, "", fmt)
-                                
                                 has_format = any(type(x) != str for x in rich_parts)
-                                if has_format:
-                                    ws_details.write_rich_string(current_row, 0, *rich_parts, fmt)
-                                else:
-                                    ws_details.write(current_row, 0, rich_parts[0], fmt)
-                                    
-                                ws_details.set_row(current_row, memo_heights_p2[line_idx])
-                                current_row += 1
+                                if has_format: ws_details.write_rich_string(current_row, 0, *rich_parts, fmt)
+                                else: ws_details.write(current_row, 0, rich_parts[0], fmt)
+                                ws_details.set_row(current_row, memo_heights_p2[line_idx]); current_row += 1
                             
                             page_breaks.append(current_row) 
                             
-                        ws_details.set_column('A:A', 8)  
-                        ws_details.set_column('B:B', 6)  
-                        ws_details.set_column('C:C', 10) 
-                        ws_details.set_column('D:D', 10) 
-                        ws_details.set_column('E:E', 22) 
-                        ws_details.set_column('F:F', 10) 
-                        ws_details.set_column('G:G', 12) 
-                        ws_details.set_column('H:H', 24) 
+                        ws_details.set_column('A:A', 8); ws_details.set_column('B:B', 6)  
+                        ws_details.set_column('C:C', 10); ws_details.set_column('D:D', 10) 
+                        ws_details.set_column('E:E', 22); ws_details.set_column('F:F', 10) 
+                        ws_details.set_column('G:G', 12); ws_details.set_column('H:H', 24) 
                         
                         ws_details.write(current_row, 0, '全校總計 (Grand Total)', grand_format)
-                        ws_details.write(current_row, 1, '', grand_format)
-                        ws_details.write(current_row, 2, '', grand_format)
-                        ws_details.write(current_row, 3, '', grand_format)
-                        ws_details.write(current_row, 4, '', grand_format)
-                        ws_details.write(current_row, 5, '', grand_format)
+                        for i in range(1, 6): ws_details.write(current_row, i, '', grand_format)
                         ws_details.write(current_row, 6, df_details_raw[f'應繳費用({fee_multiplier}次)'].sum(), grand_format)
                         ws_details.write(current_row, 7, '', grand_format)
                         ws_details.set_row(current_row, 24)
                         
-                        if page_breaks:
-                            ws_details.set_h_pagebreaks(page_breaks)
+                        if page_breaks: ws_details.set_h_pagebreaks(page_breaks)
                         
                         df_publisher.to_excel(writer, index=False, sheet_name='3_書商訂卷總表')
                         writer.sheets['3_書商訂卷總表'].set_column('A:B', 24)
@@ -941,9 +836,6 @@ with tab2:
                     with st.expander("點此查看詳細工程錯誤碼"):
                         st.code(traceback.format_exc())
 
-    # ==========================================
-    # 結果顯示與下載區
-    # ==========================================
     if st.session_state.mock_processed:
         st.balloons()
         st.success("🎉 第二階段試務報表結算完成！")
