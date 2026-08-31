@@ -523,9 +523,11 @@ with tab2:
                     
                     raw_cat_series = get_str_col(df_data_preload, ['報考', '類群', '科目', '組別', '類組'])
                     raw_name_series = get_str_col(df_data_preload, ['姓名', '學生姓名'])
+                    # --- 新增：同時抓取學生列的費用，作為技高或查無對照表時的備案 ---
+                    raw_fee_series = get_str_col(df_data_preload, ['單次費用', '費用', '金額', '單價'])
                     
                     unique_cats = set()
-                    for cat_val, name_val in zip(raw_cat_series, raw_name_series):
+                    for cat_val, name_val, fee_val in zip(raw_cat_series, raw_name_series, raw_fee_series):
                         if str(name_val).strip() == "" or str(name_val).strip() == "nan": 
                             continue
                             
@@ -539,6 +541,14 @@ with tab2:
                             
                         if cat_name:
                             unique_cats.add(cat_name)
+                            # --- 新增：若該類群還沒抓到費用，則從學生的單次費用欄位自動補齊 ---
+                            if cat_name not in extracted_fees:
+                                fv = str(fee_val).strip()
+                                if fv and fv != 'nan':
+                                    try:
+                                        extracted_fees[cat_name] = int(float(fv))
+                                    except:
+                                        pass
                                 
                     detected_categories = sorted(list(unique_cats))
             except Exception as e:
