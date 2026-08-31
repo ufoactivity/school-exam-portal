@@ -95,6 +95,7 @@ with tab1:
         selected_roster_sheet = 0
         if file_roster and not file_roster.name.endswith('.csv'):
             try:
+                file_roster.seek(0) # --- 💡 修正點：將檔案指標歸零，防止 Streamlit 讀不到資料 ---
                 xls_roster = pd.ExcelFile(file_roster)
                 sheet_names = xls_roster.sheet_names
                 if len(sheet_names) > 1:
@@ -109,6 +110,7 @@ with tab1:
         selected_preset_sheet = None
         if file_preset:
             try:
+                file_preset.seek(0) # --- 💡 修正點：將檔案指標歸零 ---
                 xls_preset = pd.ExcelFile(file_preset)
                 p_sheet_names = xls_preset.sheet_names
                 if len(p_sheet_names) > 1:
@@ -123,7 +125,6 @@ with tab1:
         school_type = st.radio("🏫 選擇產出的學制類型：", ["技高 (統測群類)", "普高 (學測考科)"], horizontal=True)
         
     with col2_t1:
-        # --- 修改點：將預設標題的 "114" 替換為動態變數 academic_year ---
         default_title = f"{academic_year}學年度國立華南高商統測模擬考 報考類組調查表" if "技高" in school_type else f"{academic_year}學年度國立華南高商學測模擬考 報考考科調查表"
         template_name = st.text_input("🎯 擬定表單大標題", value=default_title)
         default_price = st.number_input("💰 預設單次費用 (無對照檔或查無資料時套用，可留 0)", min_value=0, max_value=2000, value=0, step=10)
@@ -141,6 +142,7 @@ with tab1:
                     fee_map = {}
                     
                     if file_preset:
+                        file_preset.seek(0) # --- 💡 修正點：生成時再次確保指標歸零 ---
                         xls = pd.ExcelFile(file_preset)
                         df_preset_dept = pd.read_excel(xls, sheet_name=0).fillna("")
                         
@@ -181,8 +183,10 @@ with tab1:
                                 }
 
                     if file_roster.name.endswith('.csv'):
+                        file_roster.seek(0) # --- 💡 修正點：生成時再次確保指標歸零 ---
                         df_roster = pd.read_csv(file_roster).fillna("")
                     else:
+                        file_roster.seek(0) # --- 💡 修正點：生成時再次確保指標歸零 ---
                         df_roster = pd.read_excel(file_roster, sheet_name=selected_roster_sheet).fillna("")
                         
                     df_temp = pd.DataFrame()
@@ -552,7 +556,6 @@ with tab2:
         
         school_type_p2 = st.radio("🏫 選擇本表單學制類型：", ["技高 (全學年5次合併收費)", "普高 (依次數彈性收費)"], horizontal=True, key="school_type_p2")
         
-        # --- 修改點：將階段二的預設標題 "114" 也替換為動態變數 academic_year ---
         if "普高" in school_type_p2:
             fee_mode = st.radio("🔄 普高本次收費模式：", ["收 1 次費用 (如：第一、二次模考)", "收 2 次費用 (如：第三、四次合併)"], horizontal=True)
             fee_multiplier = 1 if "1 次" in fee_mode else 2
