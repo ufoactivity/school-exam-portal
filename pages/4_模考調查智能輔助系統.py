@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 試務組-模考調查智能輔助系統")
-st.info("💡 試務組終極進化：已導入「多維度檔案透視引擎」，專剋校務系統 TSV/HTML 偽裝 XLS 檔，免轉檔直接吃！")
+st.info("💡 試務組終極進化：已修復【技高版費用讀取異常】，並搭載「多維度檔案透視引擎」，專剋校務系統偽裝 XLS 檔，免轉檔直接吃！")
 
 # --- 新增：自動計算當前學年度邏輯 ---
 current_time = datetime.now()
@@ -34,12 +34,11 @@ if 'template_excel_data' not in st.session_state:
     st.session_state.template_excel_data = None
 
 # ==========================================
-# 2. 輔助功能定義 (防呆與多維度讀取引擎)
+# 2. 輔助功能定義 (防呆與髒數據處理)
 # ==========================================
 def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
     """
-    💡 核心修正區：多維度檔案透視引擎
-    專治校務系統匯出的「假 Excel」(實際上是 TSV 或 HTML 偽裝)
+    💡 檔案透視引擎：專治校務系統匯出的「假 Excel」(實際上是 TSV 或 HTML 偽裝)
     """
     if file_uploader is None: 
         return pd.DataFrame()
@@ -50,10 +49,8 @@ def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
     
     # 0. 攔截真實 CSV
     if file_uploader.name.endswith('.csv'):
-        try:
-            return pd.read_csv(io.BytesIO(raw_bytes), header=header).fillna("")
-        except:
-            pass
+        try: return pd.read_csv(io.BytesIO(raw_bytes), header=header).fillna("")
+        except: pass
 
     # 1. 嘗試標準 Excel 解析 (正常 .xlsx 或真 .xls)
     try:
@@ -62,14 +59,12 @@ def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
     except Exception:
         pass
         
-    # 2. 嘗試解析 TSV (Tab-Separated Values) 偽裝檔 (校務系統常見)
+    # 2. 嘗試解析 TSV 偽裝檔 (校務系統常見)
     for enc in ['big5', 'utf-8', 'utf-16', 'cp950']:
         try:
             df = pd.read_csv(io.BytesIO(raw_bytes), sep='\t', encoding=enc, header=header)
-            if df.shape[1] > 2:  # 確認有成功分割欄位
-                return df.fillna("")
-        except Exception:
-            pass
+            if df.shape[1] > 2: return df.fillna("")
+        except Exception: pass
             
     # 3. 嘗試解析 HTML 表格偽裝檔
     for enc in ['big5', 'utf-8', 'cp950']:
@@ -78,18 +73,14 @@ def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
             dfs = pd.read_html(io.StringIO(html_str))
             if len(dfs) > 0:
                 df_res = dfs[0].fillna("")
-                # 若呼叫端要求不要 header，但 read_html 自動吸了第一列，需將表頭壓回資料列
                 if header is None:
                     new_row = pd.DataFrame([df_res.columns.tolist()], columns=df_res.columns)
                     df_res = pd.concat([new_row, df_res], ignore_index=True)
                     df_res.columns = range(df_res.shape[1])
                 return df_res
-        except Exception:
-            pass
+        except Exception: pass
             
-    # 若全部攔截失敗
     raise ValueError(f"檔案結構徹底損毀，請於 Excel 中開啟此檔後『另存新檔為 .xlsx』再重新上傳。")
-
 
 def get_str_col(df, keywords):
     if isinstance(keywords, str): keywords = [keywords]
@@ -120,11 +111,8 @@ STANDARD_MAPPING_VOC = {
 }
 
 STANDARD_MAPPING_GEN = {
-    '1': '社會組(國英數B社)',
-    '2': '自然組(國英數A自)',
-    '3': '跨考組(國英數A社)',
-    '4': '跨考組(國英數B自)',
-    '5': '全考(國英數A數B社自)'
+    '1': '社會組(國英數B社)', '2': '自然組(國英數A自)', '3': '跨考組(國英數A社)',
+    '4': '跨考組(國英數B自)', '5': '全考(國英數A數B社自)'
 }
 
 # ==========================================
@@ -147,7 +135,7 @@ with tab1:
         selected_roster_sheet = 0
         if file_roster and not file_roster.name.endswith('.csv'):
             try:
-                file_roster.seek(0) 
+                file_roster.seek(0)
                 xls_roster = pd.ExcelFile(file_roster)
                 sheet_names = xls_roster.sheet_names
                 if len(sheet_names) > 1:
@@ -155,7 +143,6 @@ with tab1:
                 else:
                     selected_roster_sheet = sheet_names[0]
             except Exception as e:
-                # 💡 無痕攔截 TSV 假檔並賦予虛擬標籤，交由 smart_read_excel 處理
                 sheet_names = ["[校務系統相容模式]"]
                 selected_roster_sheet = sheet_names[0]
                 st.success("✅ 已啟動校務系統專屬相容模式，成功鎖定名單！")
@@ -192,9 +179,7 @@ with tab1:
         else:
             with st.spinner("正在智能合成調查表與動態考科套印中..."):
                 try:
-                    preset_mapping = {}
-                    dynamic_target_mapping = [] 
-                    fee_map = {}
+                    preset_mapping = {}; dynamic_target_mapping = []; fee_map = {}
                     
                     if file_preset:
                         file_preset.seek(0)
@@ -230,7 +215,6 @@ with tab1:
                             c_str = str(c).strip().split('.')[0]
                             if k_str: preset_mapping[k_str] = {'code': c_str, 'fee': fee_map.get(c_str, "")}
 
-                    # 💡 透過 smart_read_excel 完美讀取所有惡意偽裝檔
                     try:
                         df_roster = smart_read_excel(file_roster, sheet_name=selected_roster_sheet)
                     except ValueError as ve:
@@ -299,8 +283,7 @@ with tab1:
                             else:
                                 target_mapping = [(k, v, fee_map.get(k, str(default_price)) if fee_map.get(k, "") != "" else str(default_price)) for k, v in STANDARD_MAPPING_GEN.items()]
                         
-                        current_row = 0
-                        page_breaks = []
+                        current_row = 0; page_breaks = []
                         unique_classes = df_temp['班級'].unique()
                         is_gen_hs = "普高" in school_type
                         
@@ -350,8 +333,7 @@ with tab1:
                                     ["3.上下學期總共參加5次模擬考，開學初進行收費相關事宜。\n"]
                                 ]
 
-                            memo_heights = []
-                            memo_h_sum = 0
+                            memo_heights = []; memo_h_sum = 0
                             for line_idx, rich_parts in enumerate(memo_lines):
                                 text_length = sum(len(x) if type(x) == str else 0 for x in rich_parts)
                                 if line_idx == 0: h = 38 if text_length > 60 else 30
@@ -476,9 +458,10 @@ with tab2:
 
         if file_survey:
             try:
-                # 💡 在第二階段也引入多維度引擎，處理表單回收端可能的格式異常
+                # 💡 使用多維度透視引擎，避開 TSV 損毀問題
                 df_preload = smart_read_excel(file_survey, header=None)
                 
+                # [原本的底部對照表萃取邏輯] 
                 for r in range(len(df_preload)):
                     row_vals = [str(x).strip() for x in df_preload.iloc[r].tolist()]
                     c_idx = -1
@@ -508,6 +491,7 @@ with tab2:
                                             try: extracted_fees[nv] = int(float(fv))
                                             except: pass
 
+                # [找尋學生標頭]
                 h_idx = None
                 for r in range(min(15, len(df_preload))):
                     row_vals = [str(x).strip() for x in df_preload.iloc[r].tolist()]
@@ -518,18 +502,34 @@ with tab2:
                     df_headers = [str(x).strip() for x in df_preload.iloc[h_idx].tolist()]
                     df_data_preload = df_preload.iloc[h_idx+1:].copy()
                     df_data_preload.columns = df_headers
+                    
                     raw_cat_series = get_str_col(df_data_preload, ['報考', '類群', '科目', '組別', '類組'])
                     raw_name_series = get_str_col(df_data_preload, ['姓名', '學生姓名'])
                     
+                    # 💡 【核心修復】：加上這行！抓取學生列的單次費用。
+                    raw_fee_series = get_str_col(df_data_preload, ['單次費用', '費用', '金額'])
+                    
                     unique_cats = set()
-                    for cat_val, name_val in zip(raw_cat_series, raw_name_series):
+                    for cat_val, name_val, fee_val in zip(raw_cat_series, raw_name_series, raw_fee_series):
                         if str(name_val).strip() == "" or str(name_val).strip() == "nan": continue
                         cv = str(cat_val).strip().split('.')[0]
                         cat_name = ""
-                        if cv in preload_mapping: cat_name = preload_mapping[cv]
+                        
+                        if cv in preload_mapping: 
+                            cat_name = preload_mapping[cv]
                         elif cv and cv not in ["", "報考類組", "不升學", "休學", "重讀", "長期未到校", "否", "nan"] and not str(cat_val).startswith('*'):
                             cat_name = str(cat_val).strip()
-                        if cat_name: unique_cats.add(cat_name)
+                            
+                        if cat_name: 
+                            unique_cats.add(cat_name)
+                            
+                            # 💡 【核心修復】：如果底部對照表抓不到費用（例如技高版無費用欄），就改從「學生名單」的單次費用反向倒推
+                            if cat_name not in extracted_fees:
+                                try:
+                                    extracted_fees[cat_name] = int(float(str(fee_val).strip()))
+                                except:
+                                    pass
+                                    
                     detected_categories = sorted(list(unique_cats))
             except Exception as e:
                 st.error(f"預讀取檔案進行群別與費用分析時發生錯誤: {e}")
@@ -557,7 +557,7 @@ with tab2:
         special_fee_dict = {}
         if file_survey and detected_categories:
             st.markdown("### 💰 各類群單次費用檢核表")
-            st.caption("💡 系統已自動將您上傳表單中的金額帶入，請檢核。")
+            st.caption("💡 系統已聰明地將表單中的金額全自動反向帶入，請檢核。")
             default_fees = [extracted_fees.get(cat, base_fee_p2) for cat in detected_categories]
                 
             fee_df = pd.DataFrame({'報考類群': detected_categories, '單次費用 (元)': default_fees})
@@ -586,7 +586,6 @@ with tab2:
         else:
             with st.spinner("系統正在高速進行結算與【含學號版 A4 壓縮排版】統計中..."):
                 try:
-                    # 💡 結算階段同步替換為 smart_read_excel
                     df_raw_full = smart_read_excel(file_survey, header=None)
 
                     mapping_dict = {}
