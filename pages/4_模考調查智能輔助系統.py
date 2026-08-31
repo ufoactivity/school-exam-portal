@@ -47,10 +47,13 @@ def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
     raw_bytes = file_uploader.read()
     file_uploader.seek(0)
     
-    # 0. 攔截真實 CSV
+    # 💡 AI 工程師優化：0. 攔截真實 CSV，加入 Big5 等多種編碼強力解析
     if file_uploader.name.endswith('.csv'):
-        try: return pd.read_csv(io.BytesIO(raw_bytes), header=header).fillna("")
-        except: pass
+        for enc in ['utf-8', 'big5', 'cp950', 'utf-8-sig']:
+            try: 
+                return pd.read_csv(io.BytesIO(raw_bytes), header=header, encoding=enc).fillna("")
+            except: 
+                pass
 
     # 1. 嘗試標準 Excel 解析 (正常 .xlsx 或真 .xls)
     try:
@@ -59,20 +62,25 @@ def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
     except Exception:
         pass
         
-    # 2. 嘗試解析 TSV 偽裝檔 (校務系統常見)
-    for enc in ['big5', 'utf-8', 'utf-16', 'cp950']:
+    # 💡 AI 工程師優化：2. 嘗試解析 TSV 偽裝檔，增強編碼容錯
+    for enc in ['big5', 'utf-8', 'utf-16', 'cp950', 'utf-8-sig']:
         try:
             df = pd.read_csv(io.BytesIO(raw_bytes), sep='\t', encoding=enc, header=header)
             if df.shape[1] > 2: return df.fillna("")
         except Exception: pass
             
-    # 3. 嘗試解析 HTML 表格偽裝檔
+    # 💡 AI 工程師優化：3. 嘗試解析 HTML 表格偽裝檔，加入自動鎖定最大表格邏輯
     for enc in ['big5', 'utf-8', 'cp950']:
         try:
             html_str = raw_bytes.decode(enc, errors='ignore')
             dfs = pd.read_html(io.StringIO(html_str))
             if len(dfs) > 0:
+                # 如果有多個表格，找出列數最多的一個（通常這才是真實名單）
                 df_res = dfs[0].fillna("")
+                for df_tmp in dfs:
+                    if df_tmp.shape[0] > df_res.shape[0]:
+                        df_res = df_tmp.fillna("")
+                        
                 if header is None:
                     new_row = pd.DataFrame([df_res.columns.tolist()], columns=df_res.columns)
                     df_res = pd.concat([new_row, df_res], ignore_index=True)
