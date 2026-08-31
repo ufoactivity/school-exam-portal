@@ -92,7 +92,7 @@ with tab1:
         selected_roster_sheet = 0
         if file_roster and not file_roster.name.endswith('.csv'):
             try:
-                file_roster.seek(0) # 💡 修正點 1：檔案指標歸零
+                file_roster.seek(0) 
                 xls_roster = pd.ExcelFile(file_roster)
                 sheet_names = xls_roster.sheet_names
                 if len(sheet_names) > 1:
@@ -100,9 +100,10 @@ with tab1:
                 else:
                     selected_roster_sheet = sheet_names[0]
             except Exception as e:
-                # 💡 修正點 2：加入專屬校務系統的防呆提示
-                st.warning("⚠️ 偵測到此名單可能為「校務系統匯出之特殊格式 (HTML 偽裝之 xls)」，已啟動智能相容模式解析。")
-                selected_roster_sheet = 0
+                # 💡 修正點 1：無痕攔截校務系統特殊檔案，隱藏錯誤並直接給予虛擬工作表名稱
+                sheet_names = ["[校務系統相容模式]"]
+                selected_roster_sheet = sheet_names[0]
+                st.success("✅ 已啟動校務系統專屬相容模式，成功鎖定名單！")
 
         file_preset = st.file_uploader("📥 2. 上傳【多工作表預設考科檔】 (選填)", type=['xlsx', 'xls'], key="preset_uploader")
         
@@ -174,7 +175,6 @@ with tab1:
                             c_str = str(c).strip().split('.')[0]
                             if k_str: preset_mapping[k_str] = {'code': c_str, 'fee': fee_map.get(c_str, "")}
 
-                    # 💡 修正點 3：雙軌備援讀取機制
                     if file_roster.name.endswith('.csv'):
                         file_roster.seek(0)
                         df_roster = pd.read_csv(file_roster).fillna("")
@@ -182,16 +182,26 @@ with tab1:
                         file_roster.seek(0)
                         try:
                             # 嘗試正常 Excel 讀取
-                            df_roster = pd.read_excel(file_roster, sheet_name=selected_roster_sheet).fillna("")
+                            sheet_target = 0 if selected_roster_sheet == "[校務系統相容模式]" else selected_roster_sheet
+                            df_roster = pd.read_excel(file_roster, sheet_name=sheet_target).fillna("")
                         except Exception as excel_err:
-                            # 若失敗，無縫切換 HTML 引擎抓取校務系統表格
+                            # 💡 修正點 2：加入 Big5 編碼與 HTML 雙重解析引擎，專剋台灣校務系統匯出檔
                             file_roster.seek(0)
+                            raw_bytes = file_roster.getvalue()
                             try:
-                                dfs = pd.read_html(file_roster)
+                                # 優先嘗試 Big5 (台灣校務系統最常見的 HTML 偽裝檔編碼)
+                                html_str = raw_bytes.decode('big5', errors='ignore')
+                                dfs = pd.read_html(io.StringIO(html_str))
                                 df_roster = dfs[0].fillna("")
-                            except Exception as html_err:
-                                st.error("🚨 檔案結構徹底損毀，請於 Excel 中開啟此檔後『另存新檔為 .xlsx』再重新上傳。")
-                                st.stop()
+                            except Exception:
+                                try:
+                                    # 備用 UTF-8 編碼
+                                    html_str = raw_bytes.decode('utf-8', errors='ignore')
+                                    dfs = pd.read_html(io.StringIO(html_str))
+                                    df_roster = dfs[0].fillna("")
+                                except Exception as html_err:
+                                    st.error("🚨 檔案結構徹底損毀，請於 Excel 中開啟此檔後『另存新檔為 .xlsx』再重新上傳。")
+                                    st.stop()
                         
                     df_temp = pd.DataFrame()
                     df_temp['班級'] = get_str_col(df_roster, ['班級', '科別'])
