@@ -10,9 +10,9 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 試務組-模考調查智能輔助系統")
-st.info("💡 試務組終極進化：已修復【技高版費用讀取異常】，並搭載「多維度檔案透視引擎」，專剋校務系統偽裝 XLS 檔，免轉檔直接吃！")
+st.info("💡 試務組終極進化：已導入「多維度檔案透視引擎」與「雙軌費用反向萃取」，普高與技高表單皆可精準自動結算！")
 
-# --- 新增：自動計算當前學年度邏輯 ---
+# --- 自動計算當前學年度邏輯 ---
 current_time = datetime.now()
 roc_year = current_time.year - 1911
 academic_year = roc_year if current_time.month >= 8 else roc_year - 1
@@ -34,7 +34,7 @@ if 'template_excel_data' not in st.session_state:
     st.session_state.template_excel_data = None
 
 # ==========================================
-# 2. 輔助功能定義 (防呆與髒數據處理)
+# 2. 輔助功能定義 (防呆與多維度讀取引擎)
 # ==========================================
 def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
     """
@@ -80,7 +80,7 @@ def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
                 return df_res
         except Exception: pass
             
-    raise ValueError(f"檔案結構徹底損毀，請於 Excel 中開啟此檔後『另存新檔為 .xlsx』再重新上傳。")
+    raise ValueError("檔案結構徹底損毀，請於 Excel 中開啟此檔後『另存新檔為 .xlsx』再重新上傳。")
 
 def get_str_col(df, keywords):
     if isinstance(keywords, str): keywords = [keywords]
@@ -458,10 +458,9 @@ with tab2:
 
         if file_survey:
             try:
-                # 💡 使用多維度透視引擎，避開 TSV 損毀問題
                 df_preload = smart_read_excel(file_survey, header=None)
                 
-                # [原本的底部對照表萃取邏輯] 
+                # 1. 優先從底部對照表提取 (普高專用)
                 for r in range(len(df_preload)):
                     row_vals = [str(x).strip() for x in df_preload.iloc[r].tolist()]
                     c_idx = -1
@@ -491,7 +490,7 @@ with tab2:
                                             try: extracted_fees[nv] = int(float(fv))
                                             except: pass
 
-                # [找尋學生標頭]
+                # 2. 從學生名單列提取，做為雙重備援 (技高專用)
                 h_idx = None
                 for r in range(min(15, len(df_preload))):
                     row_vals = [str(x).strip() for x in df_preload.iloc[r].tolist()]
@@ -505,8 +504,6 @@ with tab2:
                     
                     raw_cat_series = get_str_col(df_data_preload, ['報考', '類群', '科目', '組別', '類組'])
                     raw_name_series = get_str_col(df_data_preload, ['姓名', '學生姓名'])
-                    
-                    # 💡 【核心修復】：加上這行！抓取學生列的單次費用。
                     raw_fee_series = get_str_col(df_data_preload, ['單次費用', '費用', '金額'])
                     
                     unique_cats = set()
@@ -522,13 +519,10 @@ with tab2:
                             
                         if cat_name: 
                             unique_cats.add(cat_name)
-                            
-                            # 💡 【核心修復】：如果底部對照表抓不到費用（例如技高版無費用欄），就改從「學生名單」的單次費用反向倒推
+                            # 若底部對照表無費用，則自動從學生行備援讀取
                             if cat_name not in extracted_fees:
-                                try:
-                                    extracted_fees[cat_name] = int(float(str(fee_val).strip()))
-                                except:
-                                    pass
+                                try: extracted_fees[cat_name] = int(float(str(fee_val).strip()))
+                                except: pass
                                     
                     detected_categories = sorted(list(unique_cats))
             except Exception as e:
