@@ -10,7 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="模擬考調查智能系統", page_icon="📊", layout="wide")
 st.title("📊 試務組-模考調查智能輔助系統")
-st.info("💡 試務組終極進化：已導入「多維度檔案透視引擎」與「雙軌費用反向萃取」，普高與技高表單皆可精準自動結算！")
+st.info("💡 試務組終極進化：已導入「無套件依賴 Regex 網頁硬解引擎」與「雙軌費用反向萃取」，徹底擊破校務系統假 Excel 檔案！")
 
 # --- 自動計算當前學年度邏輯 ---
 current_time = datetime.now()
@@ -34,11 +34,12 @@ if 'template_excel_data' not in st.session_state:
     st.session_state.template_excel_data = None
 
 # ==========================================
-# 2. 輔助功能定義 (防呆與多維度讀取引擎)
+# 2. 輔助功能定義 (防呆與多維度讀取引擎 3.0)
 # ==========================================
 def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
     """
-    💡 檔案透視引擎：專治校務系統匯出的「假 Excel」(實際上是 TSV 或 HTML 偽裝)
+    💡 檔案透視引擎 3.0：專治校務系統匯出的各種奇葩偽裝檔。
+    新增「純 Regex 網頁硬解軌道」，徹底擺脫對 lxml 等外部解析套件的環境依賴！
     """
     if file_uploader is None: 
         return pd.DataFrame()
@@ -47,48 +48,79 @@ def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
     raw_bytes = file_uploader.read()
     file_uploader.seek(0)
     
-    # 💡 AI 工程師優化：0. 攔截真實 CSV，加入 Big5 等多種編碼強力解析
+    # 0. 攔截真實 CSV (涵蓋多種台灣常用編碼)
     if file_uploader.name.endswith('.csv'):
-        for enc in ['utf-8', 'big5', 'cp950', 'utf-8-sig']:
-            try: 
-                return pd.read_csv(io.BytesIO(raw_bytes), header=header, encoding=enc).fillna("")
-            except: 
-                pass
+        for enc in ['utf-8', 'big5', 'cp950', 'utf-8-sig', 'utf-16']:
+            try: return pd.read_csv(io.BytesIO(raw_bytes), header=header, encoding=enc).fillna("")
+            except: pass
 
-    # 1. 嘗試標準 Excel 解析 (正常 .xlsx 或真 .xls)
+    # 1. 嘗試標準 Excel 解析 (.xlsx, .xls)
     try:
         target_sheet = 0 if sheet_name == "[校務系統相容模式]" else sheet_name
         return pd.read_excel(io.BytesIO(raw_bytes), sheet_name=target_sheet, header=header).fillna("")
-    except Exception:
-        pass
-        
-    # 💡 AI 工程師優化：2. 嘗試解析 TSV 偽裝檔，增強編碼容錯
-    for enc in ['big5', 'utf-8', 'utf-16', 'cp950', 'utf-8-sig']:
-        try:
-            df = pd.read_csv(io.BytesIO(raw_bytes), sep='\t', encoding=enc, header=header)
-            if df.shape[1] > 2: return df.fillna("")
-        except Exception: pass
+    except: pass
+    
+    # 1.5 嘗試舊版 xlrd 引擎 (針對古老 .xls)
+    try:
+        target_sheet = 0 if sheet_name == "[校務系統相容模式]" else sheet_name
+        return pd.read_excel(io.BytesIO(raw_bytes), engine='xlrd', sheet_name=target_sheet, header=header).fillna("")
+    except: pass
+
+    # 2. 嘗試解析 TSV / CSV 偽裝檔 (常見於偽裝的 .xls)
+    for sep in ['\t', ',']:
+        for enc in ['big5', 'utf-8', 'utf-16', 'utf-16le', 'cp950', 'utf-8-sig']:
+            try:
+                df = pd.read_csv(io.BytesIO(raw_bytes), sep=sep, encoding=enc, header=header)
+                if df.shape[1] > 2: return df.fillna("")
+            except: pass
             
-    # 💡 AI 工程師優化：3. 嘗試解析 HTML 表格偽裝檔，加入自動鎖定最大表格邏輯
-    for enc in ['big5', 'utf-8', 'cp950']:
+    # 3. HTML 表格偽裝檔 (雙軌制：Pandas 標準解析 + AI Regex 硬解)
+    for enc in ['big5', 'utf-8', 'cp950', 'utf-16', 'utf-16le']:
         try:
             html_str = raw_bytes.decode(enc, errors='ignore')
-            dfs = pd.read_html(io.StringIO(html_str))
-            if len(dfs) > 0:
-                # 如果有多個表格，找出列數最多的一個（通常這才是真實名單）
-                df_res = dfs[0].fillna("")
-                for df_tmp in dfs:
-                    if df_tmp.shape[0] > df_res.shape[0]:
-                        df_res = df_tmp.fillna("")
-                        
-                if header is None:
-                    new_row = pd.DataFrame([df_res.columns.tolist()], columns=df_res.columns)
-                    df_res = pd.concat([new_row, df_res], ignore_index=True)
-                    df_res.columns = range(df_res.shape[1])
-                return df_res
-        except Exception: pass
+            if "<table" in html_str.lower():
+                # 軌道 A: 依賴 pandas 內建 read_html (若環境具備 lxml/bs4 則秒解)
+                try:
+                    dfs = pd.read_html(io.StringIO(html_str))
+                    if len(dfs) > 0:
+                        df_res = max(dfs, key=lambda x: x.shape[0]).fillna("")
+                        if header is None:
+                            new_row = pd.DataFrame([df_res.columns.tolist()], columns=df_res.columns)
+                            df_res = pd.concat([new_row, df_res], ignore_index=True)
+                            df_res.columns = range(df_res.shape[1])
+                        return df_res
+                except: pass
+                
+                # 💡 軌道 B: AI Regex 暴力硬解 (當伺服器缺乏解析套件時的終極救星)
+                rows = re.findall(r'<tr.*?>(.*?)</tr>', html_str, re.IGNORECASE | re.DOTALL)
+                if rows:
+                    table_data = []
+                    for r in rows:
+                        cols = re.findall(r'<t[dh].*?>(.*?)</t[dh]>', r, re.IGNORECASE | re.DOTALL)
+                        # 清除可能殘留的 HTML tag 與空白
+                        cols = [re.sub(r'<.*?>', '', c).strip() for c in cols]
+                        table_data.append(cols)
+                    
+                    if table_data:
+                        df_res = pd.DataFrame(table_data)
+                        if header == 'infer' and len(df_res) > 1:
+                            df_res.columns = df_res.iloc[0]
+                            df_res = df_res[1:].reset_index(drop=True)
+                        elif header is None:
+                            df_res.columns = range(df_res.shape[1])
+                        return df_res.fillna("")
+        except: pass
+        
+    # 4. XML Spreadsheet 偽裝檔 (早期 Excel 2003 XML)
+    try:
+        xml_str = raw_bytes.decode('utf-8', errors='ignore')
+        if "<?xml" in xml_str and "Workbook" in xml_str:
+            return pd.read_xml(io.BytesIO(raw_bytes)).fillna("")
+    except: pass
             
-    raise ValueError("檔案結構徹底損毀，請於 Excel 中開啟此檔後『另存新檔為 .xlsx』再重新上傳。")
+    # 若全數失敗，印出檔案特徵以利未來 debug
+    head_str = raw_bytes[:50].decode('utf-8', errors='ignore').replace('\n', ' ')
+    raise ValueError(f"無法解析此檔案特徵 [{head_str}...]，請於 Excel 中開啟此檔後『另存新檔為 .xlsx』再重新上傳。")
 
 def get_str_col(df, keywords):
     if isinstance(keywords, str): keywords = [keywords]
