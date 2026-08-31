@@ -34,7 +34,7 @@ if 'template_excel_data' not in st.session_state:
     st.session_state.template_excel_data = None
 
 # ==========================================
-# 2. 輔助功能定義 (防呆與髒數據處理)
+# 2. 輔助功能定義 (防呆與多維度讀取引擎)
 # ==========================================
 def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
     """
@@ -62,7 +62,7 @@ def smart_read_excel(file_uploader, sheet_name=0, header='infer'):
     except Exception:
         pass
         
-    # 2. 嘗試解析 TSV (Tab-Separated Values) 偽裝檔 (WebHR 等常見)
+    # 2. 嘗試解析 TSV (Tab-Separated Values) 偽裝檔 (校務系統常見)
     for enc in ['big5', 'utf-8', 'utf-16', 'cp950']:
         try:
             df = pd.read_csv(io.BytesIO(raw_bytes), sep='\t', encoding=enc, header=header)
@@ -155,7 +155,7 @@ with tab1:
                 else:
                     selected_roster_sheet = sheet_names[0]
             except Exception as e:
-                # 💡 攔截校務系統特殊檔案 (改交由 smart_read_excel 處理)
+                # 💡 無痕攔截 TSV 假檔並賦予虛擬標籤，交由 smart_read_excel 處理
                 sheet_names = ["[校務系統相容模式]"]
                 selected_roster_sheet = sheet_names[0]
                 st.success("✅ 已啟動校務系統專屬相容模式，成功鎖定名單！")
