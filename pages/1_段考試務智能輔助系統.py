@@ -33,7 +33,7 @@ except:
 # ==========================================
 st.set_page_config(page_title="段考試務全能系統", page_icon="🏫", layout="wide")
 st.title("🏫 試務組 - 段考試務全能系統 (旗艦整合版)")
-st.info("💡 終極升級：已加裝「命題教師內部最大間距打散引擎」！保證同一位老師絕對不會集中在相鄰段考命題，實現最完美的跨學期 2/2 對稱與錯開！")
+st.info("💡 終極升級：階段三已新增「第一節排※指定班級」介面，並完美結合「特定老師班級綁定」與「※與△同班連堂」的雙重分發引擎！")
 
 # --- 狀態記憶體初始化 (Session State) ---
 if 'uploader_key' not in st.session_state:
@@ -154,7 +154,6 @@ def matches_date(val_str, d_date):
 
 # ----- 【階段一：命題出題輔助】 -----
 def clean_subject_name_p1(subj_raw):
-    """【修復關鍵】：精準映射，避免科目被誤取代"""
     if pd.isna(subj_raw) or subj_raw is None: return ""
     s = str(subj_raw).strip()
     s = re.sub(r'[（\(].*?[）\)]', '', s)
@@ -289,41 +288,34 @@ def extract_history(file_history):
     return history_map
 
 def generate_perfect_balanced_sequence(pool, global_counts, sequence_length=10):
-    """【終極對稱演算法】：同時解決跨科防撞、上下學期均分、以及內部最大距離打散"""
     if not pool: return [""] * sequence_length
     best_seq = None
     best_penalty = float('inf')
     pool_counts = {}
     for t in pool: pool_counts[t] = pool_counts.get(t, 0) + 1
     
-    # 提升算力至 2000 次，尋找絕對無瑕疵陣型
     for _ in range(2000):
         shuffled = pool.copy()
         random.shuffle(shuffled)
         seq = [shuffled[i % len(shuffled)] for i in range(sequence_length)]
         penalty = 0
         
-        # 1. 跨科全域防撞 (極重度懲罰：平方放大)
         for i, t in enumerate(seq): 
             if global_counts[t][i] > 0:
                 penalty += (global_counts[t][i] ** 2) * 1000
                 
-        # 2. 上下學期對稱性 (Half-Split: 確保 2次/2次 等分)
         first_half, second_half = seq[:5], seq[5:10]
         for t, total_c in pool_counts.items():
             if total_c > 1:
                 diff = abs(first_half.count(t) - second_half.count(t))
                 if diff > 1: penalty += (diff * 200)
                 
-        # 3. 相鄰連莊懲罰 (Adjacency Penalty)
         for i in range(len(seq) - 1):
             if seq[i] == seq[i+1] and seq[i] != "": penalty += 50
             
-        # 4. 【全新】最大間距跳躍打散懲罰 (確保同一學期內不出現在相近次數)
         for i in range(len(seq)):
             t = seq[i]
             if t:
-                # 掃描接下來的兩個位置，如果有相同名字就處罰，強制拉開距離！
                 for j in range(i+1, min(i+3, len(seq))):
                     if seq[j] == t: penalty += 20
                     
@@ -331,7 +323,7 @@ def generate_perfect_balanced_sequence(pool, global_counts, sequence_length=10):
             best_penalty = penalty
             best_seq = seq
             
-        if penalty == 0: break # 若找到 0 瑕疵完美解，提早結束運算
+        if penalty == 0: break 
             
     for i, t in enumerate(best_seq): global_counts[t][i] += 1
     return best_seq
@@ -342,7 +334,7 @@ def generate_perfect_balanced_sequence(pool, global_counts, sequence_length=10):
 tab1, tab2, tab3 = st.tabs(["🎯 階段一：命題出題教師排定", "📑 階段二：試卷催繳通知單", "📅 階段三：段考監考智能排班"])
 
 # ---------------------------------------------------------
-# 【階段一：命題出題教師排定】
+# 【階段一：命題出題教師排定】 
 # ---------------------------------------------------------
 with tab1:
     st.subheader("🎯 階段一：命題與出題教師自動排定系統")
@@ -480,7 +472,6 @@ with tab1:
                             final_teachers = list(dict.fromkeys(final_teachers))
                         
                         if cache_key not in assignment_cache:
-                            # 啟動 2000 次蒙地卡羅完美解尋找
                             assigned_seq = generate_perfect_balanced_sequence(final_teachers, global_teacher_assignment_counts, sequence_length=10)
                             assignment_cache[cache_key] = assigned_seq
                         
@@ -529,9 +520,8 @@ with tab1:
             with st.expander("🔎 系統寫入透視日誌 (點此展開)"):
                 for msg in st.session_state.get('debug_log_p1', []): st.write(msg)
 
-
 # ---------------------------------------------------------
-# 【階段二：試卷催繳通知單】
+# 【階段二：試卷催繳通知單】 
 # ---------------------------------------------------------
 with tab2:
     st.subheader("📑 階段二：試卷催繳通知單自動生成系統")
@@ -625,13 +615,12 @@ with tab2:
         with c2:
             st.download_button("💬 下載：訊息複製版", st.session_state['docx_data_p2_msg'], f"{selected_sheet_p2}催繳通知單_訊息版.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
 
-
 # ---------------------------------------------------------
 # 【階段三：段考監考智能輔助系統】
 # ---------------------------------------------------------
 with tab3:
     st.subheader("📅 階段三：段考監考智能輔助系統 (終極完全體)")
-    st.info("💡 終極升級：實裝「雙重智慧檢核機制」！AI 將在匯出總表全自動對帳，精準抓出人力缺口。")
+    st.info("💡 終極升級：實裝「雙重智慧檢核機制」，並且已加入「第一節(※)指定班級」與「第一節※第二節△同班連堂」的完美鎖定機制！保留了特定老師綁定特定班級的優先權。")
 
     col1_p3, col2_p3 = st.columns([1, 1], gap="large")
 
@@ -698,7 +687,18 @@ with tab3:
         )
 
         st.write("---")
-        st.markdown("#### 🎯 特定班級與老師綁定")
+        # 【功能新增】：UI 選單供老師指定 第一節(※) 綁定班級
+        st.markdown("#### ⭐ 第一節(※) 指定班級設定")
+        st.info("💡 提供選擇第一天或第二天的第一節哪些班級排※的老師，且第二節會自動連堂排在同一個班級。")
+        c_star1, c_star2 = st.columns(2)
+        with c_star1:
+            day1_star_classes = st.multiselect("📅 Day 1 第一節排 ※ 班級", options=class_list_p3 if class_list_p3 else [], key=f"d1_star_{st.session_state['uploader_key']}")
+        with c_star2:
+            day2_star_classes = st.multiselect("📅 Day 2 第一節排 ※ 班級", options=class_list_p3 if class_list_p3 else [], key=f"d2_star_{st.session_state['uploader_key']}")
+
+        st.write("---")
+        st.markdown("#### 🎯 特定老師與班級綁定")
+        st.info("💡 原有功能：指定老師只要有排班，優先去指定的班級。")
 
         file_bind_p3 = st.file_uploader("📥 [選填] 匯入既有綁定名單 (.xlsx)", type=['xlsx'], key=f"f_bind_{st.session_state['uploader_key']}")
         if file_bind_p3 and st.session_state.last_bind_file != file_bind_p3.name:
@@ -729,9 +729,9 @@ with tab3:
         if st.button("🗑️ 清除設定 (僅限階段三)", use_container_width=True, key="p3_clear"):
             st.session_state['results_p3'] = None
             st.session_state['uploader_key'] += 1
-            if 'bind_rules' in st.session_state: del st.session_state['bind_rules']
-            if 'time_rules' in st.session_state: del st.session_state['time_rules']
-            if 'last_bind_file' in st.session_state: del st.session_state['last_bind_file']
+            st.session_state.bind_rules = pd.DataFrame([{"老師": None, "班級": None}] * 3)
+            st.session_state.time_rules = pd.DataFrame([{"老師": None, "允許日期": "無限制", "允許節次": ""} for _ in range(3)])
+            st.session_state.last_bind_file = None
             st.rerun()
 
     st.divider()
@@ -777,8 +777,11 @@ with tab3:
                     row_name = str(df_type.iloc[i, 0]).strip()
                     if row_name in ['△', '※']:
                         req_list = [int(float(v)) for c in range(1, df_type.shape[1]) if (v:=str(df_type.iloc[i, c]).strip())]
-                        req_padded = (req_list + [0]*total_periods)[:total_periods]
-                        req_matrix[row_name] = [req_padded[period_cols.index(c)] for c in ai_period_cols]
+                        req_padded = (req_list + [0] * max(total_periods, len(req_list), 20)) 
+                        try:
+                            req_matrix[row_name] = [req_padded[period_cols.index(c)] for c in ai_period_cols]
+                        except Exception:
+                            req_matrix[row_name] = req_padded[:ai_periods]
 
                 ai_date_strs = [d1_date_p3.strftime('%m月%d日'), d2_date_p3.strftime('%m月%d日')]
                 header_df = df_list_raw.iloc[0:header_row_idx+1].copy().astype(str).replace('nan', '')
@@ -893,55 +896,116 @@ with tab3:
 
                 df_out_master = pd.concat([pd.DataFrame([empty_row, row_act_d, row_req_d, row_act_s, row_req_s, row_diff, {c: "" for c in df_out_master.columns}]), df_out_master], ignore_index=True)
 
-                with st.spinner("🎯 執行班級自動分配..."):
+                with st.spinner("🎯 執行班級自動分配 (完美保留特許與連堂機制)..."):
                     df_assign_calc = pd.read_excel(file_assign_p3, header=None).dropna(how='all').fillna("")
                     class_names_raw = [x for x in df_assign_calc.iloc[:, 0].astype(str).str.strip().tolist() if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考", "註"])]
                     assign_map = {normalize_cls(name): idx for idx, name in enumerate(class_names_raw)}
                     
-                    t2c_map = {str(row['老師']).strip(): assign_map[normalize_cls(row['班級'])] for _, row in edited_bind_df.iterrows() if str(row['老師']).strip() and str(row['老師']).strip() != 'None' and normalize_cls(row['班級']) in assign_map}
+                    # 1. 解析「特定老師綁定」設定
+                    t2c_map = {}
+                    for _, row in edited_bind_df.iterrows():
+                        t_name = str(row['老師']).strip()
+                        c_name = normalize_cls(row['班級'])
+                        if t_name and t_name != 'None' and c_name in assign_map:
+                            t2c_map[t_name] = assign_map[c_name]
+
+                    # 2. 解析「第一節排 ※」目標班級設定
+                    norm_day1_star = [normalize_cls(c) for c in day1_star_classes]
+                    norm_day2_star = [normalize_cls(c) for c in day2_star_classes]
+
                     assigned_matrix = np.empty((len(class_names_raw), ai_periods), dtype=object)
                     
                     for i_day, day_start in enumerate(day_starts):
                         day_end = day_starts[i_day+1] if i_day+1 < len(day_starts) else ai_periods
                         day_length = day_end - day_start
+                        
+                        # --- 【分配 第一節 j1】 ---
                         j1 = day_start
-                        proctors_j1 = [t for t in teachers if schedule_dict[t][j1] in ["△", "※"]]
-                        random.shuffle(proctors_j1)
-                        rem_j1 = []
-                        for p in proctors_j1:
-                            if p in t2c_map and assigned_matrix[t2c_map[p], j1] is None: assigned_matrix[t2c_map[p], j1] = p
-                            else: rem_j1.append(p)
+                        target_star_norm = norm_day1_star if i_day == 0 else norm_day2_star
+                        
+                        star_pool = [t for t in teachers if schedule_dict[t][j1] == "※"]
+                        triangle_pool = [t for t in teachers if schedule_dict[t][j1] == "△"]
+                        random.shuffle(star_pool)
+                        random.shuffle(triangle_pool)
+
+                        # Step 1: 處理【特定老師】指定班級
+                        for p in list(star_pool) + list(triangle_pool):
+                            if p in t2c_map:
+                                idx = t2c_map[p]
+                                if idx < assigned_matrix.shape[0] and assigned_matrix[idx, j1] is None:
+                                    assigned_matrix[idx, j1] = p
+                                    if p in star_pool: star_pool.remove(p)
+                                    if p in triangle_pool: triangle_pool.remove(p)
+
+                        # Step 2: 處理【目標 ※ 班級】
+                        for norm_c in target_star_norm:
+                            if norm_c in assign_map:
+                                idx = assign_map[norm_c]
+                                if assigned_matrix[idx, j1] is None and star_pool:
+                                    assigned_matrix[idx, j1] = star_pool.pop(0)
+
+                        # Step 3: 其餘老師隨機填補空缺
+                        rem_pool = star_pool + triangle_pool
+                        random.shuffle(rem_pool)
                         r_ptr = 0
                         for idx in range(len(class_names_raw)):
-                            if assigned_matrix[idx, j1] is None and r_ptr < len(rem_j1): assigned_matrix[idx, j1] = rem_j1[r_ptr]; r_ptr += 1
-                        
+                            if assigned_matrix[idx, j1] is None and r_ptr < len(rem_pool):
+                                assigned_matrix[idx, j1] = rem_pool[r_ptr]
+                                r_ptr += 1
+
+                        # --- 【分配 第二節 j2 之後】 ---
                         if day_length > 1:
                             j2 = day_start + 1
-                            bound = {p_prev: True for idx in range(len(class_names_raw)) if (p_prev:=assigned_matrix[idx, j1]) in schedule_dict and schedule_dict[p_prev][j1] == "※" and schedule_dict[p_prev][j2] == "△"}
-                            rem = [p for p in [t for t in teachers if schedule_dict[t][j2] in ["△", "※"]] if p not in bound]
-                            random.shuffle(rem)
-                            rem_after_bind = []
-                            for p in rem:
-                                if p in t2c_map and assigned_matrix[t2c_map[p], j2] is None: assigned_matrix[t2c_map[p], j2] = p
-                                else: rem_after_bind.append(p)
-                            for p_prev in bound.keys():
-                                for idx in range(len(class_names_raw)):
-                                    if assigned_matrix[idx, j1] == p_prev: assigned_matrix[idx, j2] = p_prev
+                            bound_teachers = set()
+                            
+                            # Step 1: 處理【連堂鎖定】(※ -> △ 必留同班)
+                            for idx in range(len(class_names_raw)):
+                                if idx < assigned_matrix.shape[0]:
+                                    p_prev = assigned_matrix[idx, j1]
+                                    if p_prev and schedule_dict[p_prev][j1] == "※" and schedule_dict[p_prev][j2] == "△":
+                                        assigned_matrix[idx, j2] = p_prev
+                                        bound_teachers.add(p_prev)
+                            
+                            proctors_j2 = [t for t in teachers if schedule_dict[t][j2] in ["△", "※"]]
+                            rem_j2 = [p for p in proctors_j2 if p not in bound_teachers]
+                            
+                            # Step 2: 處理【特定老師】指定班級 (若未被連堂綁定處理掉)
+                            for p in list(rem_j2):
+                                if p in t2c_map:
+                                    idx = t2c_map[p]
+                                    if idx < assigned_matrix.shape[0] and assigned_matrix[idx, j2] is None:
+                                        assigned_matrix[idx, j2] = p
+                                        rem_j2.remove(p)
+
+                            # Step 3: 其餘隨機填補 j2
+                            random.shuffle(rem_j2)
                             r_idx = 0
                             for idx in range(len(class_names_raw)):
-                                if assigned_matrix[idx, j2] is None and r_idx < len(rem_after_bind): assigned_matrix[idx, j2] = rem_after_bind[r_idx]; r_idx += 1
+                                if assigned_matrix[idx, j2] is None and r_idx < len(rem_j2):
+                                    assigned_matrix[idx, j2] = rem_j2[r_idx]
+                                    r_idx += 1
 
+                            # --- 【分配 第三節之後】常規填補 ---
                             for offset in range(2, day_length):
                                 curr_j = day_start + offset
                                 proctors = [t for t in teachers if schedule_dict[t][curr_j] in ["△", "※"]]
-                                random.shuffle(proctors)
-                                rem_curr = []
-                                for p in proctors:
-                                    if p in t2c_map and assigned_matrix[t2c_map[p], curr_j] is None: assigned_matrix[t2c_map[p], curr_j] = p
-                                    else: rem_curr.append(p)
+                                rem_curr = list(proctors)
+                                
+                                # 優先處理【特定老師】指定班級
+                                for p in list(rem_curr):
+                                    if p in t2c_map:
+                                        idx = t2c_map[p]
+                                        if idx < assigned_matrix.shape[0] and assigned_matrix[idx, curr_j] is None:
+                                            assigned_matrix[idx, curr_j] = p
+                                            rem_curr.remove(p)
+                                            
+                                # 剩餘名額隨機填入
+                                random.shuffle(rem_curr)
                                 r_ptr = 0
                                 for idx in range(len(class_names_raw)):
-                                    if assigned_matrix[idx, curr_j] is None and r_ptr < len(rem_curr): assigned_matrix[idx, curr_j] = rem_curr[r_ptr]; r_ptr += 1
+                                    if assigned_matrix[idx, curr_j] is None and r_ptr < len(rem_curr):
+                                        assigned_matrix[idx, curr_j] = rem_curr[r_ptr]
+                                        r_ptr += 1
 
                     class_proctor_schedule = {normalize_cls(c_name): [assigned_matrix[r_idx, col] for col in range(ai_periods)] for r_idx, c_name in enumerate(class_names_raw)}
 
@@ -1071,10 +1135,13 @@ with tab3:
                             subj = normalize_subject_p3(subj_raw)
                             
                             if '任課教師' in col_map:
-                                teacher = course_dict.get((cls, subj), "")
-                                if not teacher:
-                                    for (c, s), t in course_dict.items():
-                                        if c == cls and (subj in s or s in subj): teacher = t; break
+                                if not subj:
+                                    teacher = ""
+                                else:
+                                    teacher = course_dict.get((cls, subj), "")
+                                    if not teacher:
+                                        for (c, s), t in course_dict.items():
+                                            if c == cls and (subj in s or s in subj): teacher = t; break
                                 if teacher: ws_label.cell(row=r, column=col_map['任課教師']).value = teacher
                             
                             try: p_val = int(float(str(seq_val).strip()))
@@ -1106,7 +1173,7 @@ with tab3:
                 
                 if not discrepancies:
                     st.balloons()
-                    st.success("✅ 完美排班！所有節次的監考人數與「監考類型總數」100% 吻合！")
+                    st.success("✅ 完美排班！「第一節(※)綁定班級」與「第二節同班鎖定」邏輯已生效，且總人數 100% 吻合！")
                 else:
                     st.warning("⚠️ 檢核提示：因特定鎖定條件，部分節次排入人數與需求有落差，明細如下：")
                     for d in discrepancies: st.write(f"- {d}")
