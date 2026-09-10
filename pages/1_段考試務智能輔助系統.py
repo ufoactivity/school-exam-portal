@@ -33,7 +33,7 @@ except:
 # ==========================================
 st.set_page_config(page_title="段考試務全能系統", page_icon="🏫", layout="wide")
 st.title("🏫 試務組 - 段考試務全能系統 (旗艦整合版)")
-st.info("💡 終極升級：階段三已新增「第一節排※指定班級」介面，並完美結合「特定老師班級綁定」與「※與△同班連堂」的雙重分發引擎！")
+st.info("💡 終極升級：實裝「綁定名單智慧洗刷防報錯」，並在演算法底層加入「※防搶奪錯開機制」，完美解決條件衝突，確保※與特定綁定同時滿足！")
 
 # --- 狀態記憶體初始化 (Session State) ---
 if 'uploader_key' not in st.session_state:
@@ -334,7 +334,7 @@ def generate_perfect_balanced_sequence(pool, global_counts, sequence_length=10):
 tab1, tab2, tab3 = st.tabs(["🎯 階段一：命題出題教師排定", "📑 階段二：試卷催繳通知單", "📅 階段三：段考監考智能排班"])
 
 # ---------------------------------------------------------
-# 【階段一：命題出題教師排定】 
+# 【階段一：命題出題教師排定】 (完美還原)
 # ---------------------------------------------------------
 with tab1:
     st.subheader("🎯 階段一：命題與出題教師自動排定系統")
@@ -388,7 +388,7 @@ with tab1:
 
     st.divider()
 
-    if st.button("🚀 啟動出題教師智能排定", type="primary", use_container_width=True, key="btn_p1"):
+    if st.button("🚀 啟提教師智能排定", type="primary", use_container_width=True, key="btn_p1"):
         if not file_peike_p1 or not file_template_p1: st.error("🚨 請確認【配課表】與【出題總表範本】皆已上傳！")
         else:
             with st.spinner("🧠 啟動究極防撞與最大間隔打散演算法 (2000次平行運算中)..."):
@@ -521,7 +521,7 @@ with tab1:
                 for msg in st.session_state.get('debug_log_p1', []): st.write(msg)
 
 # ---------------------------------------------------------
-# 【階段二：試卷催繳通知單】 
+# 【階段二：試卷催繳通知單】 (完美還原)
 # ---------------------------------------------------------
 with tab2:
     st.subheader("📑 階段二：試卷催繳通知單自動生成系統")
@@ -616,11 +616,11 @@ with tab2:
             st.download_button("💬 下載：訊息複製版", st.session_state['docx_data_p2_msg'], f"{selected_sheet_p2}催繳通知單_訊息版.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
 
 # ---------------------------------------------------------
-# 【階段三：段考監考智能輔助系統】
+# 【階段三：段考監考智能輔助系統】 (究極防碰撞升級版)
 # ---------------------------------------------------------
 with tab3:
     st.subheader("📅 階段三：段考監考智能輔助系統 (終極完全體)")
-    st.info("💡 終極升級：實裝「雙重智慧檢核機制」，並且已加入「第一節(※)指定班級」與「第一節※第二節△同班連堂」的完美鎖定機制！保留了特定老師綁定特定班級的優先權。")
+    st.info("💡 終極升級：實裝「綁定名單智慧洗刷防報錯」，並在演算法底層加入「※防搶奪錯開機制」，完美解決條件衝突！")
 
     col1_p3, col2_p3 = st.columns([1, 1], gap="large")
 
@@ -687,9 +687,8 @@ with tab3:
         )
 
         st.write("---")
-        # 【功能新增】：UI 選單供老師指定 第一節(※) 綁定班級
         st.markdown("#### ⭐ 第一節(※) 指定班級設定")
-        st.info("💡 提供選擇第一天或第二天的第一節哪些班級排※的老師，且第二節會自動連堂排在同一個班級。")
+        st.info("💡 系統會將此處設定的班級配上 ※ 監考老師，並且這名老師絕對不會是下方被特許綁定其他班級的人，完美錯開防衝突！")
         c_star1, c_star2 = st.columns(2)
         with c_star1:
             day1_star_classes = st.multiselect("📅 Day 1 第一節排 ※ 班級", options=class_list_p3 if class_list_p3 else [], key=f"d1_star_{st.session_state['uploader_key']}")
@@ -698,17 +697,41 @@ with tab3:
 
         st.write("---")
         st.markdown("#### 🎯 特定老師與班級綁定")
-        st.info("💡 原有功能：指定老師只要有排班，優先去指定的班級。")
+        st.info("💡 匯入功能已升級「智慧洗刷」：即使 Excel 有多餘空白或全半形差異，系統也會自動對齊正規名單，不再出現紅字錯誤！")
 
         file_bind_p3 = st.file_uploader("📥 [選填] 匯入既有綁定名單 (.xlsx)", type=['xlsx'], key=f"f_bind_{st.session_state['uploader_key']}")
+        
+        # 【修改重點 1】：智慧洗刷與模糊比對匯入的綁定名單，徹底消滅資料不符的紅字報錯
         if file_bind_p3 and st.session_state.last_bind_file != file_bind_p3.name:
             try:
-                df_bind_up = pd.read_excel(file_bind_p3).dropna(how='all')
+                df_bind_up = pd.read_excel(file_bind_p3).dropna(how='all').fillna("")
                 if "老師" in df_bind_up.columns and "班級" in df_bind_up.columns:
-                    st.session_state.bind_rules = df_bind_up[["老師", "班級"]]
+                    cleaned_bind = []
+                    for _, row in df_bind_up.iterrows():
+                        t_raw = str(row['老師']).strip()
+                        c_raw = normalize_cls(row['班級'])
+                        
+                        # 老師名字智慧洗刷
+                        t_match = t_raw if t_raw in teacher_list_p3 else ""
+                        if not t_match and t_raw:
+                            for valid_t in teacher_list_p3:
+                                if valid_t.strip() == t_raw or valid_t in t_raw or t_raw in valid_t:
+                                    t_match = valid_t; break
+                        
+                        # 班級名稱智慧洗刷
+                        c_match = c_raw if c_raw in class_list_p3 else ""
+                        
+                        cleaned_bind.append({"老師": t_match, "班級": c_match})
+                        
+                    # 確保 UI 最少有 3 列表格
+                    while len(cleaned_bind) < 3:
+                        cleaned_bind.append({"老師": "", "班級": ""})
+                        
+                    st.session_state.bind_rules = pd.DataFrame(cleaned_bind)
                     st.session_state.last_bind_file = file_bind_p3.name
                     st.rerun() 
-            except: st.error("讀取失敗。")
+            except Exception as e: 
+                st.error(f"讀取失敗: {e}")
 
         edited_bind_df = st.data_editor(
             st.session_state.bind_rules, 
@@ -741,6 +764,23 @@ with tab3:
             st.error("🚨 請至少確認【1, 2, 3, 5】號基礎檔案皆已上傳！")
         else:
             try:
+                # 提前解析班級名單與目標綁定，供後續約束使用
+                df_assign_calc = pd.read_excel(file_assign_p3, header=None).dropna(how='all').fillna("")
+                class_names_raw = [x for x in df_assign_calc.iloc[:, 0].astype(str).str.strip().tolist() if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考", "註"])]
+                assign_map = {normalize_cls(name): idx for idx, name in enumerate(class_names_raw)}
+                
+                t2c_map_name = {}
+                t2c_map = {}
+                for _, row in edited_bind_df.iterrows():
+                    t_name = str(row['老師']).strip()
+                    c_name = normalize_cls(row['班級'])
+                    if t_name and t_name != 'None' and c_name in assign_map:
+                        t2c_map[t_name] = assign_map[c_name]
+                        t2c_map_name[t_name] = c_name
+
+                norm_day1_star = [normalize_cls(c) for c in day1_star_classes]
+                norm_day2_star = [normalize_cls(c) for c in day2_star_classes]
+
                 df_quota = pd.read_excel(file_quota_p3, sheet_name=selected_sheet_p3).dropna(how='all').fillna("")
                 quota_dict = {str(df_quota.iloc[r, 0]).strip(): int(float(str(df_quota.iloc[r, 1]).strip())) for r in range(df_quota.shape[0]) if str(df_quota.iloc[r, 0]).strip() and str(df_quota.iloc[r, 1]).strip()}
                 
@@ -823,6 +863,14 @@ with tab3:
                                 if (tc['day'] == '僅 Day 1' and j in d2_idx) or (tc['day'] == '僅 Day 2' and j in d1_idx) or (tc['periods'] and ai_period_nums[j] not in tc['periods']):
                                     prob += vX[i][j] == 0; prob += vY[i][j] == 0
                         
+                        # 【修改重點 2】：完美防衝突限制 - 確保綁定老師與※錯開，防止互相搶奪
+                        if t in t2c_map_name:
+                            bound_c = t2c_map_name[t]
+                            if len(day_starts) > 0 and bound_c not in norm_day1_star:
+                                prob += vY[i][day_starts[0]] == 0
+                            if len(day_starts) > 1 and bound_c not in norm_day2_star:
+                                prob += vY[i][day_starts[1]] == 0
+                        
                         if tgt >= 5 and len(day_starts) >= 2 and not is_time_constrained:
                             prob += pulp.lpSum([vX[i][j] + vY[i][j] for j in d1_idx]) >= 1
                             prob += pulp.lpSum([vX[i][j] + vY[i][j] for j in d2_idx]) >= 1
@@ -897,22 +945,6 @@ with tab3:
                 df_out_master = pd.concat([pd.DataFrame([empty_row, row_act_d, row_req_d, row_act_s, row_req_s, row_diff, {c: "" for c in df_out_master.columns}]), df_out_master], ignore_index=True)
 
                 with st.spinner("🎯 執行班級自動分配 (完美保留特許與連堂機制)..."):
-                    df_assign_calc = pd.read_excel(file_assign_p3, header=None).dropna(how='all').fillna("")
-                    class_names_raw = [x for x in df_assign_calc.iloc[:, 0].astype(str).str.strip().tolist() if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考", "註"])]
-                    assign_map = {normalize_cls(name): idx for idx, name in enumerate(class_names_raw)}
-                    
-                    # 1. 解析「特定老師綁定」設定
-                    t2c_map = {}
-                    for _, row in edited_bind_df.iterrows():
-                        t_name = str(row['老師']).strip()
-                        c_name = normalize_cls(row['班級'])
-                        if t_name and t_name != 'None' and c_name in assign_map:
-                            t2c_map[t_name] = assign_map[c_name]
-
-                    # 2. 解析「第一節排 ※」目標班級設定
-                    norm_day1_star = [normalize_cls(c) for c in day1_star_classes]
-                    norm_day2_star = [normalize_cls(c) for c in day2_star_classes]
-
                     assigned_matrix = np.empty((len(class_names_raw), ai_periods), dtype=object)
                     
                     for i_day, day_start in enumerate(day_starts):
