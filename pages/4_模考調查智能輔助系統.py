@@ -123,7 +123,6 @@ with tab1:
         school_type = st.radio("🏫 選擇產出的學制類型：", ["技高 (統測群類)", "普高 (學測考科)"], horizontal=True)
         
     with col2_t1:
-        # --- 修改點：將預設標題的 "114" 替換為動態變數 academic_year ---
         default_title = f"{academic_year}學年度國立華南高商統測模擬考 報考類組調查表" if "技高" in school_type else f"{academic_year}學年度國立華南高商學測模擬考 報考考科調查表"
         template_name = st.text_input("🎯 擬定表單大標題", value=default_title)
         default_price = st.number_input("💰 預設單次費用 (無對照檔或查無資料時套用，可留 0)", min_value=0, max_value=2000, value=0, step=10)
@@ -523,7 +522,6 @@ with tab2:
                     
                     raw_cat_series = get_str_col(df_data_preload, ['報考', '類群', '科目', '組別', '類組'])
                     raw_name_series = get_str_col(df_data_preload, ['姓名', '學生姓名'])
-                    # --- 新增：同時抓取學生列的費用，作為技高或查無對照表時的備案 ---
                     raw_fee_series = get_str_col(df_data_preload, ['單次費用', '費用', '金額', '單價'])
                     
                     unique_cats = set()
@@ -534,14 +532,14 @@ with tab2:
                         cv = str(cat_val).strip().split('.')[0]
                         cat_name = ""
                         
+                        # --- 重大修正：移除原有的「不升學、休學等」過濾，讓所有特殊狀態都能顯示在右側預覽表中 ---
                         if cv in preload_mapping:
                             cat_name = preload_mapping[cv]
-                        elif cv and cv not in ["", "報考類組", "不升學", "休學", "重讀", "長期未到校", "否", "nan"] and not str(cat_val).startswith('*'):
+                        elif cv and cv not in ["", "報考類組", "nan"] and not str(cat_val).startswith('*'):
                             cat_name = str(cat_val).strip()
                             
                         if cat_name:
                             unique_cats.add(cat_name)
-                            # --- 新增：若該類群還沒抓到費用，則從學生的單次費用欄位自動補齊 ---
                             if cat_name not in extracted_fees:
                                 fv = str(fee_val).strip()
                                 if fv and fv != 'nan':
@@ -562,7 +560,6 @@ with tab2:
         
         school_type_p2 = st.radio("🏫 選擇本表單學制類型：", ["技高 (全學年5次合併收費)", "普高 (依次數彈性收費)"], horizontal=True, key="school_type_p2")
         
-        # --- 修改點：將階段二的預設標題 "114" 也替換為動態變數 academic_year ---
         if "普高" in school_type_p2:
             fee_mode = st.radio("🔄 普高本次收費模式：", ["收 1 次費用 (如：第一、二次模考)", "收 2 次費用 (如：第三、四次合併)"], horizontal=True)
             fee_multiplier = 1 if "1 次" in fee_mode else 2
@@ -579,10 +576,11 @@ with tab2:
         special_fee_dict = {}
         if file_survey and detected_categories:
             st.markdown("### 💰 各類群單次費用檢核表")
-            st.caption("💡 系統已自動將您上傳表單中的金額帶入，請檢核。")
+            st.caption("💡 系統已自動將您上傳表單中的金額帶入，請檢核。所有填寫狀態(含休學、未到校)皆會顯示於此。")
             
             default_fees = []
             for cat in detected_categories:
+                # 抓取不到預設費用時，就補上 base_fee
                 default_fees.append(extracted_fees.get(cat, base_fee_p2)) 
                 
             fee_df = pd.DataFrame({
@@ -681,11 +679,12 @@ with tab2:
                         
                     df_students_only = df_all[df_all.apply(is_valid_student, axis=1)].copy()
 
+                    # --- 修改歸類邏輯：讓這些狀態都正確歸類在不收費的檢核表中 ---
                     def determine_status_or_cat(row):
                         raw = str(row['原始報考']).strip().split('.')[0]
                         if raw in mapping_dict:
                             return "VALID", mapping_dict[raw]
-                        elif raw in ["不升學", "休學", "重讀", "長期未到校"]:
+                        elif raw in ["不升學", "休學", "重讀", "長期未到校", "未到校", "放棄學籍"]:
                             return "UNREPORTED", raw
                         elif raw in ["", "nan", "否", "0", "None"]:
                             return "UNREPORTED", "未填寫/未報考"
@@ -956,7 +955,7 @@ with tab2:
     # ==========================================
     if st.session_state.mock_processed:
         st.balloons()
-        st.success("🎉 第二階段試務報表結算完成！")
+        st.success("🎉 第二階段試務報表結算完成！所有特殊狀態皆已正確過濾與顯示。")
         
         st.download_button(
             label="📥 點擊下載【模擬考收費與各班未報考人數交叉檢核總表】",
