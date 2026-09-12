@@ -620,7 +620,7 @@ with tab2:
 # ---------------------------------------------------------
 with tab3:
     st.subheader("📅 階段三：段考監考智能輔助系統 (終極完全體)")
-    st.info("💡 終極升級：實裝「綁定名單智慧洗刷防報錯」，並在演算法底層加入「※防搶奪錯開機制」，完美解決條件衝突！")
+    st.info("💡 終極升級：實裝「優先名單精準洗算扣除機制」，依照順序先全員扣1堂，再針對堂數多的人扣除剩餘溢出額度，防呆且精準！")
 
     col1_p3, col2_p3 = st.columns([1, 1], gap="large")
 
@@ -653,7 +653,7 @@ with tab3:
                     if len(lst) > 10:
                         teacher_list_p3 = lst; break
                 except: pass
-            flex_names_p3 = st.multiselect("🛡️ 優先時數不大於名單：", options=teacher_list_p3, key="p3_flex_names")
+            flex_names_p3 = st.multiselect("🛡️ 優先時數不大於名單：", options=teacher_list_p3, help="按照選取順序：優先每人都扣1堂，還有需扣除時從堂數多的人再扣。", key="p3_flex_names")
 
         class_list_p3 = []
         if file_assign_p3:
@@ -701,7 +701,7 @@ with tab3:
 
         file_bind_p3 = st.file_uploader("📥 [選填] 匯入既有綁定名單 (.xlsx)", type=['xlsx'], key=f"f_bind_{st.session_state['uploader_key']}")
         
-        # 【修改重點 1】：智慧洗刷與模糊比對匯入的綁定名單，徹底消滅資料不符的紅字報錯
+        # 智慧洗刷與模糊比對匯入的綁定名單
         if file_bind_p3 and st.session_state.last_bind_file != file_bind_p3.name:
             try:
                 df_bind_up = pd.read_excel(file_bind_p3).dropna(how='all').fillna("")
@@ -723,7 +723,6 @@ with tab3:
                         
                         cleaned_bind.append({"老師": t_match, "班級": c_match})
                         
-                    # 確保 UI 最少有 3 列表格
                     while len(cleaned_bind) < 3:
                         cleaned_bind.append({"老師": "", "班級": ""})
                         
@@ -764,7 +763,6 @@ with tab3:
             st.error("🚨 請至少確認【1, 2, 3, 5】號基礎檔案皆已上傳！")
         else:
             try:
-                # 提前解析班級名單與目標綁定，供後續約束使用
                 df_assign_calc = pd.read_excel(file_assign_p3, header=None).dropna(how='all').fillna("")
                 class_names_raw = [x for x in df_assign_calc.iloc[:, 0].astype(str).str.strip().tolist() if x and not any(bad in x for bad in ["班級", "日期", "節次", "星期", "一覽表", "總表", "華南", "期中考", "註"])]
                 assign_map = {normalize_cls(name): idx for idx, name in enumerate(class_names_raw)}
@@ -840,6 +838,35 @@ with tab3:
                         time_constraints[t_name] = {'day': str(row['允許日期']).strip(), 'periods': [int(p) for p in re.findall(r'\d+', p_limit_str)] if p_limit_str else []}
 
                 with st.spinner(f"🧠 PuLP 運算中 ({len(teachers)} 位教師)..."):
+                    
+                    # ==========================================
+                    # 📌 [新增] 優先減堂邏輯 (依選取順序、先扣1、再扣多)
+                    # ==========================================
+                    req_total = sum(req_matrix['△'][:ai_periods]) + sum(req_matrix['※'][:ai_periods]) * 2
+                    quota_total = sum(int(quota_dict.get(t, 0)) for t in teachers)
+                    surplus = quota_total - req_total
+                    
+                    adj_quota_dict = quota_dict.copy()
+                    if surplus > 0 and flex_names_p3:
+                        # 1. 優先每個人員都先減1 (依選定順序)
+                        for t in flex_names_p3:
+                            if surplus <= 0: break
+                            if adj_quota_dict.get(t, 0) > 0:
+                                adj_quota_dict[t] -= 1
+                                surplus -= 1
+                        
+                        # 2. 仍然有多餘溢出額度，再依監考堂數多的人員進行減少
+                        while surplus > 0:
+                            max_q = max((adj_quota_dict.get(t, 0) for t in flex_names_p3), default=0)
+                            if max_q == 0: break  # 避免無窮迴圈
+                            
+                            for t in flex_names_p3:
+                                if adj_quota_dict.get(t, 0) == max_q:
+                                    adj_quota_dict[t] -= 1
+                                    surplus -= 1
+                                    break
+                    # ==========================================
+
                     prob = pulp.LpProblem("Scheduling", pulp.LpMinimize)
                     vX = {i: {j: pulp.LpVariable(f"X_{i}_{j}", cat='Binary') for j in range(ai_periods)} for i in range(len(teachers))}
                     vY = {i: {j: pulp.LpVariable(f"Y_{i}_{j}", cat='Binary') for j in range(ai_periods)} for i in range(len(teachers))}
@@ -849,12 +876,12 @@ with tab3:
 
                     penalty = 0
                     for i, t in enumerate(teachers):
-                        tgt = int(quota_dict.get(t, 0))
+                        tgt = int(adj_quota_dict.get(t, 0)) # 使用精確洗算後的目標堂數
                         act = pulp.lpSum([vX[i][k] + vY[i][k]*2 for k in range(ai_periods)])
                         dfct_pos, dfct_neg = pulp.LpVariable(f"dfct_pos_{i}", 0), pulp.LpVariable(f"dfct_neg_{i}", 0)
                         prob += act + dfct_neg - dfct_pos == tgt
                         penalty += (dfct_pos + dfct_neg) * 500
-                        if t in flex_names_p3: penalty -= dfct_neg * 400
+                        # 移除原先的 flex_names_p3 軟性扣分，以避免破壞精準算好的目標堂數
                         
                         is_time_constrained = t in time_constraints
                         if is_time_constrained:
@@ -863,7 +890,7 @@ with tab3:
                                 if (tc['day'] == '僅 Day 1' and j in d2_idx) or (tc['day'] == '僅 Day 2' and j in d1_idx) or (tc['periods'] and ai_period_nums[j] not in tc['periods']):
                                     prob += vX[i][j] == 0; prob += vY[i][j] == 0
                         
-                        # 【修改重點 2】：完美防衝突限制 - 確保綁定老師與※錯開，防止互相搶奪
+                        # 完美防衝突限制 - 確保綁定老師與※錯開，防止互相搶奪
                         if t in t2c_map_name:
                             bound_c = t2c_map_name[t]
                             if len(day_starts) > 0 and bound_c not in norm_day1_star:
@@ -904,7 +931,7 @@ with tab3:
                     
                     for i, t in enumerate(teachers):
                         res = []
-                        df_out_master.iloc[i, quota_col_in_list] = int(quota_dict.get(t, 0))
+                        df_out_master.iloc[i, quota_col_in_list] = int(adj_quota_dict.get(t, 0)) # 更新為洗算過後的目標堂數
                         for j in range(ai_periods):
                             val = str(df_list.iloc[i, ai_period_cols[j]]).strip()
                             if val in ["", "nan"]:
@@ -1205,7 +1232,7 @@ with tab3:
                 
                 if not discrepancies:
                     st.balloons()
-                    st.success("✅ 完美排班！「第一節(※)綁定班級」與「第二節同班鎖定」邏輯已生效，且總人數 100% 吻合！")
+                    st.success("✅ 完美排班！「第一節(※)綁定班級」與「優先減堂機制」皆已精準生效，總人數 100% 吻合！")
                 else:
                     st.warning("⚠️ 檢核提示：因特定鎖定條件，部分節次排入人數與需求有落差，明細如下：")
                     for d in discrepancies: st.write(f"- {d}")
