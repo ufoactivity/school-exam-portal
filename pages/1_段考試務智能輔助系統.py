@@ -58,6 +58,8 @@ if 'results_p3' not in st.session_state:
     st.session_state['results_p3'] = None
 if 'time_rules' not in st.session_state:
     st.session_state.time_rules = pd.DataFrame([{"老師": None, "允許日期": "無限制", "允許節次": ""} for _ in range(3)])
+if 'last_time_file' not in st.session_state:
+    st.session_state.last_time_file = None
 if 'bind_rules' not in st.session_state:
     st.session_state.bind_rules = pd.DataFrame([{"老師": None, "班級": None}] * 3)
 if 'last_bind_file' not in st.session_state:
@@ -620,7 +622,7 @@ with tab2:
 # ---------------------------------------------------------
 with tab3:
     st.subheader("📅 階段三：段考監考智能輔助系統 (終極完全體)")
-    st.info("💡 終極升級：實裝「優先名單精準洗算扣除機制」，依照順序先全員扣1堂，再針對堂數多的人扣除剩餘溢出額度，防呆且精準！")
+    st.info("💡 終極升級：實裝「優先名單精準洗算扣除機制」，以及「兼課時間限制可直接 Excel 匯入/匯出」，防呆且精準！")
 
     col1_p3, col2_p3 = st.columns([1, 1], gap="large")
 
@@ -674,6 +676,40 @@ with tab3:
         
         st.write("---")
         st.markdown("#### ⏳ 兼課教師可用時段精確鎖定")
+        
+        # --- 新增：兼課時間限制匯入功能 ---
+        file_time_p3 = st.file_uploader("📥 [選填] 匯入兼課教師時間限制 (.xlsx)", type=['xlsx'], key=f"f_time_{st.session_state['uploader_key']}")
+        if file_time_p3 and st.session_state.last_time_file != file_time_p3.name:
+            try:
+                df_time_up = pd.read_excel(file_time_p3).dropna(how='all').fillna("")
+                if "老師" in df_time_up.columns and "允許日期" in df_time_up.columns and "允許節次" in df_time_up.columns:
+                    cleaned_time = []
+                    for _, row in df_time_up.iterrows():
+                        t_raw = str(row['老師']).strip()
+                        date_raw = str(row['允許日期']).strip()
+                        period_raw = str(row['允許節次']).strip()
+                        
+                        # 老師名字智慧洗刷
+                        t_match = t_raw if t_raw in teacher_list_p3 else ""
+                        if not t_match and t_raw:
+                            for valid_t in teacher_list_p3:
+                                if valid_t.strip() == t_raw or valid_t in t_raw or t_raw in valid_t:
+                                    t_match = valid_t; break
+                        
+                        if date_raw not in ["無限制", "僅 Day 1", "僅 Day 2"]:
+                            date_raw = "無限制"
+                            
+                        cleaned_time.append({"老師": t_match, "允許日期": date_raw, "允許節次": period_raw})
+                        
+                    while len(cleaned_time) < 3:
+                        cleaned_time.append({"老師": "", "允許日期": "無限制", "允許節次": ""})
+                        
+                    st.session_state.time_rules = pd.DataFrame(cleaned_time)
+                    st.session_state.last_time_file = file_time_p3.name
+                    st.rerun()
+            except Exception as e:
+                st.error(f"讀取兼課時間檔案失敗: {e}")
+                
         edited_time_df = st.data_editor(
             st.session_state.time_rules, 
             num_rows="dynamic", 
@@ -685,6 +721,11 @@ with tab3:
             },
             key="p3_time_editor"
         )
+        
+        time_output = io.BytesIO()
+        with pd.ExcelWriter(time_output, engine='xlsxwriter') as writer:
+            edited_time_df.to_excel(writer, index=False, header=True)
+        st.download_button("💾 儲存時間限制名單", time_output.getvalue(), "兼課教師可用時段名單.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="p3_dl_time")
 
         st.write("---")
         st.markdown("#### ⭐ 第一節(※) 指定班級設定")
@@ -754,6 +795,7 @@ with tab3:
             st.session_state.bind_rules = pd.DataFrame([{"老師": None, "班級": None}] * 3)
             st.session_state.time_rules = pd.DataFrame([{"老師": None, "允許日期": "無限制", "允許節次": ""} for _ in range(3)])
             st.session_state.last_bind_file = None
+            st.session_state.last_time_file = None
             st.rerun()
 
     st.divider()
@@ -839,33 +881,27 @@ with tab3:
 
                 with st.spinner(f"🧠 PuLP 運算中 ({len(teachers)} 位教師)..."):
                     
-                    # ==========================================
-                    # 📌 [新增] 優先減堂邏輯 (依選取順序、先扣1、再扣多)
-                    # ==========================================
                     req_total = sum(req_matrix['△'][:ai_periods]) + sum(req_matrix['※'][:ai_periods]) * 2
                     quota_total = sum(int(quota_dict.get(t, 0)) for t in teachers)
                     surplus = quota_total - req_total
                     
                     adj_quota_dict = quota_dict.copy()
                     if surplus > 0 and flex_names_p3:
-                        # 1. 優先每個人員都先減1 (依選定順序)
                         for t in flex_names_p3:
                             if surplus <= 0: break
                             if adj_quota_dict.get(t, 0) > 0:
                                 adj_quota_dict[t] -= 1
                                 surplus -= 1
                         
-                        # 2. 仍然有多餘溢出額度，再依監考堂數多的人員進行減少
                         while surplus > 0:
                             max_q = max((adj_quota_dict.get(t, 0) for t in flex_names_p3), default=0)
-                            if max_q == 0: break  # 避免無窮迴圈
+                            if max_q == 0: break 
                             
                             for t in flex_names_p3:
                                 if adj_quota_dict.get(t, 0) == max_q:
                                     adj_quota_dict[t] -= 1
                                     surplus -= 1
                                     break
-                    # ==========================================
 
                     prob = pulp.LpProblem("Scheduling", pulp.LpMinimize)
                     vX = {i: {j: pulp.LpVariable(f"X_{i}_{j}", cat='Binary') for j in range(ai_periods)} for i in range(len(teachers))}
@@ -876,12 +912,11 @@ with tab3:
 
                     penalty = 0
                     for i, t in enumerate(teachers):
-                        tgt = int(adj_quota_dict.get(t, 0)) # 使用精確洗算後的目標堂數
+                        tgt = int(adj_quota_dict.get(t, 0))
                         act = pulp.lpSum([vX[i][k] + vY[i][k]*2 for k in range(ai_periods)])
                         dfct_pos, dfct_neg = pulp.LpVariable(f"dfct_pos_{i}", 0), pulp.LpVariable(f"dfct_neg_{i}", 0)
                         prob += act + dfct_neg - dfct_pos == tgt
                         penalty += (dfct_pos + dfct_neg) * 500
-                        # 移除原先的 flex_names_p3 軟性扣分，以避免破壞精準算好的目標堂數
                         
                         is_time_constrained = t in time_constraints
                         if is_time_constrained:
@@ -890,7 +925,6 @@ with tab3:
                                 if (tc['day'] == '僅 Day 1' and j in d2_idx) or (tc['day'] == '僅 Day 2' and j in d1_idx) or (tc['periods'] and ai_period_nums[j] not in tc['periods']):
                                     prob += vX[i][j] == 0; prob += vY[i][j] == 0
                         
-                        # 完美防衝突限制 - 確保綁定老師與※錯開，防止互相搶奪
                         if t in t2c_map_name:
                             bound_c = t2c_map_name[t]
                             if len(day_starts) > 0 and bound_c not in norm_day1_star:
@@ -931,7 +965,7 @@ with tab3:
                     
                     for i, t in enumerate(teachers):
                         res = []
-                        df_out_master.iloc[i, quota_col_in_list] = int(adj_quota_dict.get(t, 0)) # 更新為洗算過後的目標堂數
+                        df_out_master.iloc[i, quota_col_in_list] = int(adj_quota_dict.get(t, 0))
                         for j in range(ai_periods):
                             val = str(df_list.iloc[i, ai_period_cols[j]]).strip()
                             if val in ["", "nan"]:
