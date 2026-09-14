@@ -33,7 +33,7 @@ except:
 # ==========================================
 st.set_page_config(page_title="段考試務全能系統", page_icon="🏫", layout="wide")
 st.title("🏫 試務組 - 段考試務全能系統 (旗艦整合版)")
-st.info("💡 終極升級：實裝「綁定名單智慧洗刷防報錯」，並在演算法底層加入「※防搶奪錯開機制」，完美解決條件衝突，確保※與特定綁定同時滿足！")
+st.info("💡 終極升級：實裝「優先名單精準洗算扣除機制」，以及「兼課時間限制可直接 Excel 匯入/匯出，並支援單一教師多筆時段聯集運算」，防呆且精準！")
 
 # --- 狀態記憶體初始化 (Session State) ---
 if 'uploader_key' not in st.session_state:
@@ -622,7 +622,7 @@ with tab2:
 # ---------------------------------------------------------
 with tab3:
     st.subheader("📅 階段三：段考監考智能輔助系統 (終極完全體)")
-    st.info("💡 終極升級：實裝「優先名單精準洗算扣除機制」，以及「兼課時間限制可直接 Excel 匯入/匯出」，防呆且精準！")
+    st.info("💡 終極升級：實裝「優先名單精準洗算扣除機制」，以及「兼課時間限制可直接 Excel 匯入/匯出，並支援單一教師多筆時段聯集運算」，防呆且精準！")
 
     col1_p3, col2_p3 = st.columns([1, 1], gap="large")
 
@@ -872,12 +872,18 @@ with tab3:
                 df_list = df_list_raw.iloc[header_row_idx+1:].copy()
                 teachers = [str(x).strip() for x in df_list.iloc[:, teacher_col_idx] if pd.notna(x) and str(x).strip() not in ["", "nan"]]
 
-                time_constraints = {}
+                # ==========================================
+                # 📌 [新增修正] 兼課教師可用時段 (List 結合 OR 聯集邏輯)
+                # ==========================================
+                time_constraints = defaultdict(list)
                 for _, row in edited_time_df.iterrows():
                     t_name = str(row['老師']).strip()
                     if t_name and t_name != 'None':
                         p_limit_str = str(row['允許節次']).strip()
-                        time_constraints[t_name] = {'day': str(row['允許日期']).strip(), 'periods': [int(p) for p in re.findall(r'\d+', p_limit_str)] if p_limit_str else []}
+                        time_constraints[t_name].append({
+                            'day': str(row['允許日期']).strip(), 
+                            'periods': [int(p) for p in re.findall(r'\d+', p_limit_str)] if p_limit_str else []
+                        })
 
                 with st.spinner(f"🧠 PuLP 運算中 ({len(teachers)} 位教師)..."):
                     
@@ -918,11 +924,27 @@ with tab3:
                         prob += act + dfct_neg - dfct_pos == tgt
                         penalty += (dfct_pos + dfct_neg) * 500
                         
+                        # ==========================================
+                        # 📌 [新增修正] 執行 OR 聯集邏輯
+                        # ==========================================
                         is_time_constrained = t in time_constraints
                         if is_time_constrained:
-                            tc = time_constraints[t]
+                            allowed_j = set()
+                            for tc in time_constraints[t]:
+                                for j in range(ai_periods):
+                                    day_match = True
+                                    if tc['day'] == '僅 Day 1' and j in d2_idx: day_match = False
+                                    elif tc['day'] == '僅 Day 2' and j in d1_idx: day_match = False
+                                    
+                                    period_match = True
+                                    if tc['periods'] and ai_period_nums[j] not in tc['periods']: period_match = False
+                                    
+                                    if day_match and period_match:
+                                        allowed_j.add(j)
+                                        
+                            # 封鎖所有「不在」任何允許時段聯集裡的節次
                             for j in range(ai_periods):
-                                if (tc['day'] == '僅 Day 1' and j in d2_idx) or (tc['day'] == '僅 Day 2' and j in d1_idx) or (tc['periods'] and ai_period_nums[j] not in tc['periods']):
+                                if j not in allowed_j:
                                     prob += vX[i][j] == 0; prob += vY[i][j] == 0
                         
                         if t in t2c_map_name:
