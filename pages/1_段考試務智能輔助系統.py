@@ -1264,7 +1264,7 @@ with tab3:
                             
                             if '監考老師' in col_map:
                                 if has_manual_p3 and d0_date_p3 and any(d in date_str for d in [d0_ymd, d0_short, d0_slash]):
-                                    if cls in manual_day0_proctors: ws_label.cell(row=r, column=col_map['監考老師']).value = manual_day0_proctors[cls]
+                                    if p_val in manual_proctors.get(cls, {}): ws_label.cell(row=r, column=col_map['監考老師']).value = manual_proctors[cls][p_val]
                                 elif cls in class_proctor_schedule and p_val != -1:
                                     day_idx = -1
                                     if any(d in date_str for d in [d1_ymd, d1_short, d1_slash]): day_idx = 0
