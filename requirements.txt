@@ -2,6 +2,6 @@ streamlit
 pandas
 numpy
 python-docx
-pulp
+pulp==2.9.0
 openpyxl
 xlsxwriter
