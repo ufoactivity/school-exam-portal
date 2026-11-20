@@ -154,6 +154,101 @@ def matches_date(val_str, d_date):
     d6 = str(d_date.day) + '日'
     return any(x in s for x in [d1, d2, d3, d4, d5, d6])
 
+# ----- 【階段二：命題名單解析】 -----
+def _p2_cell(v):
+    """儲存格轉乾淨字串；數字年級 1.0 → 1"""
+    if v is None or (isinstance(v, float) and np.isnan(v)): return ''
+    if isinstance(v, float) and v.is_integer(): v = int(v)
+    s = str(v).strip()
+    return '' if s.lower() in ('nan', 'none') else s
+
+def _p2_is_grade_hdr(v):   return v in ('年級', '班級', '年級別', '年段')
+def _p2_is_subj_hdr(v):    return '科目' in v or v in ('科別', '學科')
+def _p2_is_teacher_hdr(v): return ('老師' in v or '教師' in v or v in ('姓名', '命題', '命題者')) and len(v) <= 8
+
+P2_NOT_TEACHER = {'不列入', '免', '無', '-', '—', '／', '/', '待定', '#N/A', '0'}
+
+def parse_proposition_list(df_raw_full, max_cols=11):
+    """
+    解析命題名單（只讀 A～K 欄：A,B,C / E,F,G / I,J,K 三區塊併排；容許大標題、合併年級儲存格）。
+    命題教師欄若為 VLOOKUP 公式，讀取的是 Excel 存檔時的計算結果。
+    回傳 DataFrame[年級, 科目名稱, 姓名]
+    """
+    df = df_raw_full.iloc[:, :max_cols].reset_index(drop=True)
+    norm = lambda v: _p2_cell(v).replace(' ', '').replace('　', '')
+
+    # 1. 找表頭列：同一列需同時有「年級/班級」與「老師/教師」欄名（避免把含「年級」的大標題誤判為表頭）
+    header_row_idx = -1
+    for r in range(min(20, len(df))):
+        vals = [norm(x) for x in df.iloc[r, :].tolist()]
+        if any(_p2_is_grade_hdr(v) for v in vals) and any(_p2_is_teacher_hdr(v) for v in vals):
+            header_row_idx = r
+            break
+    if header_row_idx == -1:
+        return pd.DataFrame(columns=['年級', '科目名稱', '姓名'])
+
+    hdr = [norm(x) for x in df.iloc[header_row_idx, :].tolist()]
+    grade_cols = [c for c, v in enumerate(hdr) if _p2_is_grade_hdr(v)]
+
+    extracted = []
+    for k, c_grade in enumerate(grade_cols):
+        block_end = grade_cols[k + 1] if k + 1 < len(grade_cols) else len(hdr)
+        # 2. 在本區塊內依欄名找科目、老師欄；找不到才退回固定位移 +1/+2
+        c_subj = next((c for c in range(c_grade + 1, block_end) if _p2_is_subj_hdr(hdr[c])), c_grade + 1)
+        c_teacher = next((c for c in range(c_grade + 1, block_end) if _p2_is_teacher_hdr(hdr[c])), c_grade + 2)
+        if c_teacher >= len(hdr) or c_subj >= len(hdr): continue
+
+        last_grade = ''
+        for r in range(header_row_idx + 1, len(df)):
+            g = _p2_cell(df.iloc[r, c_grade])
+            s = _p2_cell(df.iloc[r, c_subj])
+            t = _p2_cell(df.iloc[r, c_teacher])
+            if _p2_is_grade_hdr(norm(g)):   # 中途重複的表頭列
+                last_grade = ''; continue
+            if g: last_grade = g            # 3. 合併儲存格：年級向下填補
+            if not t or not s: continue
+            for name in [re.sub(r'[\s\u3000]+', '', x) for x in re.split(r'[、,，;；/\n]+', t)]:
+                if not name or name in P2_NOT_TEACHER or name.startswith('#'): continue
+                extracted.append({'年級': last_grade, '科目名稱': s, '姓名': name})
+
+    return pd.DataFrame(extracted, columns=['年級', '科目名稱', '姓名']).drop_duplicates().reset_index(drop=True)
+
+def get_visible_sheet_names(uploaded_file, all_names):
+    """回傳 Excel 中「未隱藏」的工作表（依原順序）；.xls 或讀取失敗時回傳全部"""
+    try:
+        import zipfile
+        uploaded_file.seek(0)
+        with zipfile.ZipFile(uploaded_file) as z:
+            xml = z.read('xl/workbook.xml').decode('utf-8')
+        uploaded_file.seek(0)
+        hidden = set()
+        for tag in re.findall(r'<(?:\w+:)?sheet\s[^>]*>', xml):
+            m_name = re.search(r'\sname="([^"]*)"', tag)
+            if m_name and re.search(r'\sstate="(hidden|veryHidden)"', tag):
+                import html
+                hidden.add(html.unescape(m_name.group(1)))
+        visible = [n for n in all_names if n not in hidden]
+        return visible or list(all_names)
+    except Exception:
+        try: uploaded_file.seek(0)
+        except Exception: pass
+        return list(all_names)
+
+def guess_exam_title(df_raw_full, sheet_name):
+    """由第一列大標題「115學年度第一學期第2次期中考命題通知(依年級排序)」取出考試名稱；取不到就用工作表名去掉括號"""
+    for r in range(min(3, len(df_raw_full))):
+        for v in df_raw_full.iloc[r, :].tolist():
+            t = re.sub(r'\s+', '', _p2_cell(v))
+            m = re.match(r'(.+?)(命題通知|命題名單|命題教師|補考科目)', t)
+            if m: return m.group(1)
+    return re.sub(r'[（(].*?[)）]', '', str(sheet_name)).strip()
+
+def format_grade_label(g):
+    """1 → [1年級]；高一 / 一年級 → 原樣"""
+    g = str(g).strip()
+    if not g: return "[未標示年級]"
+    return f"[{g}]" if ('年' in g or '高' in g or '國' in g) else f"[{g}年級]"
+
 # ----- 【階段一：命題出題輔助】 -----
 def clean_subject_name_p1(subj_raw):
     if pd.isna(subj_raw) or subj_raw is None: return ""
@@ -542,56 +637,26 @@ with tab2:
         uploaded_file_p2 = st.file_uploader("請上傳「命題名單」(Excel，完美支援 A,B,C / E,F,G / I,J,K 區塊併排)", type=["xlsx", "xls"], key=f"p2_uploader_{st.session_state['uploader_key']}")
         
         selected_sheet_p2 = None
+        exam_title_p2 = ''
         df_p2_source = None
         unsubmitted_teachers = []
 
         if uploaded_file_p2 is not None:
             try:
                 excel_file_p2 = pd.ExcelFile(uploaded_file_p2)
-                selected_sheet_p2 = st.selectbox("👇 請選擇工作表 (考試類型)：", excel_file_p2.sheet_names, key="p2_sheet_select")
+                # 只列出 Excel 中看得到的工作表（略過隱藏工作表），並排除第一個全學期總表
+                visible_sheets_p2 = get_visible_sheet_names(uploaded_file_p2, excel_file_p2.sheet_names)
+                sheet_options_p2 = visible_sheets_p2[1:] or visible_sheets_p2
+                selected_sheet_p2 = st.selectbox("👇 請選擇工作表 (考試類型，已排除第一個總表工作表)：", sheet_options_p2, key="p2_sheet_select")
                 
-                # 📌 智慧跨欄讀取邏輯 (極致容錯錨點定位版)
+                # 📌 只讀 A～K 欄：A,B,C / E,F,G / I,J,K 為「年級、科目、命題教師」
                 df_raw_full = pd.read_excel(uploaded_file_p2, sheet_name=selected_sheet_p2, header=None).dropna(how='all')
-                
-                # 尋找真正的表頭列 (跳過第一列大標題)
-                header_row_idx = -1
-                for r in range(min(15, len(df_raw_full))):
-                    row_vals = [str(x).strip().replace(' ', '') for x in df_raw_full.iloc[r, :].tolist()]
-                    if any("年級" in val for val in row_vals) or any("班級" in val for val in row_vals):
-                        header_row_idx = r
-                        break
-                
-                extracted_data = []
-                if header_row_idx != -1:
-                    row_vals = [str(x).strip().replace(' ', '') for x in df_raw_full.iloc[header_row_idx, :].tolist()]
-                    
-                    # 找出所有包含「年級」或「班級」的欄位索引作為錨點
-                    grade_col_indices = [c for c, val in enumerate(row_vals) if "年級" in val or "班級" in val]
-                    
-                    for c_grade in grade_col_indices:
-                        # 依據 A,B,C / E,F,G / I,J,K 排版，嚴格向右位移抓取
-                        c_subj = c_grade + 1
-                        c_teacher = c_grade + 2
-                        
-                        if c_teacher < len(df_raw_full.columns):
-                            for data_r in range(header_row_idx + 1, len(df_raw_full)):
-                                g_val = str(df_raw_full.iloc[data_r, c_grade]).strip().replace('nan', '').replace('None', '')
-                                s_val = str(df_raw_full.iloc[data_r, c_subj]).strip().replace('nan', '').replace('None', '')
-                                t_val = str(df_raw_full.iloc[data_r, c_teacher]).strip().replace('nan', '').replace('None', '')
-                                
-                                # 排除空值或重複表頭
-                                if t_val and "老師" not in t_val and "命題" not in t_val:
-                                    # 處理同一個欄位有多位老師的情況 (用逗號或頓號隔開)
-                                    teachers_in_cell = [t.strip() for t in re.split(r'[、,，\s/]+', t_val) if t.strip()]
-                                    for t in teachers_in_cell:
-                                        extracted_data.append({
-                                            '年級': g_val,
-                                            '科目名稱': s_val,
-                                            '姓名': t
-                                        })
-                
+                df_parsed = parse_proposition_list(df_raw_full)
+                extracted_data = df_parsed.to_dict('records')
+                exam_title_p2 = st.text_input("📝 通知單上的考試名稱 (可修改)：", value=guess_exam_title(df_raw_full, selected_sheet_p2), key=f"p2_exam_title_{selected_sheet_p2}")
+
                 if not extracted_data:
-                    st.error("🚨 找不到符合格式的資料！請確認表單排版。")
+                    st.error("🚨 此工作表找不到「年級／科目／命題教師」資料！（例如「補考科目」工作表只有補考人數，沒有命題教師）")
                 else:
                     df_p2_source = pd.DataFrame(extracted_data)
                     all_teachers = sorted(df_p2_source['姓名'].unique().tolist())
@@ -643,7 +708,7 @@ with tab2:
                 
                 grouped = final_df.groupby('姓名')
                 for idx, (name, group) in enumerate(grouped):
-                    exam_type = selected_sheet_p2
+                    exam_type = exam_title_p2 or selected_sheet_p2
                     count = len(group)
                     
                     # --- 紙本版 ---
@@ -669,8 +734,8 @@ with tab2:
                     for doc in [doc_print, doc_msg]:
                         doc.add_paragraph(f"{name} 老師您好:\n")
                         doc.add_paragraph(f"{exam_type}試卷繳交截止日 {deadline} 已過，尚有 {count} 份試卷未繳:\n")
-                        for grade, grade_group in group.groupby('年級'):
-                            doc.add_paragraph(f"[{grade}年級]")
+                        for grade, grade_group in group.groupby('年級', sort=False):
+                            doc.add_paragraph(format_grade_label(grade))
                             for i, (_, row) in enumerate(grade_group.iterrows(), 1):
                                 doc.add_paragraph(f"  {i}. 科目: {row['科目名稱']}")
                         doc.add_paragraph(f"\n{sender_name}")
@@ -695,9 +760,9 @@ with tab2:
         st.success(f"✅ 完美達成！已針對您確認的 {final_df_count} 位老師產出雙版本催繳單。")
         c1, c2 = st.columns([1, 1])
         with c1:
-            st.download_button("🖨️ 下載：紙本列印版", st.session_state['docx_data_p2_print'], f"{selected_sheet_p2}催繳通知單_紙本版.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
+            st.download_button("🖨️ 下載：紙本列印版", st.session_state['docx_data_p2_print'], f"{exam_title_p2 or selected_sheet_p2}催繳通知單_紙本版.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
         with c2:
-            st.download_button("💬 下載：訊息複製版", st.session_state['docx_data_p2_msg'], f"{selected_sheet_p2}催繳通知單_訊息版.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
+            st.download_button("💬 下載：訊息複製版", st.session_state['docx_data_p2_msg'], f"{exam_title_p2 or selected_sheet_p2}催繳通知單_訊息版.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
 
 # ---------------------------------------------------------
 # 【階段三：段考監考智能輔助系統】 
