@@ -33,7 +33,7 @@ except:
 # ==========================================
 st.set_page_config(page_title="段考試務全能系統", page_icon="🏫", layout="wide")
 st.title("🏫 試務組 - 段考試務全能系統 (旗艦整合版)")
-st.info("💡 終極升級：階段二實裝「全域橫向掃描引擎」，能完美跳過大標題並嚴格合併 A,B,C / E,F,G / I,J,K 等多區塊並排的名單！")
+st.info("💡 終極升級：階段二實裝「全域橫向掃描引擎」與「互動式科目微調表格」，能完美跳過大標題合併區塊，並精準剔除老師已繳交的部分科目！")
 
 # --- 狀態記憶體初始化 (Session State) ---
 if 'uploader_key' not in st.session_state:
@@ -523,11 +523,11 @@ with tab1:
                 for msg in st.session_state.get('debug_log_p1', []): st.write(msg)
 
 # ---------------------------------------------------------
-# 【階段二：試卷催繳通知單】 (優化版：智慧跨欄掃描)
+# 【階段二：試卷催繳通知單】 (優化版：相對座標錨點定址法 + 互動雙層過濾)
 # ---------------------------------------------------------
 with tab2:
     st.subheader("📑 階段二：試卷催繳通知單自動生成系統")
-    st.markdown("上傳包含命題名單的 Excel，**勾選尚未繳交試卷的老師**，系統會精準產出專屬的 Word 通知單。")
+    st.markdown("上傳包含命題名單的 Excel，**勾選尚未繳交試卷的老師與科目**，系統會精準產出專屬的 Word 通知單。")
     
     if not HAS_DOCX: st.error("🚨 偵測到系統未安裝 `python-docx` 套件！請在環境中安裝 `python-docx`。")
 
@@ -539,7 +539,7 @@ with tab2:
         
     with col2_p2:
         st.markdown("##### 📂 資料上傳與目標選擇")
-        uploaded_file_p2 = st.file_uploader("請上傳「命題名單」(Excel，支援多區塊併排格式)", type=["xlsx", "xls"], key=f"p2_uploader_{st.session_state['uploader_key']}")
+        uploaded_file_p2 = st.file_uploader("請上傳「命題名單」(Excel，完美支援 A,B,C / E,F,G / I,J,K 區塊併排)", type=["xlsx", "xls"], key=f"p2_uploader_{st.session_state['uploader_key']}")
         
         selected_sheet_p2 = None
         df_p2_source = None
@@ -550,62 +550,80 @@ with tab2:
                 excel_file_p2 = pd.ExcelFile(uploaded_file_p2)
                 selected_sheet_p2 = st.selectbox("👇 請選擇工作表 (考試類型)：", excel_file_p2.sheet_names, key="p2_sheet_select")
                 
-                # 📌 智慧跨欄讀取邏輯
+                # 📌 智慧跨欄讀取邏輯 (極致容錯錨點定位版)
                 df_raw_full = pd.read_excel(uploaded_file_p2, sheet_name=selected_sheet_p2, header=None).dropna(how='all')
                 
                 # 尋找真正的表頭列 (跳過第一列大標題)
                 header_row_idx = -1
                 for r in range(min(15, len(df_raw_full))):
                     row_vals = [str(x).strip().replace(' ', '') for x in df_raw_full.iloc[r, :].tolist()]
-                    if any("年級" in val or "班級" in val for val in row_vals) and any("科目" in val for val in row_vals):
+                    if any("年級" in val for val in row_vals) or any("班級" in val for val in row_vals):
                         header_row_idx = r
                         break
                 
                 extracted_data = []
                 if header_row_idx != -1:
-                    header_row = [str(x).strip().replace(' ', '') for x in df_raw_full.iloc[header_row_idx].tolist()]
+                    row_vals = [str(x).strip().replace(' ', '') for x in df_raw_full.iloc[header_row_idx, :].tolist()]
                     
-                    # 橫向掃描：支援 A,B,C / E,F,G / I,J,K 多欄位併排的情境
-                    for c_idx in range(len(header_row)):
-                        col_name = header_row[c_idx]
-                        if "年級" in col_name or "班級" in col_name:
-                            c_grade = c_idx
-                            c_subj, c_teacher = -1, -1
-                            
-                            # 往後找 1 到 3 個欄位，配對 科目 與 命題老師 (嚴格限制搜尋範圍避免跨區塊)
-                            for offset in range(1, 4):
-                                if c_idx + offset >= len(header_row): break
-                                n_col = header_row[c_idx + offset]
-                                if "科目" in n_col: 
-                                    c_subj = c_idx + offset
-                                elif any(k in n_col for k in ["老師", "姓名", "命題", "教師"]): 
-                                    c_teacher = c_idx + offset
-                            
-                            # 如果成功湊齊一組 (年級, 科目, 老師)，就開始往下抓資料
-                            if c_grade != -1 and c_subj != -1 and c_teacher != -1:
-                                for data_r in range(header_row_idx + 1, len(df_raw_full)):
-                                    g_val = str(df_raw_full.iloc[data_r, c_grade]).strip().replace('nan', '')
-                                    s_val = str(df_raw_full.iloc[data_r, c_subj]).strip().replace('nan', '')
-                                    t_val = str(df_raw_full.iloc[data_r, c_teacher]).strip().replace('nan', '')
-                                    
-                                    if t_val and t_val != 'None':
-                                        # 處理同一個欄位有多位老師的情況 (用逗號或頓號隔開)
-                                        teachers_in_cell = [t.strip() for t in re.split(r'[、,，\s/]+', t_val) if t.strip()]
-                                        for t in teachers_in_cell:
-                                            extracted_data.append({
-                                                '年級': g_val,
-                                                '科目名稱': s_val,
-                                                '姓名': t
-                                            })
+                    # 找出所有包含「年級」的欄位索引作為錨點 (如 A:0, E:4, I:8)
+                    grade_col_indices = [c for c, val in enumerate(row_vals) if "年級" in val or "班級" in val]
+                    
+                    for c_grade in grade_col_indices:
+                        # 依據 A,B,C / E,F,G / I,J,K 排版，科目必定在右1，老師必定在右2
+                        c_subj = c_grade + 1
+                        c_teacher = c_grade + 2
+                        
+                        if c_teacher < len(df_raw_full.columns):
+                            for data_r in range(header_row_idx + 1, len(df_raw_full)):
+                                g_val = str(df_raw_full.iloc[data_r, c_grade]).strip().replace('nan', '').replace('None', '')
+                                s_val = str(df_raw_full.iloc[data_r, c_subj]).strip().replace('nan', '').replace('None', '')
+                                t_val = str(df_raw_full.iloc[data_r, c_teacher]).strip().replace('nan', '').replace('None', '')
+                                
+                                # 排除空值或重複表頭
+                                if t_val and "老師" not in t_val and "命題" not in t_val:
+                                    # 處理同一個欄位有多位老師的情況 (用逗號或頓號隔開)
+                                    teachers_in_cell = [t.strip() for t in re.split(r'[、,，\s/]+', t_val) if t.strip()]
+                                    for t in teachers_in_cell:
+                                        extracted_data.append({
+                                            '年級': g_val,
+                                            '科目名稱': s_val,
+                                            '姓名': t
+                                        })
                 
                 if not extracted_data:
-                    st.error("🚨 找不到符合格式的資料！請確認表單是否包含「年級」、「科目」、「命題老師」。")
+                    st.error("🚨 找不到符合格式的資料！請確認表單排版。")
                 else:
                     df_p2_source = pd.DataFrame(extracted_data)
                     all_teachers = sorted(df_p2_source['姓名'].unique().tolist())
                     
                     st.info(f"💡 系統已成功跨欄載入名單！共識別出 {len(all_teachers)} 位命題教師。")
-                    unsubmitted_teachers = st.multiselect("👉 勾選「尚未繳交」的老師 (可複選)：", options=all_teachers, help="系統將只針對您選擇的老師產出催繳通知單。", key="p2_teacher_select")
+                    unsubmitted_teachers = st.multiselect("👉 1. 勾選「尚未繳交」的老師 (可複選)：", options=all_teachers, help="系統將過濾出這些老師負責的所有科目。", key="p2_teacher_select")
+                    
+                    if unsubmitted_teachers:
+                        st.markdown("##### 🎯 2. 微調催繳科目明細")
+                        st.caption("💡 預設全選，若老師「已繳交部分科目」，請將該科目的勾選取消：")
+                        
+                        # 過濾出選定老師的資料，並加入「需要催繳」核取欄位
+                        df_filtered = df_p2_source[df_p2_source['姓名'].isin(unsubmitted_teachers)].copy()
+                        df_filtered.insert(0, '需要催繳', True)
+                        
+                        edited_df = st.data_editor(
+                            df_filtered,
+                            column_config={
+                                '需要催繳': st.column_config.CheckboxColumn("需要催繳", default=True),
+                                '年級': st.column_config.TextColumn("年級", disabled=True),
+                                '科目名稱': st.column_config.TextColumn("科目名稱", disabled=True),
+                                '姓名': st.column_config.TextColumn("老師姓名", disabled=True),
+                            },
+                            hide_index=True,
+                            use_container_width=True,
+                            key="p2_subject_editor"
+                        )
+                        
+                        # 將最終使用者確認要催繳的資料存入 session_state
+                        st.session_state['p2_final_df'] = edited_df[edited_df['需要催繳'] == True].copy()
+                    else:
+                        st.session_state['p2_final_df'] = pd.DataFrame()
 
             except Exception as e:
                 st.error(f"讀取 Excel 檔案時發生錯誤：{e}")
@@ -613,18 +631,17 @@ with tab2:
     st.divider()
 
     if st.button("🚀 產出選定教師之催繳通知單", use_container_width=True, type="primary", key="btn_p2"):
+        final_df = st.session_state.get('p2_final_df', pd.DataFrame())
+        
         if not HAS_DOCX: st.error("缺少 python-docx 套件。")
         elif df_p2_source is None: st.warning("⚠️ 請先上傳正確格式的名單檔案！")
-        elif not unsubmitted_teachers: st.warning("⚠️ 老師，您還沒有勾選任何尚未繳交試卷的老師喔！")
+        elif final_df.empty: st.warning("⚠️ 老師，您還沒有勾選任何需要催繳的科目喔！")
         else:
             try:
-                # 依據勾選名單過濾出需要催繳的資料
-                df_filtered = df_p2_source[df_p2_source['姓名'].isin(unsubmitted_teachers)]
-                
                 doc_print = Document()
                 doc_msg = Document()
                 
-                grouped = df_filtered.groupby('姓名')
+                grouped = final_df.groupby('姓名')
                 for idx, (name, group) in enumerate(grouped):
                     exam_type = selected_sheet_p2
                     count = len(group)
@@ -674,7 +691,8 @@ with tab2:
                 st.error(f"發生未預期錯誤: {e}"); st.code(traceback.format_exc())
 
     if st.session_state['processed_p2'] and st.session_state['docx_data_p2_print']:
-        st.success(f"✅ 完美達成！已針對您勾選的 {len(unsubmitted_teachers)} 位老師產出雙版本催繳單。")
+        final_df_count = len(st.session_state.get('p2_final_df', pd.DataFrame())['姓名'].unique())
+        st.success(f"✅ 完美達成！已針對您確認的 {final_df_count} 位老師產出雙版本催繳單。")
         c1, c2 = st.columns([1, 1])
         with c1:
             st.download_button("🖨️ 下載：紙本列印版", st.session_state['docx_data_p2_print'], f"{selected_sheet_p2}催繳通知單_紙本版.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
