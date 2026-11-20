@@ -33,7 +33,7 @@ except:
 # ==========================================
 st.set_page_config(page_title="段考試務全能系統", page_icon="🏫", layout="wide")
 st.title("🏫 試務組 - 段考試務全能系統 (旗艦整合版)")
-st.info("💡 終極升級：實裝「優先名單精準洗算扣除機制」，以及「兼課時間限制可直接 Excel 匯入/匯出，並支援單一教師多筆時段聯集運算」，防呆且精準！")
+st.info("💡 終極升級：階段二實裝「命題教師動態勾選過濾」功能，直接從上傳表單萃取名單，精準產出未繳交者的催繳單！")
 
 # --- 狀態記憶體初始化 (Session State) ---
 if 'uploader_key' not in st.session_state:
@@ -523,11 +523,11 @@ with tab1:
                 for msg in st.session_state.get('debug_log_p1', []): st.write(msg)
 
 # ---------------------------------------------------------
-# 【階段二：試卷催繳通知單】 (完美還原)
+# 【階段二：試卷催繳通知單】 (優化版：支援勾選未繳交教師)
 # ---------------------------------------------------------
 with tab2:
     st.subheader("📑 階段二：試卷催繳通知單自動生成系統")
-    st.markdown("上傳包含催繳名單的 Excel，**選擇對應的工作表 (考試類型)**，系統會自動產出專屬的 Word 通知單。")
+    st.markdown("上傳包含命題名單的 Excel，**勾選尚未繳交試卷的老師**，系統會精準產出專屬的 Word 通知單。")
     
     if not HAS_DOCX: st.error("🚨 偵測到系統未安裝 `python-docx` 套件！請在環境中安裝 `python-docx`。")
 
@@ -538,79 +538,113 @@ with tab2:
         sender_name = st.text_input("✍️ 發送人署名", value="試務組 耀中", key="p2_sender")
         
     with col2_p2:
-        st.markdown("##### 📂 資料上傳與選擇")
-        uploaded_file_p2 = st.file_uploader("請上傳「試卷催繳名單」(Excel)", type=["xlsx", "xls"], key=f"p2_uploader_{st.session_state['uploader_key']}")
+        st.markdown("##### 📂 資料上傳與目標選擇")
+        
+        # 📌 重點修改 1：修改提示文字，支援「命題老師」等欄位容錯
+        uploaded_file_p2 = st.file_uploader("請上傳「命題名單」(Excel，需含年級、科目、命題老師/姓名)", type=["xlsx", "xls"], key=f"p2_uploader_{st.session_state['uploader_key']}")
         
         selected_sheet_p2 = None
+        df_p2_source = None
+        unsubmitted_teachers = []
+
         if uploaded_file_p2 is not None:
             try:
                 excel_file_p2 = pd.ExcelFile(uploaded_file_p2)
                 selected_sheet_p2 = st.selectbox("👇 請選擇工作表 (考試類型)：", excel_file_p2.sheet_names, key="p2_sheet_select")
-            except: st.error("無法讀取 Excel 檔案。")
+                
+                # 📌 重點修改 2：上傳後立即讀取資料，萃取教師名單供勾選
+                df_raw = pd.read_excel(uploaded_file_p2, sheet_name=selected_sheet_p2).dropna(how='all')
+                
+                # 智慧容錯：處理欄位名稱差異，完美應對老師提供的不同檔案格式
+                if '命題老師' in df_raw.columns and '姓名' not in df_raw.columns:
+                    df_raw = df_raw.rename(columns={'命題老師': '姓名'})
+                if '科目' in df_raw.columns and '科目名稱' not in df_raw.columns:
+                    df_raw = df_raw.rename(columns={'科目': '科目名稱'})
+                    
+                if any(c not in df_raw.columns for c in ['年級', '科目名稱', '姓名']):
+                    st.error("🚨 上傳的檔案缺少必備欄位：年級、科目(或科目名稱)、姓名(或命題老師)。請確認表頭格式！")
+                else:
+                    # 清洗資料
+                    df_raw['姓名'] = df_raw['姓名'].astype(str).str.strip().replace('nan', '')
+                    df_raw['科目名稱'] = df_raw['科目名稱'].astype(str).str.strip().replace('nan', '')
+                    df_raw['年級'] = df_raw['年級'].astype(str).str.strip().replace('nan', '')
+                    df_p2_source = df_raw[df_raw['姓名'] != '']
+                    
+                    # 取得唯一教師名單
+                    all_teachers = sorted(df_p2_source['姓名'].unique().tolist())
+                    
+                    st.info("💡 系統已成功載入名單！請在下方選擇需要催繳的老師。")
+                    unsubmitted_teachers = st.multiselect("👉 勾選「尚未繳交」的老師 (可複選)：", options=all_teachers, help="系統將只針對您選擇的老師產出催繳通知單。", key="p2_teacher_select")
 
-    if st.button("🚀 一鍵產出雙版本催繳通知單", use_container_width=True, type="primary", key="btn_p2"):
+            except Exception as e:
+                st.error(f"讀取 Excel 檔案時發生錯誤：{e}")
+
+    st.divider()
+
+    # 📌 重點修改 3：按鈕邏輯加入「未勾選教師」的防呆，並依據選單動態過濾 DataFrame
+    if st.button("🚀 產出選定教師之催繳通知單", use_container_width=True, type="primary", key="btn_p2"):
         if not HAS_DOCX: st.error("缺少 python-docx 套件。")
-        elif not uploaded_file_p2 or not selected_sheet_p2: st.warning("⚠️ 請先上傳名單檔案，並選擇工作表！")
+        elif df_p2_source is None: st.warning("⚠️ 請先上傳正確格式的名單檔案！")
+        elif not unsubmitted_teachers: st.warning("⚠️ 老師，您還沒有勾選任何尚未繳交試卷的老師喔！")
         else:
             try:
-                df = pd.read_excel(uploaded_file_p2, sheet_name=selected_sheet_p2).dropna(how='all')
-                if any(c not in df.columns for c in ['年級', '科目名稱', '姓名']):
-                    st.error("🚨 上傳的檔案缺少必備欄位：年級、科目名稱、姓名。")
-                else:
-                    df['姓名'] = df['姓名'].astype(str).str.strip().replace('nan', '')
-                    df['科目名稱'] = df['科目名稱'].astype(str).str.strip().replace('nan', '')
-                    df['年級'] = df['年級'].astype(str).str.strip().replace('nan', '')
-                    df = df[df['姓名'] != '']
+                # 依據勾選名單過濾出需要催繳的資料
+                df_filtered = df_p2_source[df_p2_source['姓名'].isin(unsubmitted_teachers)]
+                
+                doc_print = Document()
+                doc_msg = Document()
+                
+                grouped = df_filtered.groupby('姓名')
+                for idx, (name, group) in enumerate(grouped):
+                    exam_type = selected_sheet_p2
+                    count = len(group)
                     
-                    doc_print = Document()
-                    doc_msg = Document()
+                    # --- 紙本版 ---
+                    table = doc_print.add_table(rows=1, cols=1)
+                    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                    table.style = 'Table Grid'
+                    cell = table.cell(0, 0)
+                    p_title_print = cell.paragraphs[0]
+                    p_title_print.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run_title_print = p_title_print.add_run(f"【{exam_type}】催繳試卷通知單")
+                    run_title_print.bold = True
+                    run_title_print.font.size = Pt(20) 
+                    doc_print.add_paragraph()
                     
-                    grouped = df.groupby('姓名')
-                    for idx, (name, group) in enumerate(grouped):
-                        exam_type = selected_sheet_p2
-                        count = len(group)
-                        
-                        table = doc_print.add_table(rows=1, cols=1)
-                        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-                        table.style = 'Table Grid'
-                        cell = table.cell(0, 0)
-                        p_title_print = cell.paragraphs[0]
-                        p_title_print.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        run_title_print = p_title_print.add_run(f"【{exam_type}】催繳試卷通知單")
-                        run_title_print.bold = True
-                        run_title_print.font.size = Pt(20) 
-                        doc_print.add_paragraph()
-                        
-                        p_title_msg = doc_msg.add_paragraph()
-                        p_title_msg.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        run_title_msg = p_title_msg.add_run(f"【{exam_type}】催繳試卷通知單")
-                        run_title_msg.bold = True
-                        run_title_msg.font.size = Pt(16)
-                        doc_msg.add_paragraph()
+                    # --- 訊息版 ---
+                    p_title_msg = doc_msg.add_paragraph()
+                    p_title_msg.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run_title_msg = p_title_msg.add_run(f"【{exam_type}】催繳試卷通知單")
+                    run_title_msg.bold = True
+                    run_title_msg.font.size = Pt(16)
+                    doc_msg.add_paragraph()
 
-                        for doc in [doc_print, doc_msg]:
-                            doc.add_paragraph(f"{name} 老師您好:\n")
-                            doc.add_paragraph(f"{exam_type}試卷繳交截止日 {deadline} 已過，尚有 {count} 份試卷未繳:\n")
-                            for grade, grade_group in group.groupby('年級'):
-                                doc.add_paragraph(f"[{grade}年級]")
-                                for i, (_, row) in enumerate(grade_group.iterrows(), 1):
-                                    doc.add_paragraph(f"  {i}. 科目: {row['科目名稱']}")
-                            doc.add_paragraph(f"\n{sender_name}")
-                        
-                        if idx < len(grouped) - 1:
-                            doc_print.add_page_break()
-                            doc_msg.add_paragraph("\n" + "=" * 40 + "\n")
+                    for doc in [doc_print, doc_msg]:
+                        doc.add_paragraph(f"{name} 老師您好:\n")
+                        doc.add_paragraph(f"{exam_type}試卷繳交截止日 {deadline} 已過，尚有 {count} 份試卷未繳:\n")
+                        for grade, grade_group in group.groupby('年級'):
+                            doc.add_paragraph(f"[{grade}年級]")
+                            for i, (_, row) in enumerate(grade_group.iterrows(), 1):
+                                doc.add_paragraph(f"  {i}. 科目: {row['科目名稱']}")
+                        doc.add_paragraph(f"\n{sender_name}")
                     
-                    out_stream_print, out_stream_msg = io.BytesIO(), io.BytesIO()
-                    doc_print.save(out_stream_print); doc_msg.save(out_stream_msg)
-                    st.session_state['docx_data_p2_print'] = out_stream_print.getvalue()
-                    st.session_state['docx_data_p2_msg'] = out_stream_msg.getvalue()
-                    st.session_state['processed_p2'] = True
+                    if idx < len(grouped) - 1:
+                        doc_print.add_page_break()
+                        doc_msg.add_paragraph("\n" + "=" * 40 + "\n")
+                
+                out_stream_print, out_stream_msg = io.BytesIO(), io.BytesIO()
+                doc_print.save(out_stream_print)
+                doc_msg.save(out_stream_msg)
+                
+                st.session_state['docx_data_p2_print'] = out_stream_print.getvalue()
+                st.session_state['docx_data_p2_msg'] = out_stream_msg.getvalue()
+                st.session_state['processed_p2'] = True
+                
             except Exception as e:
                 st.error(f"發生未預期錯誤: {e}"); st.code(traceback.format_exc())
 
     if st.session_state['processed_p2'] and st.session_state['docx_data_p2_print']:
-        st.success(f"✅ 完美達成！已產出雙版本。")
+        st.success(f"✅ 完美達成！已針對您勾選的 {len(unsubmitted_teachers)} 位老師產出雙版本催繳單。")
         c1, c2 = st.columns([1, 1])
         with c1:
             st.download_button("🖨️ 下載：紙本列印版", st.session_state['docx_data_p2_print'], f"{selected_sheet_p2}催繳通知單_紙本版.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="primary")
@@ -1264,7 +1298,7 @@ with tab3:
                             
                             if '監考老師' in col_map:
                                 if has_manual_p3 and d0_date_p3 and any(d in date_str for d in [d0_ymd, d0_short, d0_slash]):
-                                    if p_val in manual_proctors.get(cls, {}): ws_label.cell(row=r, column=col_map['監考老師']).value = manual_proctors[cls][p_val]
+                                    if cls in manual_day0_proctors: ws_label.cell(row=r, column=col_map['監考老師']).value = manual_day0_proctors[cls]
                                 elif cls in class_proctor_schedule and p_val != -1:
                                     day_idx = -1
                                     if any(d in date_str for d in [d1_ymd, d1_short, d1_slash]): day_idx = 0
