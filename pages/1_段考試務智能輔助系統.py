@@ -565,11 +565,11 @@ with tab2:
                 if header_row_idx != -1:
                     row_vals = [str(x).strip().replace(' ', '') for x in df_raw_full.iloc[header_row_idx, :].tolist()]
                     
-                    # 找出所有包含「年級」的欄位索引作為錨點 (如 A:0, E:4, I:8)
+                    # 找出所有包含「年級」或「班級」的欄位索引作為錨點
                     grade_col_indices = [c for c, val in enumerate(row_vals) if "年級" in val or "班級" in val]
                     
                     for c_grade in grade_col_indices:
-                        # 依據 A,B,C / E,F,G / I,J,K 排版，科目必定在右1，老師必定在右2
+                        # 依據 A,B,C / E,F,G / I,J,K 排版，嚴格向右位移抓取
                         c_subj = c_grade + 1
                         c_teacher = c_grade + 2
                         
@@ -1077,7 +1077,7 @@ with tab3:
                 empty_row[df_out_master.columns[teacher_col_idx]] = "--- 系統自動檢核區 ---"
                 row_act_d[df_out_master.columns[teacher_col_idx]] = "實際排入 (△)"
                 row_req_d[df_out_master.columns[teacher_col_idx]] = "需求總數 (△)"
-                row_act_s[df_out_master.columns[teacher_col_idx]] = "實際排入 (※)"
+                row_act_s[df_out_master.columns[teacher_col_idx]] = "实际排入 (※)"
                 row_req_s[df_out_master.columns[teacher_col_idx]] = "需求總數 (※)"
                 row_diff[df_out_master.columns[teacher_col_idx]]  = "異常差額警示"
 
