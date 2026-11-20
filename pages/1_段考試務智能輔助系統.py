@@ -33,7 +33,7 @@ except:
 # ==========================================
 st.set_page_config(page_title="段考試務全能系統", page_icon="🏫", layout="wide")
 st.title("🏫 試務組 - 段考試務全能系統 (旗艦整合版)")
-st.info("💡 終極升級：階段二實裝「命題教師動態勾選過濾」功能，直接從上傳表單萃取名單，精準產出未繳交者的催繳單！")
+st.info("💡 終極升級：階段二實裝「全域橫向掃描引擎」，能完美跳過大標題並合併 A,B,C / E,F,G / I,J,K 等多區塊並排的命題名單！")
 
 # --- 狀態記憶體初始化 (Session State) ---
 if 'uploader_key' not in st.session_state:
@@ -336,7 +336,7 @@ def generate_perfect_balanced_sequence(pool, global_counts, sequence_length=10):
 tab1, tab2, tab3 = st.tabs(["🎯 階段一：命題出題教師排定", "📑 階段二：試卷催繳通知單", "📅 階段三：段考監考智能排班"])
 
 # ---------------------------------------------------------
-# 【階段一：命題出題教師排定】 (完美還原)
+# 【階段一：命題出題教師排定】
 # ---------------------------------------------------------
 with tab1:
     st.subheader("🎯 階段一：命題與出題教師自動排定系統")
@@ -523,7 +523,7 @@ with tab1:
                 for msg in st.session_state.get('debug_log_p1', []): st.write(msg)
 
 # ---------------------------------------------------------
-# 【階段二：試卷催繳通知單】 (優化版：支援勾選未繳交教師)
+# 【階段二：試卷催繳通知單】 (優化版：智慧跨欄掃描)
 # ---------------------------------------------------------
 with tab2:
     st.subheader("📑 階段二：試卷催繳通知單自動生成系統")
@@ -539,9 +539,7 @@ with tab2:
         
     with col2_p2:
         st.markdown("##### 📂 資料上傳與目標選擇")
-        
-        # 📌 重點修改 1：修改提示文字，支援「命題老師」等欄位容錯
-        uploaded_file_p2 = st.file_uploader("請上傳「命題名單」(Excel，需含年級、科目、命題老師/姓名)", type=["xlsx", "xls"], key=f"p2_uploader_{st.session_state['uploader_key']}")
+        uploaded_file_p2 = st.file_uploader("請上傳「命題名單」(Excel，支援多區塊併排格式)", type=["xlsx", "xls"], key=f"p2_uploader_{st.session_state['uploader_key']}")
         
         selected_sheet_p2 = None
         df_p2_source = None
@@ -552,28 +550,59 @@ with tab2:
                 excel_file_p2 = pd.ExcelFile(uploaded_file_p2)
                 selected_sheet_p2 = st.selectbox("👇 請選擇工作表 (考試類型)：", excel_file_p2.sheet_names, key="p2_sheet_select")
                 
-                # 📌 重點修改 2：上傳後立即讀取資料，萃取教師名單供勾選
-                df_raw = pd.read_excel(uploaded_file_p2, sheet_name=selected_sheet_p2).dropna(how='all')
+                # 📌 智慧跨欄讀取邏輯
+                df_raw_full = pd.read_excel(uploaded_file_p2, sheet_name=selected_sheet_p2, header=None).dropna(how='all')
                 
-                # 智慧容錯：處理欄位名稱差異，完美應對老師提供的不同檔案格式
-                if '命題老師' in df_raw.columns and '姓名' not in df_raw.columns:
-                    df_raw = df_raw.rename(columns={'命題老師': '姓名'})
-                if '科目' in df_raw.columns and '科目名稱' not in df_raw.columns:
-                    df_raw = df_raw.rename(columns={'科目': '科目名稱'})
+                # 尋找真正的表頭列 (跳過第一列大標題)
+                header_row_idx = -1
+                for r in range(min(15, len(df_raw_full))):
+                    row_str = "".join(str(x) for x in df_raw_full.iloc[r, :].tolist())
+                    if "年級" in row_str and ("科目" in row_str or "命題" in row_str or "姓名" in row_str or "教師" in row_str):
+                        header_row_idx = r
+                        break
+                
+                extracted_data = []
+                if header_row_idx != -1:
+                    header_row = [str(x).strip() for x in df_raw_full.iloc[header_row_idx].tolist()]
                     
-                if any(c not in df_raw.columns for c in ['年級', '科目名稱', '姓名']):
-                    st.error("🚨 上傳的檔案缺少必備欄位：年級、科目(或科目名稱)、姓名(或命題老師)。請確認表頭格式！")
+                    # 橫向掃描：支援 A,B,C / E,F,G / I,J,K 多欄位併排的情境
+                    for c_idx in range(len(header_row)):
+                        col_name = header_row[c_idx]
+                        if "年級" in col_name or "班級" in col_name:
+                            c_grade = c_idx
+                            c_subj, c_teacher = -1, -1
+                            
+                            # 往後找 4 個欄位，配對 科目 與 命題老師
+                            for offset in range(1, 5):
+                                if c_idx + offset >= len(header_row): break
+                                n_col = header_row[c_idx + offset]
+                                if "科目" in n_col: c_subj = c_idx + offset
+                                if any(k in n_col for k in ["老師", "姓名", "命題", "教師"]): c_teacher = c_idx + offset
+                            
+                            # 如果成功湊齊一組 (年級, 科目, 老師)，就開始往下抓資料
+                            if c_grade != -1 and c_subj != -1 and c_teacher != -1:
+                                for data_r in range(header_row_idx + 1, len(df_raw_full)):
+                                    g_val = str(df_raw_full.iloc[data_r, c_grade]).strip().replace('nan', '')
+                                    s_val = str(df_raw_full.iloc[data_r, c_subj]).strip().replace('nan', '')
+                                    t_val = str(df_raw_full.iloc[data_r, c_teacher]).strip().replace('nan', '')
+                                    
+                                    if t_val and t_val != 'None':
+                                        # 處理同一個欄位有多位老師的情況 (用逗號或頓號隔開)
+                                        teachers_in_cell = [t.strip() for t in re.split(r'[、,，\s/]+', t_val) if t.strip()]
+                                        for t in teachers_in_cell:
+                                            extracted_data.append({
+                                                '年級': g_val,
+                                                '科目名稱': s_val,
+                                                '姓名': t
+                                            })
+                
+                if not extracted_data:
+                    st.error("🚨 找不到符合格式的資料！請確認表單是否包含「年級」、「科目」、「命題老師」。")
                 else:
-                    # 清洗資料
-                    df_raw['姓名'] = df_raw['姓名'].astype(str).str.strip().replace('nan', '')
-                    df_raw['科目名稱'] = df_raw['科目名稱'].astype(str).str.strip().replace('nan', '')
-                    df_raw['年級'] = df_raw['年級'].astype(str).str.strip().replace('nan', '')
-                    df_p2_source = df_raw[df_raw['姓名'] != '']
-                    
-                    # 取得唯一教師名單
+                    df_p2_source = pd.DataFrame(extracted_data)
                     all_teachers = sorted(df_p2_source['姓名'].unique().tolist())
                     
-                    st.info("💡 系統已成功載入名單！請在下方選擇需要催繳的老師。")
+                    st.info(f"💡 系統已成功跨欄載入名單！共識別出 {len(all_teachers)} 位命題教師。")
                     unsubmitted_teachers = st.multiselect("👉 勾選「尚未繳交」的老師 (可複選)：", options=all_teachers, help="系統將只針對您選擇的老師產出催繳通知單。", key="p2_teacher_select")
 
             except Exception as e:
@@ -581,7 +610,6 @@ with tab2:
 
     st.divider()
 
-    # 📌 重點修改 3：按鈕邏輯加入「未勾選教師」的防呆，並依據選單動態過濾 DataFrame
     if st.button("🚀 產出選定教師之催繳通知單", use_container_width=True, type="primary", key="btn_p2"):
         if not HAS_DOCX: st.error("缺少 python-docx 套件。")
         elif df_p2_source is None: st.warning("⚠️ 請先上傳正確格式的名單檔案！")
@@ -652,7 +680,7 @@ with tab2:
             st.download_button("💬 下載：訊息複製版", st.session_state['docx_data_p2_msg'], f"{selected_sheet_p2}催繳通知單_訊息版.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True, type="secondary")
 
 # ---------------------------------------------------------
-# 【階段三：段考監考智能輔助系統】 (究極防碰撞升級版)
+# 【階段三：段考監考智能輔助系統】 
 # ---------------------------------------------------------
 with tab3:
     st.subheader("📅 階段三：段考監考智能輔助系統 (終極完全體)")
@@ -711,7 +739,6 @@ with tab3:
         st.write("---")
         st.markdown("#### ⏳ 兼課教師可用時段精確鎖定")
         
-        # --- 新增：兼課時間限制匯入功能 ---
         file_time_p3 = st.file_uploader("📥 [選填] 匯入兼課教師時間限制 (.xlsx)", type=['xlsx'], key=f"f_time_{st.session_state['uploader_key']}")
         if file_time_p3 and st.session_state.last_time_file != file_time_p3.name:
             try:
@@ -723,7 +750,6 @@ with tab3:
                         date_raw = str(row['允許日期']).strip()
                         period_raw = str(row['允許節次']).strip()
                         
-                        # 老師名字智慧洗刷
                         t_match = t_raw if t_raw in teacher_list_p3 else ""
                         if not t_match and t_raw:
                             for valid_t in teacher_list_p3:
@@ -776,7 +802,6 @@ with tab3:
 
         file_bind_p3 = st.file_uploader("📥 [選填] 匯入既有綁定名單 (.xlsx)", type=['xlsx'], key=f"f_bind_{st.session_state['uploader_key']}")
         
-        # 智慧洗刷與模糊比對匯入的綁定名單
         if file_bind_p3 and st.session_state.last_bind_file != file_bind_p3.name:
             try:
                 df_bind_up = pd.read_excel(file_bind_p3).dropna(how='all').fillna("")
@@ -786,14 +811,12 @@ with tab3:
                         t_raw = str(row['老師']).strip()
                         c_raw = normalize_cls(row['班級'])
                         
-                        # 老師名字智慧洗刷
                         t_match = t_raw if t_raw in teacher_list_p3 else ""
                         if not t_match and t_raw:
                             for valid_t in teacher_list_p3:
                                 if valid_t.strip() == t_raw or valid_t in t_raw or t_raw in valid_t:
                                     t_match = valid_t; break
                         
-                        # 班級名稱智慧洗刷
                         c_match = c_raw if c_raw in class_list_p3 else ""
                         
                         cleaned_bind.append({"老師": t_match, "班級": c_match})
@@ -906,9 +929,6 @@ with tab3:
                 df_list = df_list_raw.iloc[header_row_idx+1:].copy()
                 teachers = [str(x).strip() for x in df_list.iloc[:, teacher_col_idx] if pd.notna(x) and str(x).strip() not in ["", "nan"]]
 
-                # ==========================================
-                # 📌 [新增修正] 兼課教師可用時段 (List 結合 OR 聯集邏輯)
-                # ==========================================
                 time_constraints = defaultdict(list)
                 for _, row in edited_time_df.iterrows():
                     t_name = str(row['老師']).strip()
@@ -958,9 +978,6 @@ with tab3:
                         prob += act + dfct_neg - dfct_pos == tgt
                         penalty += (dfct_pos + dfct_neg) * 500
                         
-                        # ==========================================
-                        # 📌 [新增修正] 執行 OR 聯集邏輯
-                        # ==========================================
                         is_time_constrained = t in time_constraints
                         if is_time_constrained:
                             allowed_j = set()
@@ -976,7 +993,6 @@ with tab3:
                                     if day_match and period_match:
                                         allowed_j.add(j)
                                         
-                            # 封鎖所有「不在」任何允許時段聯集裡的節次
                             for j in range(ai_periods):
                                 if j not in allowed_j:
                                     prob += vX[i][j] == 0; prob += vY[i][j] == 0
@@ -1068,7 +1084,6 @@ with tab3:
                         day_end = day_starts[i_day+1] if i_day+1 < len(day_starts) else ai_periods
                         day_length = day_end - day_start
                         
-                        # --- 【分配 第一節 j1】 ---
                         j1 = day_start
                         target_star_norm = norm_day1_star if i_day == 0 else norm_day2_star
                         
@@ -1077,7 +1092,6 @@ with tab3:
                         random.shuffle(star_pool)
                         random.shuffle(triangle_pool)
 
-                        # Step 1: 處理【特定老師】指定班級
                         for p in list(star_pool) + list(triangle_pool):
                             if p in t2c_map:
                                 idx = t2c_map[p]
@@ -1086,14 +1100,12 @@ with tab3:
                                     if p in star_pool: star_pool.remove(p)
                                     if p in triangle_pool: triangle_pool.remove(p)
 
-                        # Step 2: 處理【目標 ※ 班級】
                         for norm_c in target_star_norm:
                             if norm_c in assign_map:
                                 idx = assign_map[norm_c]
                                 if assigned_matrix[idx, j1] is None and star_pool:
                                     assigned_matrix[idx, j1] = star_pool.pop(0)
 
-                        # Step 3: 其餘老師隨機填補空缺
                         rem_pool = star_pool + triangle_pool
                         random.shuffle(rem_pool)
                         r_ptr = 0
@@ -1102,12 +1114,10 @@ with tab3:
                                 assigned_matrix[idx, j1] = rem_pool[r_ptr]
                                 r_ptr += 1
 
-                        # --- 【分配 第二節 j2 之後】 ---
                         if day_length > 1:
                             j2 = day_start + 1
                             bound_teachers = set()
                             
-                            # Step 1: 處理【連堂鎖定】(※ -> △ 必留同班)
                             for idx in range(len(class_names_raw)):
                                 if idx < assigned_matrix.shape[0]:
                                     p_prev = assigned_matrix[idx, j1]
@@ -1118,7 +1128,6 @@ with tab3:
                             proctors_j2 = [t for t in teachers if schedule_dict[t][j2] in ["△", "※"]]
                             rem_j2 = [p for p in proctors_j2 if p not in bound_teachers]
                             
-                            # Step 2: 處理【特定老師】指定班級 (若未被連堂綁定處理掉)
                             for p in list(rem_j2):
                                 if p in t2c_map:
                                     idx = t2c_map[p]
@@ -1126,7 +1135,6 @@ with tab3:
                                         assigned_matrix[idx, j2] = p
                                         rem_j2.remove(p)
 
-                            # Step 3: 其餘隨機填補 j2
                             random.shuffle(rem_j2)
                             r_idx = 0
                             for idx in range(len(class_names_raw)):
@@ -1134,13 +1142,11 @@ with tab3:
                                     assigned_matrix[idx, j2] = rem_j2[r_idx]
                                     r_idx += 1
 
-                            # --- 【分配 第三節之後】常規填補 ---
                             for offset in range(2, day_length):
                                 curr_j = day_start + offset
                                 proctors = [t for t in teachers if schedule_dict[t][curr_j] in ["△", "※"]]
                                 rem_curr = list(proctors)
                                 
-                                # 優先處理【特定老師】指定班級
                                 for p in list(rem_curr):
                                     if p in t2c_map:
                                         idx = t2c_map[p]
@@ -1148,7 +1154,6 @@ with tab3:
                                             assigned_matrix[idx, curr_j] = p
                                             rem_curr.remove(p)
                                             
-                                # 剩餘名額隨機填入
                                 random.shuffle(rem_curr)
                                 r_ptr = 0
                                 for idx in range(len(class_names_raw)):
