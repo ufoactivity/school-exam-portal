@@ -33,7 +33,7 @@ except:
 # ==========================================
 st.set_page_config(page_title="段考試務全能系統", page_icon="🏫", layout="wide")
 st.title("🏫 試務組 - 段考試務全能系統 (旗艦整合版)")
-st.info("💡 終極升級：階段二實裝「全域橫向掃描引擎」，能完美跳過大標題並合併 A,B,C / E,F,G / I,J,K 等多區塊並排的命題名單！")
+st.info("💡 終極升級：階段二實裝「全域橫向掃描引擎」，能完美跳過大標題並嚴格合併 A,B,C / E,F,G / I,J,K 等多區塊並排的名單！")
 
 # --- 狀態記憶體初始化 (Session State) ---
 if 'uploader_key' not in st.session_state:
@@ -556,14 +556,14 @@ with tab2:
                 # 尋找真正的表頭列 (跳過第一列大標題)
                 header_row_idx = -1
                 for r in range(min(15, len(df_raw_full))):
-                    row_str = "".join(str(x) for x in df_raw_full.iloc[r, :].tolist())
-                    if "年級" in row_str and ("科目" in row_str or "命題" in row_str or "姓名" in row_str or "教師" in row_str):
+                    row_vals = [str(x).strip().replace(' ', '') for x in df_raw_full.iloc[r, :].tolist()]
+                    if any("年級" in val or "班級" in val for val in row_vals) and any("科目" in val for val in row_vals):
                         header_row_idx = r
                         break
                 
                 extracted_data = []
                 if header_row_idx != -1:
-                    header_row = [str(x).strip() for x in df_raw_full.iloc[header_row_idx].tolist()]
+                    header_row = [str(x).strip().replace(' ', '') for x in df_raw_full.iloc[header_row_idx].tolist()]
                     
                     # 橫向掃描：支援 A,B,C / E,F,G / I,J,K 多欄位併排的情境
                     for c_idx in range(len(header_row)):
@@ -572,12 +572,14 @@ with tab2:
                             c_grade = c_idx
                             c_subj, c_teacher = -1, -1
                             
-                            # 往後找 4 個欄位，配對 科目 與 命題老師
-                            for offset in range(1, 5):
+                            # 往後找 1 到 3 個欄位，配對 科目 與 命題老師 (嚴格限制搜尋範圍避免跨區塊)
+                            for offset in range(1, 4):
                                 if c_idx + offset >= len(header_row): break
                                 n_col = header_row[c_idx + offset]
-                                if "科目" in n_col: c_subj = c_idx + offset
-                                if any(k in n_col for k in ["老師", "姓名", "命題", "教師"]): c_teacher = c_idx + offset
+                                if "科目" in n_col: 
+                                    c_subj = c_idx + offset
+                                elif any(k in n_col for k in ["老師", "姓名", "命題", "教師"]): 
+                                    c_teacher = c_idx + offset
                             
                             # 如果成功湊齊一組 (年級, 科目, 老師)，就開始往下抓資料
                             if c_grade != -1 and c_subj != -1 and c_teacher != -1:
