@@ -213,6 +213,27 @@ def parse_proposition_list(df_raw_full, max_cols=11):
 
     return pd.DataFrame(extracted, columns=['年級', '科目名稱', '姓名']).drop_duplicates().reset_index(drop=True)
 
+def get_visible_sheet_names(uploaded_file, all_names):
+    """回傳 Excel 中「未隱藏」的工作表（依原順序）；.xls 或讀取失敗時回傳全部"""
+    try:
+        import zipfile
+        uploaded_file.seek(0)
+        with zipfile.ZipFile(uploaded_file) as z:
+            xml = z.read('xl/workbook.xml').decode('utf-8')
+        uploaded_file.seek(0)
+        hidden = set()
+        for tag in re.findall(r'<(?:\w+:)?sheet\s[^>]*>', xml):
+            m_name = re.search(r'\sname="([^"]*)"', tag)
+            if m_name and re.search(r'\sstate="(hidden|veryHidden)"', tag):
+                import html
+                hidden.add(html.unescape(m_name.group(1)))
+        visible = [n for n in all_names if n not in hidden]
+        return visible or list(all_names)
+    except Exception:
+        try: uploaded_file.seek(0)
+        except Exception: pass
+        return list(all_names)
+
 def guess_exam_title(df_raw_full, sheet_name):
     """由第一列大標題「115學年度第一學期第2次期中考命題通知(依年級排序)」取出考試名稱；取不到就用工作表名去掉括號"""
     for r in range(min(3, len(df_raw_full))):
@@ -623,8 +644,9 @@ with tab2:
         if uploaded_file_p2 is not None:
             try:
                 excel_file_p2 = pd.ExcelFile(uploaded_file_p2)
-                # 第一個工作表為全學期總表，不列入選擇
-                sheet_options_p2 = excel_file_p2.sheet_names[1:] or excel_file_p2.sheet_names
+                # 只列出 Excel 中看得到的工作表（略過隱藏工作表），並排除第一個全學期總表
+                visible_sheets_p2 = get_visible_sheet_names(uploaded_file_p2, excel_file_p2.sheet_names)
+                sheet_options_p2 = visible_sheets_p2[1:] or visible_sheets_p2
                 selected_sheet_p2 = st.selectbox("👇 請選擇工作表 (考試類型，已排除第一個總表工作表)：", sheet_options_p2, key="p2_sheet_select")
                 
                 # 📌 只讀 A～K 欄：A,B,C / E,F,G / I,J,K 為「年級、科目、命題教師」
